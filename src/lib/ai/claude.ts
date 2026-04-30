@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+export function getClient() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+}
 
 export const MODEL = 'claude-sonnet-4-6'
 
@@ -34,7 +34,7 @@ export async function callClaude(
 ): Promise<string> {
   let response
   try {
-    response = await anthropic.messages.create({
+    response = await getClient().messages.create({
       model: MODEL,
       max_tokens: maxTokens,
       system: systemPrompt,

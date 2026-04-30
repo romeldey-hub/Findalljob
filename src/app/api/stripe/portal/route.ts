@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect('/login')
@@ -13,10 +13,10 @@ export async function POST() {
     .single()
 
   if (!profile?.razorpay_payment_id) {
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/settings`)
+    return NextResponse.redirect(new URL('/settings', req.url))
   }
 
   // Redirect to subscription management page
   // In a real app, you'd build a custom subscription management UI
-  return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/settings`)
+  return NextResponse.redirect(new URL('/settings', req.url))
 }

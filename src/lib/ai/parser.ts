@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { callClaude, callClaudeJSON } from './claude'
+import { callClaude, callClaudeJSON, getClient } from './claude'
 import type { ParsedResume } from '@/types'
 
 const PARSE_SYSTEM_PROMPT = `You are an expert resume parser. Extract structured data from resumes accurately.
@@ -75,11 +74,9 @@ export async function parseResume(rawText: string): Promise<ParsedResume> {
 }
 
 export async function parseResumeFromPDF(pdfBuffer: Buffer): Promise<ParsedResume> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-
   const fullSystem = `${PARSE_SYSTEM_PROMPT}\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code fences, no explanation — just the raw JSON object.`
 
-  const response = await anthropic.messages.create({
+  const response = await getClient().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 2048,
     system: fullSystem,
