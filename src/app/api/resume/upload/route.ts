@@ -3,12 +3,6 @@ import { createHash } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
 
-// CommonJS packages — must use require to avoid ESM default-export issues
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse/lib/pdf-parse.js') as (buf: Buffer) => Promise<{ text: string }>
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const mammoth = require('mammoth') as { extractRawText(opts: { buffer: Buffer }): Promise<{ value: string }> }
-
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.doc', '.docx']
@@ -45,13 +39,17 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // Extract text based on file type
+    // Extract text based on file type (lazy require keeps Turbopack happy at build time)
     let rawText = ''
     try {
       if (ext === '.pdf') {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
         const parsed = await pdfParse(buffer)
         rawText = parsed.text.trim()
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mammoth = require('mammoth') as { extractRawText(opts: { buffer: Buffer }): Promise<{ value: string }> }
         const result = await mammoth.extractRawText({ buffer })
         rawText = result.value.trim()
       }
