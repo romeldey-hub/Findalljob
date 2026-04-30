@@ -113,12 +113,6 @@ export default function LandingPage() {
           <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.08] blur-[80px]" />
         </div>
 
-        {/* Badge */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-400 text-[12px] font-semibold mb-7 tracking-wide">
-          <Sparkles className="w-3 h-3" />
-          Powered by Claude AI
-        </div>
-
         <h1 className="text-4xl sm:text-5xl md:text-[64px] font-black tracking-[-0.02em] max-w-3xl mx-auto leading-[1.08] mb-6">
           Land interviews faster with{' '}
           <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-300 bg-clip-text text-transparent">
