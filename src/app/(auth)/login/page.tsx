@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { X, Briefcase } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -43,11 +44,32 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
+      <Card className="w-full max-w-md relative">
+
+        {/* Close button */}
+        <Link
+          href="/"
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          aria-label="Back to home"
+        >
+          <X className="w-4 h-4" />
+        </Link>
+
+        <CardHeader className="text-center pb-4">
+          {/* Brand identity */}
+          <Link href="/" className="inline-flex items-center justify-center gap-2 mb-4 group">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center group-hover:bg-blue-500 transition-colors">
+              <Briefcase className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-[15px] text-foreground group-hover:text-blue-500 transition-colors">
+              Find All Job
+            </span>
+          </Link>
+
           <CardTitle className="text-2xl">Welcome back</CardTitle>
           <CardDescription>Sign in to your Find All Job account</CardDescription>
         </CardHeader>
+
         <CardContent className="space-y-4">
           <Button
             variant="outline"
