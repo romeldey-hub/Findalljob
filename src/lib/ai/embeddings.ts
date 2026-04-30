@@ -1,12 +1,14 @@
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
-
 const EMBEDDING_MODEL = 'text-embedding-3-small'
 const EMBEDDING_DIMENSIONS = 1536
 
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
+}
+
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
+  const response = await getClient().embeddings.create({
     model: EMBEDDING_MODEL,
     input: text.slice(0, 8000), // stay within token limit
     dimensions: EMBEDDING_DIMENSIONS,
@@ -15,7 +17,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const response = await openai.embeddings.create({
+  const response = await getClient().embeddings.create({
     model: EMBEDDING_MODEL,
     input: texts.map((t) => t.slice(0, 8000)),
     dimensions: EMBEDDING_DIMENSIONS,
