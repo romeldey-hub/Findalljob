@@ -348,7 +348,7 @@ export default function LandingPage() {
           </div>
           <span className="font-semibold text-slate-500">Find All Job</span>
         </div>
-        <span>© {new Date().getFullYear()} Find All Job · Built with Claude AI</span>
+        <span>© {new Date().getFullYear()} Find All Job · Built with <a href="https://bestin-e.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">bestin-e.com</a></span>
         <div className="flex gap-4">
           <Link href="/login" className="hover:text-slate-400 transition-colors">Sign In</Link>
           <Link href="/signup" className="hover:text-slate-400 transition-colors">Sign Up</Link>
