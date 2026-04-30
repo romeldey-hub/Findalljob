@@ -1,7 +1,9 @@
 'use client'
 
-import { Crown, CheckCircle2, Zap, ArrowRight } from 'lucide-react'
+import { useState } from 'react'
+import { Crown, CheckCircle2, Zap } from 'lucide-react'
 import { RazorpayPaymentWidget } from '@/components/RazorpayPaymentWidget'
+import { BillingModal } from '@/components/settings/BillingModal'
 
 interface SubscriptionCardProps {
   isPro: boolean
@@ -15,7 +17,10 @@ const FREE_FEATURES = [
 ]
 
 export function SubscriptionCard({ isPro }: SubscriptionCardProps) {
+  const [showBilling, setShowBilling] = useState(false)
+
   return (
+    <>
     <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5 sticky top-6 space-y-5">
 
       {/* ── Title ───────────────────────────────────────────────── */}
@@ -86,16 +91,17 @@ export function SubscriptionCard({ isPro }: SubscriptionCardProps) {
           </div>
         </div>
       ) : (
-        <form action="/api/stripe/portal" method="POST">
-          <button
-            type="submit"
-            className="w-full py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:scale-[1.01] transition-all"
-          >
-            Manage Billing
-          </button>
-        </form>
+        <button
+          onClick={() => setShowBilling(true)}
+          className="w-full py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:scale-[1.01] transition-all"
+        >
+          Manage Billing
+        </button>
       )}
 
     </div>
+
+    {showBilling && <BillingModal onClose={() => setShowBilling(false)} />}
+    </>
   )
 }
