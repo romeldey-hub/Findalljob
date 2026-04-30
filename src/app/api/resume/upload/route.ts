@@ -5,7 +5,7 @@ import { inngest } from '@/inngest/client'
 
 // CommonJS packages — must use require to avoid ESM default-export issues
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
+const pdfParse = require('pdf-parse/lib/pdf-parse.js') as (buf: Buffer) => Promise<{ text: string }>
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mammoth = require('mammoth') as { extractRawText(opts: { buffer: Buffer }): Promise<{ value: string }> }
 
