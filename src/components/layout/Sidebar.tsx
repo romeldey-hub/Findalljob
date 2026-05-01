@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { HelpModal } from '@/components/HelpModal'
 import { UpgradeModal } from '@/components/UpgradeModal'
+import { LogoMark } from '@/components/LogoMark'
 import { track } from '@/lib/analytics'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
@@ -327,14 +328,7 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
 
       {/* ── Logo ─────────────────────────────────────────────────── */}
       <div className="px-5 py-[18px] border-b border-gray-100 dark:border-[#1E293B]">
-        <Link href="/matches" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center shadow-sm flex-shrink-0">
-            <Briefcase className="w-[18px] h-[18px] text-white" />
-          </div>
-          <span className="font-bold text-[17px] text-[#1a2742] dark:text-white tracking-tight leading-none">
-            Find All Job
-          </span>
-        </Link>
+        <LogoMark />
       </div>
 
       {/* ── Nav ──────────────────────────────────────────────────── */}
