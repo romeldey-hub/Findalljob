@@ -17,7 +17,7 @@ export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', cla
   const content = (
     <div className={cn('flex items-center', isSmall ? 'gap-2' : 'gap-2.5', className)}>
       <Image
-        src="/logo.png"
+        src="/logo-icon.png"
         alt="FindAllJob"
         width={isSmall ? 32 : 36}
         height={isSmall ? 32 : 36}
