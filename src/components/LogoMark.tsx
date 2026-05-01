@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
@@ -13,15 +12,17 @@ interface LogoMarkProps {
 
 export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', className }: LogoMarkProps) {
   const isSmall = size === 'sm'
+  const px = isSmall ? 32 : 36
 
   const content = (
     <div className={cn('flex items-center', isSmall ? 'gap-2' : 'gap-2.5', className)}>
-      <Image
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
         src="/logo-icon.png"
         alt="FindAllJob"
-        width={isSmall ? 32 : 36}
-        height={isSmall ? 32 : 36}
-        className="flex-shrink-0"
+        width={px}
+        height={px}
+        className="flex-shrink-0 object-contain"
       />
 
       {!iconOnly && (
