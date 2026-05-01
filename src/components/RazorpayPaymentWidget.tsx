@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { track } from '@/lib/analytics'
 
 declare global {
   interface Window {
@@ -20,6 +21,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
   const router = useRouter()
 
   const handleUpgrade = async () => {
+    track.upgradeClick('payment_widget')
     try {
       setLoading(true)
 

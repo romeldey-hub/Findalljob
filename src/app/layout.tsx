@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { Analytics } from "@/components/Analytics";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,12 +17,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://findalljob.com'),
   title: "Find All Job — Land your next job with AI",
-  description: "AI-powered job matching, resume optimization, and application tracking. Powered by Claude AI.",
+  description: "AI-powered job matching, resume optimization, and application tracking.",
+  alternates: { canonical: '/' },
   openGraph: {
-    title: "Find All Job",
+    title: "Find All Job — Land your next job with AI",
     description: "AI-powered job matching, resume optimization, and application tracking.",
     type: "website",
+    url: "https://findalljob.com",
+    siteName: "Find All Job",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Find All Job — Land your next job with AI",
+    description: "AI-powered job matching, resume optimization, and application tracking.",
   },
 };
 
@@ -57,7 +67,33 @@ export default function RootLayout({
         `}</Script>
       </head>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <Analytics />
+          {children}
+        </ThemeProvider>
+        <Script id="json-ld" type="application/ld+json" strategy="afterInteractive">{`
+          [
+            {
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              "name": "Find All Job",
+              "url": "https://findalljob.com"
+            },
+            {
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              "name": "Find All Job",
+              "applicationCategory": "BusinessApplication",
+              "operatingSystem": "Web",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              "description": "AI-powered job matching, resume optimization, and application tracking."
+            }
+          ]
+        `}</Script>
       </body>
     </html>
   );

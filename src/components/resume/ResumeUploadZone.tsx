@@ -8,6 +8,7 @@ import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
   RefreshCw, Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle,
 } from 'lucide-react'
+import { track } from '@/lib/analytics'
 
 interface ResumeUploadZoneProps {
   hasExistingResume: boolean
@@ -73,6 +74,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
       }
 
       setUploadState('success')
+      track.resumeUpload()
       toast.success(`Found ${analyzeData.matchCount} job matches! Redirecting…`)
       setTimeout(() => router.push('/matches'), 1500)
     } catch {

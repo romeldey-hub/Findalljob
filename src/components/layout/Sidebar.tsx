@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { HelpModal } from '@/components/HelpModal'
 import { UpgradeModal } from '@/components/UpgradeModal'
+import { track } from '@/lib/analytics'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
@@ -370,7 +371,7 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
               Unlock unlimited optimizations, AI cover letters &amp; more.
             </p>
             <button
-              onClick={() => setShowUpgrade(true)}
+              onClick={() => { track.upgradeClick('sidebar'); setShowUpgrade(true) }}
               className="w-full h-8 rounded-lg bg-[#1a2742] dark:bg-[#2563EB] hover:bg-[#243453] dark:hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
             >
               Upgrade Now

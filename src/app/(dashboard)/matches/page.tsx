@@ -13,6 +13,7 @@ import {
   SlidersHorizontal, ChevronDown, User, UserCheck,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { track } from '@/lib/analytics'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { PaywallModal } from '@/components/PaywallModal'
 
@@ -212,6 +213,7 @@ function JobCard({
 
   async function handleApply() {
     if (!job.url) { toast.error('No apply URL for this job'); return }
+    track.applyClick(job.title)
     window.open(job.url, '_blank')
     try {
       const res = await fetch('/api/applications', {
@@ -698,6 +700,7 @@ export default function MatchesPage() {
   }, [data])
 
   async function triggerAnalyze(reanalyze: boolean) {
+    track.aiAnalyzeClick()
     // Hard-reset before fetching — never show stale results during loading
     setMode('ai')
     setAiJobs([])
@@ -725,7 +728,7 @@ export default function MatchesPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || !location.trim()) return
-
+    track.jobSearch(`${title} ${location}`.trim())
     setSearching(true)
     setSuggestions([])
     setSearchMessage('')
