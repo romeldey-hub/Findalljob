@@ -22,7 +22,7 @@ const features = [
   {
     icon: Wand2,
     title: 'Resume Optimization',
-    description: 'Customize your resume for every job in seconds — not hours.',
+    description: 'One click to customize your resume for every job—no manual effort.',
     hero: true,
     tag: '🔥 Most Powerful',
   },
