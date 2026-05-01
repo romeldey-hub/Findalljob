@@ -22,7 +22,7 @@ export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', cla
         alt="FindAllJob"
         width={px}
         height={px}
-        className="flex-shrink-0 object-contain"
+        className="flex-shrink-0"
       />
 
       {!iconOnly && (
