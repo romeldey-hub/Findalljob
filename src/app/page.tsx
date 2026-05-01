@@ -3,6 +3,7 @@ import {
   FileText, Briefcase, Wand2, Kanban, Sparkles, Bookmark,
   Check, X, Zap, ArrowRight, Clock, TrendingUp,
 } from 'lucide-react'
+import { LogoMark } from '@/components/LogoMark'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -84,12 +85,7 @@ export default function LandingPage() {
 
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#040D21]/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-            <Briefcase className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-[17px] tracking-tight">Find All Job</span>
-        </Link>
+        <LogoMark href="/" size="sm" />
         <div className="flex items-center gap-3">
           <Link
             href="/login"
@@ -337,10 +333,7 @@ export default function LandingPage() {
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer className="border-t border-white/[0.05] px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-6xl mx-auto text-[13px] text-slate-600">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
-            <Briefcase className="w-3 h-3 text-white" />
-          </div>
-          <span className="font-semibold text-slate-500">Find All Job</span>
+          <LogoMark href="/" size="sm" />
         </div>
         <span>© {new Date().getFullYear()} Find All Job · Powered by <a href="https://bestin-e.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">bestin-e.com</a></span>
         <div className="flex gap-4">
