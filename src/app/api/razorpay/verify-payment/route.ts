@@ -23,13 +23,28 @@ export async function POST(request: NextRequest) {
   try {
     const admin = createAdminClient()
 
-    // Upgrade subscription — admin client bypasses RLS so this always commits
+    // Read existing pro_until to handle re-purchase before expiry:
+    // new expiry = max(now, existing_pro_until) + 30 days
+    const { data: existing } = await admin
+      .from('profiles')
+      .select('pro_until')
+      .eq('user_id', user.id)
+      .single()
+
+    const base =
+      existing?.pro_until && new Date(existing.pro_until) > new Date()
+        ? new Date(existing.pro_until)
+        : new Date()
+    const proUntil = new Date(base.getTime() + 30 * 24 * 60 * 60 * 1000)
+
     const { error } = await admin
       .from('profiles')
       .update({
         subscription_status: 'pro',
         razorpay_payment_id,
         razorpay_order_id,
+        pro_until: proUntil.toISOString(),
+        cancel_at_period_end: false,
       })
       .eq('user_id', user.id)
 

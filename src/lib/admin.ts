@@ -7,7 +7,11 @@ export function isAdminUser(email: string | null | undefined, role: string | nul
 export function isProUser(
   email: string | null | undefined,
   role: string | null | undefined,
-  subscriptionStatus: string | null | undefined,
+  _subscriptionStatus: string | null | undefined,
+  proUntil?: string | null,
 ): boolean {
-  return subscriptionStatus === 'pro' || isAdminUser(email, role)
+  if (isAdminUser(email, role)) return true
+  // pro_until is the sole source of truth for Pro access
+  if (proUntil != null) return new Date(proUntil) > new Date()
+  return false
 }

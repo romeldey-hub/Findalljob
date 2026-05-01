@@ -7,6 +7,8 @@ import { BillingModal } from '@/components/settings/BillingModal'
 
 interface SubscriptionCardProps {
   isPro: boolean
+  proUntil?: string | null
+  cancelAtPeriodEnd?: boolean
 }
 
 const FREE_FEATURES = [
@@ -16,7 +18,7 @@ const FREE_FEATURES = [
   'Save & organize jobs',
 ]
 
-export function SubscriptionCard({ isPro }: SubscriptionCardProps) {
+export function SubscriptionCard({ isPro, proUntil, cancelAtPeriodEnd = false }: SubscriptionCardProps) {
   const [showBilling, setShowBilling] = useState(false)
 
   return (
@@ -101,7 +103,13 @@ export function SubscriptionCard({ isPro }: SubscriptionCardProps) {
 
     </div>
 
-    {showBilling && <BillingModal onClose={() => setShowBilling(false)} />}
+    {showBilling && (
+      <BillingModal
+        onClose={() => setShowBilling(false)}
+        proUntil={proUntil}
+        cancelAtPeriodEnd={cancelAtPeriodEnd}
+      />
+    )}
     </>
   )
 }

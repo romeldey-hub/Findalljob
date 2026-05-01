@@ -1,11 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { generateFollowUpMessage, type MessageType } from '@/lib/ai/followup'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Pro gate — follow-up generation calls Claude AI
+  const admin = createAdminClient()
+  const { data: proProfile } = await admin
+    .from('profiles')
+    .select('subscription_status, role, pro_until')
+    .eq('user_id', user.id)
+    .single()
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, proProfile?.subscription_status, proProfile?.pro_until
+  )
+  if (!isProUser(user.email, proProfile?.role, proProfile?.subscription_status, effectiveProUntil)) {
+    return NextResponse.json(
+      { requiresUpgrade: true, error: 'Upgrade to Pro to generate AI follow-up messages.' },
+      { status: 402 }
+    )
+  }
 
   const { applicationId, type = 'follow_up', recruiterName } = await request.json()
   if (!applicationId) return NextResponse.json({ error: 'applicationId required' }, { status: 400 })

@@ -1,6 +1,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isProUser } from '@/lib/admin'
 import { resolveAvatar } from '@/lib/avatar'
+import { resolveProUntil } from '@/lib/billing'
 import { ProfileCard } from '@/components/settings/ProfileCard'
 import { PasswordCard } from '@/components/settings/PasswordCard'
 import { SubscriptionCard } from '@/components/settings/SubscriptionCard'
@@ -34,7 +35,17 @@ export default async function SettingsPage() {
     .eq('user_id', user!.id)
     .single()
 
-  const isPro     = isProUser(user?.email, extRow?.role, profile?.subscription_status)
+  // pro_until, cancel_at_period_end (012) — isolated for the same reason
+  const { data: billingRow } = await admin
+    .from('profiles')
+    .select('pro_until, cancel_at_period_end')
+    .eq('user_id', user!.id)
+    .single()
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user!.id, profile?.subscription_status, billingRow?.pro_until
+  )
+  const isPro     = isProUser(user?.email, extRow?.role, profile?.subscription_status, effectiveProUntil)
   const headline  = extRow?.headline ?? (user?.user_metadata?.headline as string | undefined) ?? ''
   const avatarUrl = resolveAvatar(avatarRow, user)
 
@@ -84,7 +95,11 @@ export default async function SettingsPage() {
 
         {/* Right: Subscription */}
         <div className="w-full xl:w-[300px] xl:flex-shrink-0">
-          <SubscriptionCard isPro={isPro} />
+          <SubscriptionCard
+            isPro={isPro}
+            proUntil={effectiveProUntil}
+            cancelAtPeriodEnd={billingRow?.cancel_at_period_end ?? false}
+          />
         </div>
 
       </div>

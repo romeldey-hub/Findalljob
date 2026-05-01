@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { isAdminUser, isProUser } from '@/lib/admin'
 import { resolveAvatar } from '@/lib/avatar'
+import { resolveProUntil } from '@/lib/billing'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -36,13 +37,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('user_id', user.id)
     .single()
 
+  // pro_until (migration 012) — separate fetch for isolation
+  const { data: billingRow } = await admin
+    .from('profiles')
+    .select('pro_until')
+    .eq('user_id', user.id)
+    .single()
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profile?.subscription_status, billingRow?.pro_until
+  )
   const avatarUrl = resolveAvatar(avatarRow, user)
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-[#0B1120]">
       <Sidebar
         userName={profile?.full_name || user.email || 'User'}
-        subscriptionStatus={isProUser(user.email, roleRow?.role, profile?.subscription_status) ? 'pro' : 'free'}
+        subscriptionStatus={isProUser(user.email, roleRow?.role, profile?.subscription_status, effectiveProUntil) ? 'pro' : 'free'}
         role={isAdminUser(user.email, roleRow?.role) ? 'admin' : 'user'}
         avatarUrl={avatarUrl}
       />

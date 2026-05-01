@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { optimizeResume, calculateImprovedScore } from '@/lib/ai/optimizer'
 import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
 import { parseResumeFromPDF } from '@/lib/ai/parser'
 import type { ParsedResume } from '@/types'
 
@@ -72,6 +73,13 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .single()
 
+  // Billing lifecycle columns (migration 012) — isolated query for safe optional access
+  const { data: billingProfile } = await adminClient
+    .from('profiles')
+    .select('pro_until')
+    .eq('user_id', user.id)
+    .single()
+
   const profile = {
     subscription_status:    baseProfile?.subscription_status,
     ai_actions_used:        baseProfile?.ai_actions_used ?? 0,
@@ -79,7 +87,10 @@ export async function POST(request: NextRequest) {
     has_used_free_preview:  extProfile?.has_used_free_preview ?? false,
   }
 
-  const isPro = isProUser(user.email, profile.role, profile.subscription_status)
+  const effectiveProUntil = await resolveProUntil(
+    adminClient, user.id, baseProfile?.subscription_status, billingProfile?.pro_until
+  )
+  const isPro = isProUser(user.email, profile.role, profile.subscription_status, effectiveProUntil)
 
   if (!isPro) {
     // Check anti-abuse hash first (catches delete-and-re-signup)

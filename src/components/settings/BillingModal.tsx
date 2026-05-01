@@ -7,6 +7,8 @@ import {
 
 interface BillingModalProps {
   onClose: () => void
+  proUntil?: string | null
+  cancelAtPeriodEnd?: boolean
 }
 
 const VALUE_BULLETS = [
@@ -15,14 +17,39 @@ const VALUE_BULLETS = [
   'Get AI insights to improve applications',
 ]
 
-export function BillingModal({ onClose }: BillingModalProps) {
-  const [step, setStep] = useState<'main' | 'confirm' | 'cancelled'>('main')
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso))
+}
+
+export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd = false }: BillingModalProps) {
+  const [step, setStep] = useState<'main' | 'confirm' | 'cancelled'>(
+    cancelAtPeriodEnd ? 'cancelled' : 'main'
+  )
 
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = prev }
   }, [])
+
+  const handleCancelConfirm = async () => {
+    await fetch('/api/billing/portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancel' }),
+    })
+    setStep('cancelled')
+  }
+
+  const handleResume = async () => {
+    await fetch('/api/billing/portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resume' }),
+    })
+    setStep('main')
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -47,7 +74,7 @@ export function BillingModal({ onClose }: BillingModalProps) {
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {step === 'cancelled' ? (
-            <CancelledState onResume={() => setStep('main')} />
+            <CancelledState proUntil={proUntil} onResume={handleResume} />
           ) : (
             <>
               {/* ── Current plan ──────────────────────────────────────── */}
@@ -60,6 +87,11 @@ export function BillingModal({ onClose }: BillingModalProps) {
                     <div>
                       <p className="font-bold text-[15px] text-white leading-tight">Pro Plan</p>
                       <p className="text-[13px] text-slate-400">$5 / month</p>
+                      {proUntil && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Active until {formatDate(proUntil)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] font-bold whitespace-nowrap">
@@ -109,7 +141,7 @@ export function BillingModal({ onClose }: BillingModalProps) {
       {step === 'confirm' && (
         <CancelConfirmModal
           onKeep={() => setStep('main')}
-          onConfirm={() => setStep('cancelled')}
+          onConfirm={handleCancelConfirm}
         />
       )}
     </div>
@@ -123,8 +155,16 @@ function CancelConfirmModal({
   onConfirm,
 }: {
   onKeep: () => void
-  onConfirm: () => void
+  onConfirm: () => Promise<void>
 }) {
+  const [loading, setLoading] = useState(false)
+
+  const handleConfirm = async () => {
+    setLoading(true)
+    await onConfirm()
+    setLoading(false)
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onKeep} />
@@ -143,15 +183,17 @@ function CancelConfirmModal({
         <div className="space-y-2.5">
           <button
             onClick={onKeep}
-            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all"
+            disabled={loading}
+            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all disabled:opacity-50"
           >
             Keep Pro
           </button>
           <button
-            onClick={onConfirm}
-            className="w-full py-2.5 rounded-xl border border-[#1E2D45] text-[13px] font-medium text-slate-400 hover:text-red-400 hover:border-red-500/20 hover:bg-red-500/5 transition-all"
+            onClick={handleConfirm}
+            disabled={loading}
+            className="w-full py-2.5 rounded-xl border border-[#1E2D45] text-[13px] font-medium text-slate-400 hover:text-red-400 hover:border-red-500/20 hover:bg-red-500/5 transition-all disabled:opacity-50"
           >
-            Cancel anyway
+            {loading ? 'Cancelling…' : 'Cancel anyway'}
           </button>
         </div>
       </div>
@@ -161,7 +203,21 @@ function CancelConfirmModal({
 
 // ── Cancelled state ───────────────────────────────────────────────────────────
 
-function CancelledState({ onResume }: { onResume: () => void }) {
+function CancelledState({
+  proUntil,
+  onResume,
+}: {
+  proUntil?: string | null
+  onResume: () => Promise<void>
+}) {
+  const [loading, setLoading] = useState(false)
+
+  const handleResume = async () => {
+    setLoading(true)
+    await onResume()
+    setLoading(false)
+  }
+
   return (
     <div className="space-y-4 py-2">
       <div className="bg-[#1A0B0B] border border-red-500/20 rounded-xl p-5">
@@ -172,28 +228,18 @@ function CancelledState({ onResume }: { onResume: () => void }) {
           <div>
             <p className="font-bold text-[14px] text-white mb-1">Cancellation requested</p>
             <p className="text-[12px] text-slate-400 leading-relaxed">
-              You'll keep full Pro access until your current billing period ends.
+              You'll keep full Pro access{proUntil ? ` until ${formatDate(proUntil)}` : ' until your current billing period ends'}.
             </p>
           </div>
         </div>
       </div>
 
-      <p className="text-[12px] text-slate-500 text-center leading-relaxed px-2">
-        To complete the cancellation, email us at{' '}
-        <a
-          href="mailto:support@findalljob.com"
-          className="text-blue-400 hover:underline"
-        >
-          support@findalljob.com
-        </a>
-        {' '}and we'll process it within 24 hours.
-      </p>
-
       <button
-        onClick={onResume}
-        className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all"
+        onClick={handleResume}
+        disabled={loading}
+        className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all disabled:opacity-50"
       >
-        Resume Subscription
+        {loading ? 'Resuming…' : 'Resume Subscription'}
       </button>
     </div>
   )

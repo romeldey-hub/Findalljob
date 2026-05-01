@@ -18,7 +18,7 @@ export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', cla
     <div className={cn('flex items-center', isSmall ? 'gap-2' : 'gap-2.5', className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/logo-icon.png"
+        src="/logo-icon.svg"
         alt="FindAllJob"
         width={px}
         height={px}

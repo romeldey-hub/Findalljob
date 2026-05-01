@@ -26,7 +26,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
       setLoading(true)
 
       // Step 1: Create Razorpay order
-      const orderResponse = await fetch('/api/stripe/checkout', {
+      const orderResponse = await fetch('/api/razorpay/checkout', {
         method: 'POST',
       })
 
@@ -55,7 +55,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
           handler: async (response: any) => {
             try {
               // Step 3: Verify payment
-              const verifyResponse = await fetch('/api/stripe/verify-payment', {
+              const verifyResponse = await fetch('/api/razorpay/verify-payment', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
