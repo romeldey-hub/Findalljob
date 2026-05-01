@@ -71,29 +71,27 @@ export default function RootLayout({
           <Analytics />
           {children}
         </ThemeProvider>
-        <Script id="json-ld" type="application/ld+json" strategy="afterInteractive">{`
-          [
-            {
-              "@context": "https://schema.org",
-              "@type": "WebSite",
-              "name": "Find All Job",
-              "url": "https://findalljob.com"
-            },
-            {
-              "@context": "https://schema.org",
-              "@type": "SoftwareApplication",
-              "name": "Find All Job",
-              "applicationCategory": "BusinessApplication",
-              "operatingSystem": "Web",
-              "offers": {
-                "@type": "Offer",
-                "price": "0",
-                "priceCurrency": "USD"
-              },
-              "description": "AI-powered job matching, resume optimization, and application tracking."
-            }
-          ]
-        `}</Script>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "Find All Job",
+            "url": "https://findalljob.com",
+          }) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Find All Job",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "description": "AI-powered job matching, resume optimization, and application tracking.",
+          }) }}
+        />
       </body>
     </html>
   );
