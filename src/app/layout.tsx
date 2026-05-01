@@ -39,14 +39,14 @@ export default function RootLayout({
     >
       <head>
         <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-70YF6FTQ32"
+          src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
           strategy="afterInteractive"
         />
         <Script id="gtag-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', 'G-70YF6FTQ32');
+          gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}');
         `}</Script>
       </head>
       <body className="min-h-full flex flex-col">
