@@ -262,15 +262,17 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const [showNotifs, setShowNotifs]   = useState(false)
-  const [showHelp, setShowHelp]       = useState(false)
-  const [showUpgrade, setShowUpgrade] = useState(false)
-  const bellRef = useRef<HTMLDivElement>(null)
+  const [showNotifs, setShowNotifs]       = useState(false)
+  const [showHelp, setShowHelp]           = useState(false)
+  const [showUpgrade, setShowUpgrade]     = useState(false)
+  const [showLogoutMenu, setShowLogoutMenu] = useState(false)
+  const bellRef    = useRef<HTMLDivElement>(null)
+  const logoutRef  = useRef<HTMLDivElement>(null)
 
   const { data: notifData } = useSWR('/api/notifications', fetcher, { refreshInterval: 30000 })
   const unreadCount: number = notifData?.unreadCount ?? 0
 
-  // Close popup on outside click
+  // Close notifications popup on outside click
   useEffect(() => {
     if (!showNotifs) return
     function handleClick(e: MouseEvent) {
@@ -281,6 +283,25 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showNotifs])
+
+  // Close logout dropdown on outside click or ESC
+  useEffect(() => {
+    if (!showLogoutMenu) return
+    function handleClick(e: MouseEvent) {
+      if (logoutRef.current && !logoutRef.current.contains(e.target as Node)) {
+        setShowLogoutMenu(false)
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowLogoutMenu(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [showLogoutMenu])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -383,13 +404,27 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
           >
             <HelpCircle className="w-4 h-4" />
           </button>
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors ml-auto"
-            title="Log out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div ref={logoutRef} className="relative ml-auto">
+            <button
+              onClick={() => setShowLogoutMenu(v => !v)}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
+              title="Log out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+
+            {showLogoutMenu && (
+              <div className="absolute right-0 bottom-full mb-1 w-40 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl shadow-lg z-20 overflow-hidden py-1">
+                <button
+                  onClick={() => { setShowLogoutMenu(false); handleLogout() }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors text-left"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <Link href="/settings" className="flex items-center gap-2.5 px-4 py-3 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors">
