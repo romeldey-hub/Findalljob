@@ -51,7 +51,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
           order_id: orderData.orderId,
           name: 'FindAllJob Pro',
           description: 'Pro Plan Subscription',
-          image: '/logo.png',
+          image: '/logo-icon.png',
           handler: async (response: any) => {
             try {
               // Step 3: Verify payment
