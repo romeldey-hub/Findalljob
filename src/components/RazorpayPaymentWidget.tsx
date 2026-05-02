@@ -26,24 +26,15 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
       setLoading(true)
 
       // Step 1: Create Razorpay order
-      const orderResponse = await fetch('/api/razorpay/checkout', {
-        method: 'POST',
-      })
-
+      const orderResponse = await fetch('/api/razorpay/checkout', { method: 'POST' })
       if (!orderResponse.ok) {
         const errData = await orderResponse.json().catch(() => ({}))
         throw new Error(errData?.error ?? 'Failed to create order')
       }
-
       const orderData = await orderResponse.json()
 
-      // Step 2: Load Razorpay script
-      const script = document.createElement('script')
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-      script.async = true
-      document.body.appendChild(script)
-
-      script.onload = () => {
+      // Step 2: Open checkout (load script only if not already present)
+      const openCheckout = () => {
         const options = {
           key: orderData.keyId,
           amount: orderData.amount,
@@ -57,16 +48,13 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
               // Step 3: Verify payment
               const verifyResponse = await fetch('/api/razorpay/verify-payment', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   razorpay_order_id: response.razorpay_order_id,
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_signature: response.razorpay_signature,
                 }),
               })
-
               if (verifyResponse.ok) {
                 toast.success('Payment successful! You now have Pro access.')
                 router.refresh()
@@ -87,13 +75,8 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
               toast.info('Payment cancelled.')
             },
           },
-          prefill: {
-            email: orderData.email,
-            name: orderData.name,
-          },
-          theme: {
-            color: '#3B82F6',
-          },
+          prefill: { email: orderData.email, name: orderData.name },
+          theme: { color: '#3B82F6' },
         }
 
         const rzp1 = new window.Razorpay(options)
@@ -104,10 +87,24 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
         })
         rzp1.open()
       }
+
+      if (window.Razorpay) {
+        // Script already loaded from a previous checkout attempt
+        openCheckout()
+      } else {
+        const script = document.createElement('script')
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+        script.async = true
+        script.onload = openCheckout
+        script.onerror = () => {
+          toast.error('Could not load payment gateway. Check your connection and try again.')
+          setLoading(false)
+        }
+        document.body.appendChild(script)
+      }
     } catch (error) {
       console.error('Payment error:', error)
       toast.error('Failed to initiate payment. Please try again.')
-    } finally {
       setLoading(false)
     }
   }
