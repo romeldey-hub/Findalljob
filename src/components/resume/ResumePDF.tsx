@@ -48,26 +48,27 @@ const s = StyleSheet.create({
   },
 
   // ── Dark background strip ─────────────────────────────────────────────────
-  // `fixed` repeats this purely-visual layer on every page.
-  // No content here — can never overlap text.
+  // Explicit height instead of bottom:0 — react-pdf v4 misinterprets
+  // bottom:0 on a fixed+absolute view and generates a spurious blank page.
+  // 842pt > A4 (841.89pt) so it always covers the full page.
   sidebarBg: {
     position: 'absolute',
     top: 0,
     left: 0,
-    bottom: 0,
+    height: 842,
     width: SIDE_W,
     backgroundColor: C.sidebarBg,
   },
 
   // ── Sidebar content ───────────────────────────────────────────────────────
-  // Absolutely positioned so it is OUTSIDE normal document flow and can
-  // never push content onto extra pages. No `fixed` → renders page 1 only.
-  // No `bottom:0` → height is determined by its content, not the page.
+  // Hard-clamped to A4 height so a large skill list can never overflow the
+  // page and trigger page 2. Not fixed → renders on page 1 only.
   sidebar: {
     position: 'absolute',
     top: 0,
     left: 0,
     width: SIDE_W,
+    height: 842,
     paddingTop: PAD_S,
     paddingBottom: PAD_S,
     paddingLeft: PAD_S,
