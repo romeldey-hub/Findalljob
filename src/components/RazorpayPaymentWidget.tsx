@@ -51,7 +51,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
           order_id: orderData.orderId,
           name: 'FindAllJob Pro',
           description: 'Pro Plan Subscription',
-          image: '/logo-icon.png',
+          image: '/logo-icon.svg',
           handler: async (response: any) => {
             try {
               // Step 3: Verify payment
@@ -69,14 +69,23 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
 
               if (verifyResponse.ok) {
                 toast.success('Payment successful! You now have Pro access.')
-                router.push('/settings?upgraded=true')
+                router.refresh()
+                router.push('/matches')
               } else {
-                throw new Error('Payment verification failed')
+                const errData = await verifyResponse.json().catch(() => ({}))
+                throw new Error(errData?.error ?? 'Payment verification failed')
               }
             } catch (error) {
-              console.error('Payment verification error:', error)
-              toast.error('Payment verification failed. Please contact support.')
+              const msg = error instanceof Error ? error.message : 'Payment verification failed'
+              console.error('Payment verification error:', msg)
+              toast.error(msg)
             }
+          },
+          modal: {
+            ondismiss: () => {
+              setLoading(false)
+              toast.info('Payment cancelled.')
+            },
           },
           prefill: {
             email: orderData.email,
@@ -88,6 +97,11 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
         }
 
         const rzp1 = new window.Razorpay(options)
+        rzp1.on('payment.failed', (response: any) => {
+          console.error('Payment failed:', response.error)
+          toast.error(response.error?.description ?? 'Payment failed. Please try again.')
+          setLoading(false)
+        })
         rzp1.open()
       }
     } catch (error) {
