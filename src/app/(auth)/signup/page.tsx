@@ -90,21 +90,22 @@ export default function SignupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] dark:bg-[#0B1120] p-4">
         <div className="w-full max-w-[400px]">
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm px-8 py-10 text-center space-y-5">
-            <div className="flex justify-center">
-              <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
-                <Mail className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm px-8 py-10 space-y-6">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <LogoMark href="/" size="sm" />
+              <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+                <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
-            </div>
-            <div>
-              <h1 className="text-[22px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-tight">
-                Check your email
-              </h1>
-              <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-2">
-                We sent a confirmation link to{' '}
-                <span className="font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{email}</span>.
-                Click it to activate your account.
-              </p>
+              <div>
+                <h1 className="text-[22px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-tight">
+                  Check your email
+                </h1>
+                <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-2">
+                  We sent a confirmation link to{' '}
+                  <span className="font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{email}</span>.
+                  Click it to activate your account.
+                </p>
+              </div>
             </div>
             <Link
               href="/login"
