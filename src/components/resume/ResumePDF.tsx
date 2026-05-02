@@ -3,20 +3,18 @@
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer'
 import type { ParsedResume } from '@/types'
 
-// ── Colours (match VisualResumeCard) ─────────────────────────────────────────
+// ── Colours ───────────────────────────────────────────────────────────────────
 const C = {
-  // Sidebar
   sidebarBg:     '#0F172A',
   sidebarLine:   '#1E293B',
-  sideLabel:     '#60A5FA',   // blue-400
-  sideText:      '#CBD5E1',   // slate-300
-  sideMuted:     '#94A3B8',   // slate-400
+  sideLabel:     '#60A5FA',
+  sideText:      '#CBD5E1',
+  sideMuted:     '#94A3B8',
   blueChipBg:    '#1D3461',
   blueChipBorder:'#1D4ED8',
   blueChipText:  '#93C5FD',
   subtleChipBg:  '#1A2942',
   subtleChipText:'#D1D5DB',
-  // Content
   white:         '#FFFFFF',
   blue:          '#2563EB',
   bodyTitle:     '#0F172A',
@@ -29,11 +27,11 @@ const C = {
   cardBg:        '#F8FAFC',
 }
 
+// Sidebar width in pt (A4 = 595.28 pt wide)
 const SIDE_W = 190
-const PAD_S  = 22
-const PAD_C  = 26
+const PAD_S  = 22   // sidebar padding
+const PAD_C  = 26   // content padding
 
-// ── Duration helper (mirrors VisualResumeCard) ────────────────────────────────
 function computeDuration(start: string, end: string | null | undefined): string {
   const yr = (s: string) => { const m = s.match(/\b(19|20)\d{2}\b/); return m ? parseInt(m[0]) : 0 }
   const sy = yr(start)
@@ -43,27 +41,55 @@ function computeDuration(start: string, end: string | null | undefined): string 
   return d <= 0 ? '< 1 yr' : `${d} yr${d > 1 ? 's' : ''}`
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   page: {
     fontFamily: 'Helvetica',
     backgroundColor: C.white,
   },
 
-  // ── Sidebar — absolutely positioned so it never affects content flow;
-  //             `fixed` repeats it on every page with a full-height dark strip
-  sidebar: {
+  // ── Dark background strip ─────────────────────────────────────────────────
+  // Absolutely positioned, `fixed` so it repeats on every page as a purely
+  // visual layer. Contains NO content — eliminates any chance of overlap.
+  sidebarBg: {
     position: 'absolute',
     top: 0,
     left: 0,
     bottom: 0,
     width: SIDE_W,
     backgroundColor: C.sidebarBg,
+  },
+
+  // ── Two-column row ────────────────────────────────────────────────────────
+  // Normal document flow — react-pdf breaks this row across pages cleanly.
+  row: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+
+  // ── Sidebar column ────────────────────────────────────────────────────────
+  // Fixed width, in normal flex flow (NOT absolutely positioned, NOT fixed).
+  // Content renders on page 1 only; subsequent pages show an empty column
+  // backed by the sidebarBg strip above.
+  sidebar: {
+    width: SIDE_W,
+    flexShrink: 0,
     paddingTop: PAD_S,
     paddingBottom: PAD_S,
     paddingLeft: PAD_S,
     paddingRight: PAD_S,
   },
+
+  // ── Content column ────────────────────────────────────────────────────────
+  // flex: 1 fills remaining page width. Flows naturally across pages.
+  content: {
+    flex: 1,
+    paddingTop: PAD_C,
+    paddingBottom: PAD_C,
+    paddingLeft: PAD_C,
+    paddingRight: PAD_C,
+  },
+
+  // ── Sidebar internals ─────────────────────────────────────────────────────
   avatarCircle: {
     width: 60,
     height: 60,
@@ -179,14 +205,7 @@ const s = StyleSheet.create({
     lineHeight: 1.4,
   },
 
-  // ── Content — offset by sidebar width so it never overlaps; flows across pages
-  content: {
-    marginLeft: SIDE_W,
-    paddingTop: PAD_C,
-    paddingBottom: PAD_C,
-    paddingLeft: PAD_C,
-    paddingRight: PAD_C,
-  },
+  // ── Content internals ─────────────────────────────────────────────────────
   section: {
     marginBottom: 16,
   },
@@ -328,7 +347,6 @@ const s = StyleSheet.create({
   },
 })
 
-// ── Section header ────────────────────────────────────────────────────────────
 function SectionHeader({ title }: { title: string }) {
   return (
     <View style={s.sectionHeaderRow}>
@@ -339,7 +357,6 @@ function SectionHeader({ title }: { title: string }) {
   )
 }
 
-// ── PDF Document ──────────────────────────────────────────────────────────────
 export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<string, unknown>; avatarUrl?: string | null }) {
   const initials = (data.name ?? '')
     .split(' ').filter(Boolean).slice(0, 2)
@@ -351,123 +368,164 @@ export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<str
     <Document title={`${data.name ?? 'Resume'}`} creator="Find All Job">
       <Page size="A4" style={s.page}>
 
-        {/* ── SIDEBAR ──────────────────────────────────────────────── */}
-        <View style={s.sidebar} fixed>
+        {/*
+          Dark background strip — `fixed` repeats it on every page as a visual
+          layer only. It is position:absolute so it never participates in the
+          flex layout below and can NEVER overlap text content.
+        */}
+        <View fixed style={s.sidebarBg} />
 
-          {/* Avatar */}
-          {avatarUrl
-            ? <Image src={avatarUrl} style={s.avatarImage} />
-            : <View style={s.avatarCircle}><Text style={s.avatarText}>{initials}</Text></View>
-          }
+        {/*
+          Two-column row in normal document flow.
+          react-pdf breaks this across pages cleanly without any overlap.
+        */}
+        <View style={s.row}>
 
-          {/* Name + Title */}
-          <Text style={s.sideName}>{data.name ?? 'Your Name'}</Text>
-          {currentTitle && <Text style={s.sideJobTitle}>{currentTitle}</Text>}
+          {/* ── SIDEBAR COLUMN ─────────────────────────────────────────── */}
+          {/* NOT fixed — content renders once on page 1 only.              */}
+          <View style={s.sidebar}>
 
-          <View style={s.sideDivider} />
+            {/* Avatar */}
+            {avatarUrl
+              ? <Image src={avatarUrl} style={s.avatarImage} />
+              : <View style={s.avatarCircle}><Text style={s.avatarText}>{initials}</Text></View>
+            }
 
-          {/* Contact */}
-          <View style={s.sideSection}>
-            <Text style={s.sideSectionLabel}>Contact</Text>
-            <View style={s.sideSectionRule} />
-            {data.phone    && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.phone}</Text></View>}
-            {data.email    && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.email}</Text></View>}
-            {data.location && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.location}</Text></View>}
-          </View>
+            {/* Name + Title */}
+            <Text style={s.sideName}>{data.name ?? 'Your Name'}</Text>
+            {currentTitle && <Text style={s.sideJobTitle}>{currentTitle}</Text>}
 
-          {/* Key Skills */}
-          {(data.skills?.length ?? 0) > 0 && (
+            <View style={s.sideDivider} />
+
+            {/* Contact */}
             <View style={s.sideSection}>
-              <Text style={s.sideSectionLabel}>Key Skills</Text>
+              <Text style={s.sideSectionLabel}>Contact</Text>
               <View style={s.sideSectionRule} />
-              <View style={s.chipsWrap}>
-                {(data.skills ?? []).map((skill: string, i: number) => (
-                  <Text key={i} style={i < 5 ? s.chipBlue : s.chipSubtle}>{skill}</Text>
+              {data.phone    && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.phone}</Text></View>}
+              {data.email    && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.email}</Text></View>}
+              {data.location && <View style={s.contactRow}><Text style={s.contactBullet}>▸</Text><Text style={s.contactText}>{data.location}</Text></View>}
+            </View>
+
+            {/* Key Skills */}
+            {(data.skills?.length ?? 0) > 0 && (
+              <View style={s.sideSection}>
+                <Text style={s.sideSectionLabel}>Key Skills</Text>
+                <View style={s.sideSectionRule} />
+                <View style={s.chipsWrap}>
+                  {(data.skills ?? []).map((skill: string, i: number) => (
+                    <Text key={i} style={i < 5 ? s.chipBlue : s.chipSubtle}>{skill}</Text>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Certifications */}
+            {(data.certifications?.length ?? 0) > 0 && (
+              <View style={s.sideSection}>
+                <Text style={s.sideSectionLabel}>Certifications</Text>
+                <View style={s.sideSectionRule} />
+                {(data.certifications ?? []).map((cert: string, i: number) => (
+                  <View key={i} style={s.certRow}>
+                    <Text style={s.certArrow}>▸</Text>
+                    <Text style={s.certText}>{cert}</Text>
+                  </View>
                 ))}
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Certifications */}
-          {(data.certifications?.length ?? 0) > 0 && (
-            <View style={s.sideSection}>
-              <Text style={s.sideSectionLabel}>Certifications</Text>
-              <View style={s.sideSectionRule} />
-              {(data.certifications ?? []).map((cert: string, i: number) => (
-                <View key={i} style={s.certRow}>
-                  <Text style={s.certArrow}>▸</Text>
-                  <Text style={s.certText}>{cert}</Text>
+          </View>
+          {/* ── END SIDEBAR ────────────────────────────────────────────── */}
+
+          {/* ── CONTENT COLUMN ─────────────────────────────────────────── */}
+          {/* flex:1 fills remaining width. Flows freely across pages.      */}
+          <View style={s.content}>
+
+            {/* Professional Summary */}
+            {!!data.summary && (
+              <View style={s.section}>
+                {/* Keep header + first line of summary together */}
+                <View wrap={false}>
+                  <SectionHeader title="Professional Summary" />
+                  <Text style={s.summaryText}>{data.summary}</Text>
                 </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* ── CONTENT ──────────────────────────────────────────────── */}
-        <View style={s.content}>
-
-          {/* Professional Summary */}
-          {!!data.summary && (
-            <View style={s.section}>
-              <SectionHeader title="Professional Summary" />
-              <Text style={s.summaryText}>{data.summary}</Text>
-            </View>
-          )}
-
-          {/* Work Experience */}
-          {(data.experience?.length ?? 0) > 0 && (
-            <View style={s.section}>
-              <SectionHeader title="Work Experience" />
-              <View style={s.expList}>
-                {(data.experience ?? []).map((exp, i: number) => {
-                  const duration = computeDuration(exp.start_date, exp.end_date)
-                  return (
-                    <View key={i} style={s.expEntry}>
-                      {/* Keep title + company header together — never orphan the heading */}
-                      <View wrap={false}>
-                        <View style={s.expDot}>
-                          <View style={s.expDotInner} />
-                        </View>
-                        <View style={s.expTitleRow}>
-                          <Text style={s.expTitle}>{exp.title}</Text>
-                          <Text style={s.expDates}>{exp.start_date} – {exp.end_date ?? 'Present'}</Text>
-                        </View>
-                        <View style={s.expMetaRow}>
-                          <Text style={s.expCompany}>{exp.company}</Text>
-                          {duration && <Text style={s.expDuration}>· {duration}</Text>}
-                        </View>
-                      </View>
-                      {/* Bullets flow freely across pages */}
-                      {(exp.bullets ?? []).map((b: string, j: number) => (
-                        <View key={j} style={s.bulletRow} wrap={false}>
-                          <Text style={s.bulletDot}>•</Text>
-                          <Text style={s.bulletText}>{b}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )
-                })}
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Education */}
-          {(data.education?.length ?? 0) > 0 && (
-            <View style={s.section}>
-              <SectionHeader title="Education" />
-              {(data.education ?? []).map((edu, i: number) => (
-                <View key={i} style={s.eduCard} wrap={false}>
-                  <View>
-                    <Text style={s.eduDegree}>
-                      {[edu.degree, edu.field].filter(Boolean).join(' in ')}
-                    </Text>
-                    <Text style={s.eduSchool}>{edu.school}</Text>
-                  </View>
-                  <Text style={s.eduYear}>{edu.graduation_year}</Text>
+            {/* Work Experience */}
+            {(data.experience?.length ?? 0) > 0 && (
+              <View style={s.section}>
+                <View style={s.expList}>
+                  {(data.experience ?? []).map((exp, i: number) => {
+                    const duration = computeDuration(exp.start_date, exp.end_date)
+                    return (
+                      <View key={i} style={s.expEntry}>
+                        {/*
+                          Keep section header (first entry only) + title row
+                          together so the header never orphans at a page bottom.
+                        */}
+                        <View wrap={false}>
+                          {i === 0 && <SectionHeader title="Work Experience" />}
+                          <View style={s.expDot}>
+                            <View style={s.expDotInner} />
+                          </View>
+                          <View style={s.expTitleRow}>
+                            <Text style={s.expTitle}>{exp.title}</Text>
+                            <Text style={s.expDates}>{exp.start_date} – {exp.end_date ?? 'Present'}</Text>
+                          </View>
+                          <View style={s.expMetaRow}>
+                            <Text style={s.expCompany}>{exp.company}</Text>
+                            {duration && <Text style={s.expDuration}>· {duration}</Text>}
+                          </View>
+                        </View>
+                        {/* Bullets flow freely but never break mid-bullet */}
+                        {(exp.bullets ?? []).map((b: string, j: number) => (
+                          <View key={j} style={s.bulletRow} wrap={false}>
+                            <Text style={s.bulletDot}>•</Text>
+                            <Text style={s.bulletText}>{b}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )
+                  })}
                 </View>
-              ))}
-            </View>
-          )}
+              </View>
+            )}
+
+            {/* Education */}
+            {(data.education?.length ?? 0) > 0 && (
+              <View style={s.section}>
+                {/* Keep section header + first card together */}
+                <View wrap={false}>
+                  <SectionHeader title="Education" />
+                  {data.education[0] && (
+                    <View style={s.eduCard}>
+                      <View>
+                        <Text style={s.eduDegree}>
+                          {[data.education[0].degree, data.education[0].field].filter(Boolean).join(' in ')}
+                        </Text>
+                        <Text style={s.eduSchool}>{data.education[0].school}</Text>
+                      </View>
+                      <Text style={s.eduYear}>{data.education[0].graduation_year}</Text>
+                    </View>
+                  )}
+                </View>
+                {/* Remaining education cards — each stays together */}
+                {(data.education ?? []).slice(1).map((edu, i: number) => (
+                  <View key={i + 1} style={s.eduCard} wrap={false}>
+                    <View>
+                      <Text style={s.eduDegree}>
+                        {[edu.degree, edu.field].filter(Boolean).join(' in ')}
+                      </Text>
+                      <Text style={s.eduSchool}>{edu.school}</Text>
+                    </View>
+                    <Text style={s.eduYear}>{edu.graduation_year}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+          </View>
+          {/* ── END CONTENT ────────────────────────────────────────────── */}
 
         </View>
       </Page>
