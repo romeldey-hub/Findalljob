@@ -48,8 +48,8 @@ const s = StyleSheet.create({
   },
 
   // ── Dark background strip ─────────────────────────────────────────────────
-  // Absolutely positioned, `fixed` so it repeats on every page as a purely
-  // visual layer. Contains NO content — eliminates any chance of overlap.
+  // `fixed` repeats this purely-visual layer on every page.
+  // No content here — can never overlap text.
   sidebarBg: {
     position: 'absolute',
     top: 0,
@@ -59,30 +59,26 @@ const s = StyleSheet.create({
     backgroundColor: C.sidebarBg,
   },
 
-  // ── Two-column row ────────────────────────────────────────────────────────
-  // Normal document flow — react-pdf breaks this row across pages cleanly.
-  row: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-
-  // ── Sidebar column ────────────────────────────────────────────────────────
-  // Fixed width, in normal flex flow (NOT absolutely positioned, NOT fixed).
-  // Content renders on page 1 only; subsequent pages show an empty column
-  // backed by the sidebarBg strip above.
+  // ── Sidebar content ───────────────────────────────────────────────────────
+  // Absolutely positioned so it is OUTSIDE normal document flow and can
+  // never push content onto extra pages. No `fixed` → renders page 1 only.
+  // No `bottom:0` → height is determined by its content, not the page.
   sidebar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     width: SIDE_W,
-    flexShrink: 0,
     paddingTop: PAD_S,
     paddingBottom: PAD_S,
     paddingLeft: PAD_S,
     paddingRight: PAD_S,
   },
 
-  // ── Content column ────────────────────────────────────────────────────────
-  // flex: 1 fills remaining page width. Flows naturally across pages.
+  // ── Content ───────────────────────────────────────────────────────────────
+  // marginLeft keeps content clear of the sidebar on every page.
+  // Normal document flow — flows across pages without any flex complications.
   content: {
-    flex: 1,
+    marginLeft: SIDE_W,
     paddingTop: PAD_C,
     paddingBottom: PAD_C,
     paddingLeft: PAD_C,
@@ -368,22 +364,13 @@ export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<str
     <Document title={`${data.name ?? 'Resume'}`} creator="Find All Job">
       <Page size="A4" style={s.page}>
 
-        {/*
-          Dark background strip — `fixed` repeats it on every page as a visual
-          layer only. It is position:absolute so it never participates in the
-          flex layout below and can NEVER overlap text content.
-        */}
+        {/* Dark background strip — fixed, visual only, never overlaps text */}
         <View fixed style={s.sidebarBg} />
 
-        {/*
-          Two-column row in normal document flow.
-          react-pdf breaks this across pages cleanly without any overlap.
-        */}
-        <View style={s.row}>
-
-          {/* ── SIDEBAR COLUMN ─────────────────────────────────────────── */}
-          {/* NOT fixed — content renders once on page 1 only.              */}
-          <View style={s.sidebar}>
+        {/* ── SIDEBAR ──────────────────────────────────────────────────── */}
+        {/* Absolute (out of flow) → cannot create extra pages.            */}
+        {/* No fixed → renders page 1 only.                                */}
+        <View style={s.sidebar}>
 
             {/* Avatar */}
             {avatarUrl
@@ -433,12 +420,12 @@ export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<str
               </View>
             )}
 
-          </View>
-          {/* ── END SIDEBAR ────────────────────────────────────────────── */}
+        </View>
+        {/* ── END SIDEBAR ──────────────────────────────────────────────── */}
 
-          {/* ── CONTENT COLUMN ─────────────────────────────────────────── */}
-          {/* flex:1 fills remaining width. Flows freely across pages.      */}
-          <View style={s.content}>
+        {/* ── CONTENT ──────────────────────────────────────────────────── */}
+        {/* marginLeft keeps it clear of the sidebar. Flows across pages.  */}
+        <View style={s.content}>
 
             {/* Professional Summary */}
             {!!data.summary && (
@@ -524,10 +511,9 @@ export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<str
               </View>
             )}
 
-          </View>
-          {/* ── END CONTENT ────────────────────────────────────────────── */}
-
         </View>
+        {/* ── END CONTENT ──────────────────────────────────────────────── */}
+
       </Page>
     </Document>
   )
