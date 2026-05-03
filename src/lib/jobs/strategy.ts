@@ -17,10 +17,10 @@ const MIN_RESUME_LEN = 100             // skip Claude if resume text is too shor
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
-const SYSTEM = `You are a job-board search expert. Respond ONLY with valid JSON. No markdown, no explanation.`
+const SYSTEM = `You are an AI recruiter, executive career strategist, and job-hunting engine. Respond ONLY with valid JSON. No markdown, no explanation.`
 
 function buildPrompt(resumeText: string): string {
-  return `You are a senior recruiter. Study this resume and generate search queries + target companies that surface the BEST-FITTING job postings for this candidate.
+  return `Act as an AI recruiter, executive career strategist, and job-hunting engine. Study this resume and generate search queries + target companies that surface the BEST-FITTING job postings for this candidate.
 
 CRITICAL RULE — IGNORE THE OFFICIAL JOB TITLE. Focus on what the candidate ACTUALLY DOES:
 - A "Field Application Engineer" who manages enterprise accounts, government tenders, GeM procurement, and OEM partnerships → is an Enterprise Sales / Business Development leader. Search for THOSE roles.

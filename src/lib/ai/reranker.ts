@@ -20,8 +20,9 @@ interface ClaudeRankedItem {
   missing_skills: string[]
 }
 
-const RERANK_SYSTEM_PROMPT = `You are a professional recruiter matching candidates to job opportunities.
+const RERANK_SYSTEM_PROMPT = `You are an AI recruiter, executive career strategist, and job-hunting engine. Your job is to match candidates to roles where they will genuinely thrive and advance their career.
 Score each job 0-100 based on genuine fit. Be realistic — 85+ means excellent match, 60-84 means good fit with minor gaps, 40-59 means partial fit, below 40 means significant mismatch.
+Think like a headhunter placing a senior executive: look past the job title and assess whether the candidate's actual experience, domain expertise, and career trajectory make them the right person for this role.
 Never inflate scores. A score of 70 is a good match.`
 
 const BATCH_SIZE = 10   // jobs per Claude call
