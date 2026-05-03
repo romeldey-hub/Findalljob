@@ -9,7 +9,7 @@ import { isProUser } from '@/lib/admin'
 const APIFY_BASE = 'https://api.apify.com/v2'
 const TOKEN      = process.env.APIFY_API_TOKEN
 
-async function testActor(actorId: string, input: Record<string, unknown>) {
+async function testActor(actorId: string, input: Record<string, unknown>, timeoutMs = 90_000) {
   if (!TOKEN) return { error: 'APIFY_API_TOKEN not set', items: [] }
   const url = `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items`
   try {
@@ -17,7 +17,7 @@ async function testActor(actorId: string, input: Record<string, unknown>) {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(40_000),
+      signal:  AbortSignal.timeout(timeoutMs),
     })
     const status = res.status
     if (!res.ok) {
@@ -47,30 +47,36 @@ export async function GET() {
   const tokenPresent = Boolean(TOKEN)
   const tokenPrefix  = TOKEN ? TOKEN.slice(0, 12) + '...' : 'NOT SET'
 
-  const [indeed, naukri, linkedin, upwork] = await Promise.allSettled([
+  const [indeed, indeedAlt, naukri, linkedin, upwork] = await Promise.allSettled([
+    // Primary Indeed actor (misceres) — tends to default to US; country:'in' should help
     testActor('misceres~indeed-scraper', {
-      position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3,
+      position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3, country: 'in',
+    }),
+    // Alternative Indeed actor (orgupdate) — may have better India support
+    testActor('orgupdate~indeed-jobs-scraper', {
+      keyword: 'Software Engineer', location: 'India', maxItems: 3, country: 'in',
     }),
     testActor('muhammetakkurtt~naukri-job-scraper', {
       keyword: 'Software Engineer', maxJobs: 50, freshness: '30', sortBy: 'date',
     }),
     testActor('curious_coder~linkedin-jobs-scraper', {
       urls:          ['https://www.linkedin.com/jobs/search/?keywords=Software%20Engineer&location=India&f_TPR=r2592000'],
-      count:         3,
+      count:         10,
       scrapeCompany: false,
     }),
     testActor('neatrat~upwork-job-scraper', {
       query: 'Software Engineer', maxItems: 3,
-    }),
+    }, 120_000),   // Upwork is slower — give it 2 minutes
   ])
 
   return NextResponse.json({
     token: { present: tokenPresent, prefix: tokenPrefix },
     actors: {
-      indeed:   indeed.status   === 'fulfilled' ? indeed.value   : { error: indeed.reason },
-      naukri:   naukri.status   === 'fulfilled' ? naukri.value   : { error: naukri.reason },
-      linkedin: linkedin.status === 'fulfilled' ? linkedin.value : { error: linkedin.reason },
-      upwork:   upwork.status   === 'fulfilled' ? upwork.value   : { error: upwork.reason },
+      indeed:    indeed.status    === 'fulfilled' ? indeed.value    : { error: indeed.reason },
+      indeedAlt: indeedAlt.status === 'fulfilled' ? indeedAlt.value : { error: indeedAlt.reason },
+      naukri:    naukri.status    === 'fulfilled' ? naukri.value    : { error: naukri.reason },
+      linkedin:  linkedin.status  === 'fulfilled' ? linkedin.value  : { error: linkedin.reason },
+      upwork:    upwork.status    === 'fulfilled' ? upwork.value    : { error: upwork.reason },
     },
   })
 }

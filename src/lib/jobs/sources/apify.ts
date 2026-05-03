@@ -19,22 +19,26 @@ import type { NormalizedJob, JobSource } from '@/types'
 const APIFY_BASE = 'https://api.apify.com/v2'
 
 interface ApifyConfig {
-  source:  JobSource
-  taskId?: string
-  actorId?: string      // fallback public actor (used when taskId is absent)
+  source:     JobSource
+  taskId?:    string
+  actorId?:   string      // fallback public actor (used when taskId is absent)
+  timeoutMs?: number      // per-platform override; defaults to 45s
   buildInput: (params: JobSearchParams) => Record<string, unknown>
 }
 
 const PLATFORM_CONFIGS: ApifyConfig[] = [
   {
-    source:  'apify_indeed',
-    taskId:  process.env.APIFY_TASK_ID,
-    actorId: 'misceres~indeed-scraper',
+    source:     'apify_indeed',
+    taskId:     process.env.APIFY_TASK_ID,
+    actorId:    'misceres~indeed-scraper',
+    timeoutMs:  90_000,
     buildInput: (p) => ({
       position: p.title,
       location: p.location,
       keyword:  p.title,
       maxItems: p.limit ?? 20,
+      // Pass country so the actor doesn't default to US
+      ...(p.countryCode ? { country: p.countryCode } : {}),
     }),
   },
   {
@@ -73,9 +77,10 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
     }),
   },
   {
-    source:  'apify_upwork',
-    taskId:  process.env.APIFY_UPWORK_TASK_ID,
-    actorId: 'neatrat~upwork-job-scraper',  // public fallback — no task setup needed
+    source:     'apify_upwork',
+    taskId:     process.env.APIFY_UPWORK_TASK_ID,
+    actorId:    'neatrat~upwork-job-scraper',  // public fallback — no task setup needed
+    timeoutMs:  90_000,                         // Upwork actor is slower than others
     buildInput: (p) => ({
       query:    p.title,
       maxItems: p.limit ?? 20,
@@ -99,9 +104,10 @@ export class ApifyAdapter implements JobSourceAdapter {
 
     const settled = await Promise.allSettled(
       activePlatforms.map(async (cfg) => {
+        const timeout = cfg.timeoutMs ?? 45_000
         const items = cfg.taskId
-          ? await this.runTask(cfg.taskId, cfg.buildInput(params))
-          : await this.runActor(cfg.actorId!, cfg.buildInput(params))
+          ? await this.runTask(cfg.taskId, cfg.buildInput(params), timeout)
+          : await this.runActor(cfg.actorId!, cfg.buildInput(params), timeout)
         const normalized = this.normalize(items, cfg.source, params)
         console.log(`[apify:${cfg.source}] normalized ${normalized.length} jobs`)
         return normalized
@@ -120,7 +126,8 @@ export class ApifyAdapter implements JobSourceAdapter {
 
   private async runTask(
     taskId: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    timeoutMs = 45_000
   ): Promise<Record<string, unknown>[]> {
     const url = `${APIFY_BASE}/actor-tasks/${taskId}/run-sync-get-dataset-items`
     console.log(`[apify] POST task=${taskId}`, { keyword: input.keyword ?? input.position ?? input.keywords })
@@ -129,7 +136,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(45_000),
+      signal:  AbortSignal.timeout(timeoutMs),
     })
 
     console.log(`[apify] task ${taskId} → status=${res.status}`)
@@ -145,7 +152,8 @@ export class ApifyAdapter implements JobSourceAdapter {
 
   private async runActor(
     actorId: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    timeoutMs = 45_000
   ): Promise<Record<string, unknown>[]> {
     const url = `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items`
     console.log(`[apify] POST actor=${actorId}`)
@@ -154,7 +162,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(45_000),
+      signal:  AbortSignal.timeout(timeoutMs),
     })
 
     console.log(`[apify] actor ${actorId} → status=${res.status}`)
