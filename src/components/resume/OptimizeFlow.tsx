@@ -33,7 +33,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
 
     // Abort the request if it takes longer than 150 s (3 Claude calls × ~45 s each)
     const controller = new AbortController()
-    const abortTimer = setTimeout(() => controller.abort(), 150_000)
+    const abortTimer = setTimeout(() => controller.abort(), 250_000)
 
     try {
       await new Promise(r => setTimeout(r, 800))
@@ -73,7 +73,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
       const isTimeout = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
       setError(
         isTimeout
-          ? 'Optimization took too long (>2 min). Please click Retry — it usually succeeds on the second attempt.'
+          ? 'Optimization took too long (>4 min). Please click Retry — it usually succeeds on the second attempt.'
           : 'Connection failed. Please check your internet and try again.'
       )
     }

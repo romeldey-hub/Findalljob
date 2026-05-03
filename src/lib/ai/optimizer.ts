@@ -464,7 +464,7 @@ async function optimizeWithValidation(
   originalText: string,
   originalExperienceCount: number,
   originalSkillCount: number,
-  maxRetries = 1
+  maxRetries = 0
 ): Promise<OptimizedResumeData> {
   // STEP 1 & 2: extract structure ONCE before any AI calls
   const structure     = extractStructure(originalText)
