@@ -242,7 +242,7 @@ function OptimizedJobCard({
               <Download className="w-3.5 h-3.5" />Download
             </button>
             {onInterview && (
-              <button onClick={onInterview} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
+              <button onClick={onInterview} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100">
                 <Mic className="w-3.5 h-3.5" />Mock Interview
               </button>
             )}
@@ -251,7 +251,7 @@ function OptimizedJobCard({
                 href={applyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[12px] font-bold transition-all hover:scale-[1.01] shadow-sm"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 text-[12px] font-medium hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.01]"
               >
                 Apply Now <ExternalLink className="w-3.5 h-3.5" />
               </a>

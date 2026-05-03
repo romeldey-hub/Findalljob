@@ -371,31 +371,34 @@ function JobCard({
           </div>
 
           {/* ── Action buttons ───────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-2">
-            {isOptimized ? (
-              <div className="inline-flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-[12px] font-semibold">
-                  <CheckCircle2 className="w-3.5 h-3.5" />Optimized
-                </span>
-                <a href="/optimizer" className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors">
-                  View →
-                </a>
-              </div>
-            ) : (
-              <button
-                onClick={() => onOptimize(job.id)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#2563EB] text-[#2563EB] text-[12px] font-semibold hover:bg-[#EFF6FF] dark:hover:bg-[#1E3A5F] active:bg-blue-100 transition-all hover:scale-[1.02] active:scale-100"
-              >
-                <Wand2 className="w-3.5 h-3.5" />Optimize for this job
-              </button>
-            )}
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-medium text-gray-400 dark:text-slate-500">Increase your chances before applying</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {isOptimized ? (
+                <div className="inline-flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-[12px] font-semibold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />Optimized
+                  </span>
+                  <a href="/optimizer" className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors">
+                    View →
+                  </a>
+                </div>
+              ) : (
+                <button
+                  onClick={() => onOptimize(job.id)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />Optimize Resume
+                </button>
+              )}
 
-            <button
-              onClick={() => onInterview(match)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#7C3AED] text-[#7C3AED] dark:text-violet-400 dark:border-violet-700 text-[12px] font-semibold hover:bg-violet-50 dark:hover:bg-violet-900/20 active:bg-violet-100 transition-all hover:scale-[1.02] active:scale-100"
-            >
-              <Mic className="w-3.5 h-3.5" />Mock Interview
-            </button>
+              <button
+                onClick={() => onInterview(match)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100"
+              >
+                <Mic className="w-3.5 h-3.5" />Mock Interview
+              </button>
+            </div>
           </div>
         </div>
 

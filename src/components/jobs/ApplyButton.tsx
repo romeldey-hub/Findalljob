@@ -220,7 +220,7 @@ export function ApplyButton({ job, onApply }: ApplyButtonProps) {
         <button
           onClick={handleClick}
           disabled={state === 'opening'}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[12px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-60 shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-60"
         >
           {state === 'opening'
             ? <><Loader2 className="w-3 h-3 animate-spin" />Opening…</>
