@@ -65,9 +65,9 @@ export default async function ResumePage() {
             <Loader2 className="w-5 h-5 text-[#2563EB] animate-spin" />
           </div>
           <div>
-            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Parsing your resume with AI…</p>
+            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Analyzing your profile…</p>
             <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">
-              This takes about 2–3 minutes. Refresh the page to see your profile once done.
+              Parsing · Matching jobs · Scoring &nbsp;·&nbsp; This takes 2–3 minutes
             </p>
           </div>
         </div>

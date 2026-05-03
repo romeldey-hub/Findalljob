@@ -1049,7 +1049,7 @@ export default function MatchesPage() {
                 {(analyzing || searchStage === 'fallback') && (
                   <p className="text-[11px] text-blue-400 dark:text-blue-400/80 mt-0.5">
                     {analyzing
-                      ? 'Parsing resume · Fetching jobs · AI scoring · 2–3 mins'
+                      ? 'Parsing · Matching jobs · Scoring · This takes 2–3 minutes'
                       : 'Trying additional job sources · This may take up to 2–3 mins'}
                   </p>
                 )}
