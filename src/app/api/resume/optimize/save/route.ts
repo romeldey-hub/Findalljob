@@ -65,8 +65,9 @@ export async function POST(request: NextRequest) {
     id = inserted.id; createdAt = inserted.created_at
   }
 
-  // Write optimized content back to the active resume so the next analysis uses it
-  if (resume?.id) {
+  // Only write back for general optimization — job-specific tailoring must NOT
+  // overwrite the base resume or the next analysis will match the wrong jobs.
+  if (resume?.id && !normalizedJobId) {
     const parsedUpdate = {
       name:           optimizedData.name,
       email:          optimizedData.email,
