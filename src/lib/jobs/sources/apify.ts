@@ -95,27 +95,24 @@ export class ApifyAdapter implements JobSourceAdapter {
   }
 
   async search(params: JobSearchParams): Promise<NormalizedJob[]> {
-    const results: NormalizedJob[] = []
+    const activePlatforms = PLATFORM_CONFIGS.filter(cfg => cfg.taskId || cfg.actorId)
 
-    for (const cfg of PLATFORM_CONFIGS) {
-      // Skip platforms without a configured task and no fallback actor
-      if (!cfg.taskId && !cfg.actorId) continue
-
-      try {
+    const settled = await Promise.allSettled(
+      activePlatforms.map(async (cfg) => {
         const items = cfg.taskId
           ? await this.runTask(cfg.taskId, cfg.buildInput(params))
           : await this.runActor(cfg.actorId!, cfg.buildInput(params))
-
         const normalized = this.normalize(items, cfg.source, params)
         console.log(`[apify:${cfg.source}] normalized ${normalized.length} jobs`)
-        results.push(...normalized)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        console.error(`[apify:${cfg.source}] failed: ${msg}`)
-        // Continue to next platform on error
-      }
-    }
+        return normalized
+      })
+    )
 
+    const results: NormalizedJob[] = []
+    for (const r of settled) {
+      if (r.status === 'fulfilled') results.push(...r.value)
+      else console.error(`[apify] platform failed:`, r.reason instanceof Error ? r.reason.message : r.reason)
+    }
     return results
   }
 
@@ -132,7 +129,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(50_000),
+      signal:  AbortSignal.timeout(30_000),
     })
 
     console.log(`[apify] task ${taskId} → status=${res.status}`)
@@ -157,7 +154,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(50_000),
+      signal:  AbortSignal.timeout(30_000),
     })
 
     console.log(`[apify] actor ${actorId} → status=${res.status}`)

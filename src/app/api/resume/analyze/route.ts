@@ -166,7 +166,7 @@ export async function POST() {
   }
 
   // 4a. Run up to 4 sanitized AI strategy queries through the main stage
-  for (const query of cleanedQueries.slice(0, 4)) {
+  for (const query of cleanedQueries.slice(0, 3)) {
     if (jobs.length >= 15) break
     console.log('[analyze] strategy query:', query, '| stage:', mainStage)
     try {
