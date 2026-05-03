@@ -28,20 +28,6 @@ interface ApifyConfig {
 
 const PLATFORM_CONFIGS: ApifyConfig[] = [
   {
-    source:     'apify_indeed',
-    taskId:     process.env.APIFY_TASK_ID,
-    actorId:    'misceres~indeed-scraper',
-    timeoutMs:  90_000,
-    buildInput: (p) => ({
-      position: p.title,
-      location: p.location,
-      keyword:  p.title,
-      maxItems: p.limit ?? 20,
-      // Actor requires uppercase country code (e.g. 'IN', not 'in')
-      ...(p.countryCode ? { country: p.countryCode.toUpperCase() } : {}),
-    }),
-  },
-  {
     source:  'apify_linkedin',
     taskId:  process.env.APIFY_LINKEDIN_TASK_ID,
     actorId: 'curious_coder~linkedin-jobs-scraper',  // public fallback — no task setup needed

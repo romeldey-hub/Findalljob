@@ -47,11 +47,7 @@ export async function GET() {
   const tokenPresent = Boolean(TOKEN)
   const tokenPrefix  = TOKEN ? TOKEN.slice(0, 12) + '...' : 'NOT SET'
 
-  const [indeed, naukri, linkedin] = await Promise.allSettled([
-    // misceres actor requires uppercase country code ('IN' not 'in')
-    testActor('misceres~indeed-scraper', {
-      position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3, country: 'IN',
-    }),
+  const [naukri, linkedin] = await Promise.allSettled([
     testActor('muhammetakkurtt~naukri-job-scraper', {
       keyword: 'Software Engineer', maxJobs: 50, freshness: '30', sortBy: 'date',
     }),
@@ -65,7 +61,6 @@ export async function GET() {
   return NextResponse.json({
     token: { present: tokenPresent, prefix: tokenPrefix },
     actors: {
-      indeed:   indeed.status   === 'fulfilled' ? indeed.value   : { error: indeed.reason },
       naukri:   naukri.status   === 'fulfilled' ? naukri.value   : { error: naukri.reason },
       linkedin: linkedin.status === 'fulfilled' ? linkedin.value : { error: linkedin.reason },
     },
