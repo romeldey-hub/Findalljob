@@ -67,7 +67,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
       setStep(3)
       await new Promise(r => setTimeout(r, 600))
 
-      setResult(optData.optimizedData)
+      setResult(optData.optimizedData as OptimizedResumeData)
     } catch (err) {
       clearTimeout(abortTimer)
       const isTimeout = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
