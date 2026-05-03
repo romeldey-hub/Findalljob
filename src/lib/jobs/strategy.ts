@@ -29,6 +29,9 @@ Rules:
 - Queries 1-2: exact job titles (primary role + one seniority/synonym variant)
 - Queries 3-5: domain-compound queries encoding the candidate's industry sector, domain expertise, and key technologies from the resume
 - Query 6: broad fallback title (most general form of their role)
+- NEVER use special characters: no slashes (/), no hyphens between words, no parentheses, no ampersands
+- NEVER copy a verbatim resume title that contains punctuation — translate it to a clean searchable form
+- No abbreviations/acronyms (e.g. FAE → "Field Applications Engineer", BD → "Business Development")
 - No location, no soft skills, no generic terms like "professional" or "expert"
 
 Resume (first 2500 chars):

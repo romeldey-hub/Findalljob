@@ -130,15 +130,25 @@ export async function POST() {
     strategy = { search_queries: [recentTitle || parsedResume.skills?.[0] || 'software engineer'] }
   }
 
-  const primaryQuery = strategy.search_queries[0]
+  // Sanitize queries for job board compatibility — remove special chars that break search
+  function sanitizeQuery(q: string): string {
+    return q.replace(/[/\\|&"'()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
+  }
+
+  const cleanedQueries = strategy.search_queries
+    .map(sanitizeQuery)
+    .filter((q) => q.length > 2)
+
+  const primaryQuery = cleanedQueries[0] ?? (parsedResume.experience?.[0]?.title?.trim().replace(/[/\\|&"'()]/g, ' ').trim() || 'software engineer')
 
   // India profiles: Apify (Naukri/LinkedIn) has far better coverage for senior India roles
   // than Adzuna/JSearch — flip the priority so Apify runs first.
   const isIndiaProfile = /india|new delhi|delhi ncr|ncr|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram/i
     .test(profileLocation)
-  const mainStage     = isIndiaProfile ? 'fallback' : 'primary'
-  const reserveStage  = isIndiaProfile ? 'primary'  : 'fallback'
+  const mainStage    = isIndiaProfile ? 'fallback' : 'primary'
+  const reserveStage = isIndiaProfile ? 'primary'  : 'fallback'
   console.log('[analyze] profile location:', profileLocation, '| India profile:', isIndiaProfile, '| main stage:', mainStage)
+  console.log('[analyze] cleaned queries:', cleanedQueries)
 
   // ── 4. Fetch jobs via multi-source router ────────────────────────────────────
   const router = new JobSourceRouter()
@@ -155,8 +165,8 @@ export async function POST() {
     }
   }
 
-  // 4a. Run up to 4 AI strategy queries through the main stage (stop early when ≥ 15 jobs)
-  for (const query of strategy.search_queries.slice(0, 4)) {
+  // 4a. Run up to 4 sanitized AI strategy queries through the main stage
+  for (const query of cleanedQueries.slice(0, 4)) {
     if (jobs.length >= 15) break
     console.log('[analyze] strategy query:', query, '| stage:', mainStage)
     try {
@@ -168,27 +178,42 @@ export async function POST() {
     }
   }
 
-  // 4b. Drop location constraint if still too few (catches country-only locations)
+  // 4b. Drop location if still too few — try top 2 queries without location constraint
   if (jobs.length < 5) {
     console.log('[analyze] trying without location restriction')
-    try {
-      const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, mainStage)
-      addUnique(r.jobs)
-      console.log('[analyze] no-location search, total now', jobs.length, 'jobs')
-    } catch (err) {
-      console.error('[analyze] no-location search error:', apiErrMsg(err))
+    for (const query of cleanedQueries.slice(0, 2)) {
+      if (jobs.length >= 5) break
+      try {
+        const r = await router.search({ title: query, location: '', limit: 25 }, mainStage)
+        addUnique(r.jobs)
+        console.log('[analyze] no-location "' + query + '", total now', jobs.length, 'jobs')
+      } catch (err) {
+        console.error('[analyze] no-location error:', apiErrMsg(err))
+      }
     }
   }
 
-  // 4c. Switch to reserve sources if still insufficient
+  // 4c. Switch to reserve sources — try top 2 queries + no-location fallback
   if (jobs.length < 5) {
     console.log('[analyze] switching to reserve stage:', reserveStage)
-    try {
-      const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, reserveStage)
-      addUnique(r.jobs)
-      console.log('[analyze] reserve stage, total now', jobs.length, 'jobs')
-    } catch (err) {
-      console.error('[analyze] reserve stage error:', apiErrMsg(err))
+    for (const query of cleanedQueries.slice(0, 2)) {
+      if (jobs.length >= 5) break
+      try {
+        const r = await router.search({ title: query, location: profileLocation, limit: 25 }, reserveStage)
+        addUnique(r.jobs)
+        console.log('[analyze] reserve "' + query + '", total now', jobs.length, 'jobs')
+      } catch (err) {
+        console.error('[analyze] reserve error:', apiErrMsg(err))
+      }
+    }
+    if (jobs.length < 5) {
+      try {
+        const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, reserveStage)
+        addUnique(r.jobs)
+        console.log('[analyze] reserve no-location, total now', jobs.length, 'jobs')
+      } catch (err) {
+        console.error('[analyze] reserve no-location error:', apiErrMsg(err))
+      }
     }
   }
 
