@@ -38,13 +38,19 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
     }),
   },
   {
-    source: 'apify_linkedin',
-    taskId: process.env.APIFY_LINKEDIN_TASK_ID,
-    buildInput: (p) => ({
-      keywords:  p.title,
-      location:  p.location,
-      maxItems:  p.limit ?? 20,
-    }),
+    source:  'apify_linkedin',
+    taskId:  process.env.APIFY_LINKEDIN_TASK_ID,
+    actorId: 'curious_coder~linkedin-jobs-scraper',  // public fallback — no task setup needed
+    // Actor requires pre-built LinkedIn search URLs, not separate keyword/location fields
+    buildInput: (p) => {
+      const kw  = encodeURIComponent(p.title)
+      const loc = encodeURIComponent(p.location || 'India')
+      return {
+        urls:          [`https://www.linkedin.com/jobs/search/?keywords=${kw}&location=${loc}&f_TPR=r2592000`],
+        count:         25,
+        scrapeCompany: false,   // skip company detail pages — faster, stays within 50 s timeout
+      }
+    },
   },
   {
     source:  'apify_naukri',
@@ -164,7 +170,7 @@ export class ApifyAdapter implements JobSourceAdapter {
     return items
       .map((job, i): NormalizedJob => {
         // Listing page (for viewing the job detail)
-        // jdURL = Naukri job detail URL
+        // jdURL = Naukri; jobUrl = LinkedIn
         const listingUrl = String(
           job.url ?? job.link ?? job.jobUrl ?? job.jdURL ?? ''
         ).trim()
@@ -180,17 +186,17 @@ export class ApifyAdapter implements JobSourceAdapter {
         ).trim()
 
         return {
-          // jobId = Naukri's field; jobkey/job_id/id for other sources
+          // jobId = Naukri; id = LinkedIn/generic; jobkey/job_id = Indeed/JSearch
           externalId: String(
             job.jobkey ?? job.job_id ?? job.jobId ?? job.id ?? `${source}-${Date.now()}-${i}`
           ),
           source,
-          // jobTitle = Naukri field; positionName = Indeed; title = generic
+          // jobTitle = Naukri/LinkedIn; positionName = Indeed; title = generic
           title:       String(job.positionName ?? job.jobTitle ?? job.title ?? job.job_title ?? '').trim(),
-          // companyName = Naukri field; company/employer_name = other sources
+          // companyName = Naukri/LinkedIn; company/employer_name = other sources
           company:     String(job.company ?? job.companyName ?? job.employer_name ?? 'Unknown').trim(),
           location:    String(job.location ?? job.job_city ?? job.job_location ?? params.location).trim(),
-          // jobDescription = Naukri field; description/snippet = other sources
+          // jobDescription = Naukri; description/snippet = generic
           description: String(job.description ?? job.jobDescription ?? job.snippet ?? job.job_description ?? '').trim(),
           // Prefer listing URL for url; use direct ATS link for applyUrl
           url:      listingUrl || directApplyUrl,
