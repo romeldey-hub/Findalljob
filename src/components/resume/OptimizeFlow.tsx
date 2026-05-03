@@ -44,9 +44,16 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const optData = await optRes.json()
+
+      let optData: Record<string, unknown> = {}
+      try { optData = await optRes.json() } catch {
+        // Non-JSON body (e.g. Vercel 504 timeout HTML) — treat as timeout
+        setError('Optimization timed out. Please try again — it usually completes within 90 seconds.')
+        return
+      }
+
       if (!optRes.ok) {
-        setError(optData.error ?? 'Optimization failed. Please try again.')
+        setError(optData.error as string ?? 'Optimization failed. Please try again.')
         return
       }
 
