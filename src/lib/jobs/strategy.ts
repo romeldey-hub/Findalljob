@@ -11,7 +11,7 @@ export interface SearchStrategy {
 // ── In-memory TTL cache (per serverless instance) ─────────────────────────────
 
 const _cache = new Map<string, { strategy: SearchStrategy; expires: number }>()
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000   // 6 hours
+const CACHE_TTL_MS = 30 * 60 * 1000   // 30 min — short enough that re-analyze always gets fresh queries
 const MIN_RESUME_LEN = 100                 // skip Claude if resume text is too short
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
@@ -19,27 +19,29 @@ const MIN_RESUME_LEN = 100                 // skip Claude if resume text is too 
 const SYSTEM = `You are a job-board search expert. Respond ONLY with valid JSON. No markdown, no explanation.`
 
 function buildPrompt(resumeText: string): string {
-  return `Analyze this resume and generate 6 targeted job search queries for Naukri, LinkedIn, and Indeed.
+  return `You are a senior recruiter. Study this resume and generate 6 Naukri/LinkedIn search queries that surface the BEST-FITTING job postings for this candidate.
 
-Generate a MIX of two types:
-(A) Exact job titles employers post — 2-4 words, e.g. "Business Development Director", "Sales Head"
-(B) Domain-compound queries — role + industry/expertise area, e.g. "government procurement sales", "semiconductor OEM enterprise", "GeM marketplace director"
+CRITICAL RULE — IGNORE THE OFFICIAL JOB TITLE. Focus on what the candidate ACTUALLY DOES:
+- A "Field Application Engineer" who manages enterprise accounts, government tenders, GeM procurement, and OEM partnerships → is an Enterprise Sales / Business Development leader. Search for THOSE roles.
+- A "Software Engineer" who leads ML pipelines and sprint planning → is a ML Engineer / Tech Lead. Search for THOSE roles.
+- The right query finds the job they QUALIFY FOR, not the title on their current business card.
 
-Rules:
-- Queries 1-2: exact job titles (primary role + one seniority/synonym variant)
-- Queries 3-5: domain-compound queries encoding the candidate's industry sector, domain expertise, and key technologies from the resume
-- Query 6: broad fallback title (most general form of their role)
-- NEVER use special characters: no slashes (/), no hyphens between words, no parentheses, no ampersands
-- NEVER copy a verbatim resume title that contains punctuation — translate it to a clean searchable form
-- No abbreviations/acronyms (e.g. FAE → "Field Applications Engineer", BD → "Business Development")
-- No location, no soft skills, no generic terms like "professional" or "expert"
+Generate:
+- Queries 1-2: DESTINATION job titles — senior role titles this candidate should be applying for next, based on their actual responsibilities and seniority (NOT their current official title)
+- Queries 3-5: DOMAIN-COMPOUND queries — key expertise area + industry + function, e.g. "enterprise sales IT hardware India", "government business development semiconductor", "GeM procurement technology manager"
+- Query 6: BROAD fallback — most general form of their highest-value transferable role
+
+Hard rules:
+- No special characters: no / \\ | & () punctuation
+- Spell out abbreviations: FAE → Field Application Engineer, BD → Business Development, GeM → Government eMarketplace
+- 2-5 words per query, no location, no soft skills, no generic words like "professional" or "expert"
 
 Resume (first 2500 chars):
 ${resumeText.slice(0, 2500)}
 
 Return ONLY this JSON:
 {
-  "search_queries": ["Title 1", "Title 2", "Domain compound 3", "Domain compound 4", "Domain compound 5", "Broad fallback 6"]
+  "search_queries": ["Destination Title 1", "Destination Title 2", "Domain compound 3", "Domain compound 4", "Domain compound 5", "Broad fallback 6"]
 }`
 }
 

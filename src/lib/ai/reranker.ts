@@ -25,14 +25,14 @@ Score each job 0-100 based on genuine fit. Be realistic — 85+ means excellent 
 Never inflate scores. A score of 70 is a good match.`
 
 const BATCH_SIZE = 10   // jobs per Claude call
-const MAX_TOKENS = 5000 // per batch call — increased for richer per-job reasoning
+const MAX_TOKENS = 6000 // per batch call — increased for larger job descriptions
 
 function buildPrompt(candidateSummary: string, batch: NormalizedJob[], offset: number): string {
   const jobsList = batch
     .map(
       (j, i) =>
         `[${offset + i}] ${j.title} at ${j.company} (${j.location})
-Description: ${(j.description ?? '').slice(0, 600)}`
+Description: ${(j.description ?? '').slice(0, 1200)}`
     )
     .join('\n\n')
 
