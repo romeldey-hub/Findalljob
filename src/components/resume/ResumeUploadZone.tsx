@@ -45,6 +45,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
     const formData = new FormData()
     formData.append('file', file)
 
+    // ── Step 1: Upload (fatal — bail out if this fails) ────────────────────
     try {
       const uploadRes  = await fetch('/api/resume/upload', { method: 'POST', body: formData })
       const uploadData = await uploadRes.json()
@@ -59,28 +60,35 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
         toast.warning('Could not extract text — file may be image-based. Please paste your resume text.')
         return
       }
-
-      setUploadState('analyzing')
-      toast.info('Analyzing your profile and matching jobs…')
-
-      const analyzeRes  = await fetch('/api/resume/analyze', { method: 'POST' })
-      const analyzeData = await analyzeRes.json()
-
-      if (!analyzeRes.ok) {
-        toast.error(analyzeData.error ?? 'Analysis failed. Partial results may be available on the Matches page.')
-        setUploadState('success')
-        setTimeout(() => router.push('/matches'), 2000)
-        return
-      }
-
-      setUploadState('success')
-      track.resumeUpload()
-      toast.success(`Found ${analyzeData.matchCount} job matches! Redirecting…`)
-      setTimeout(() => router.push('/matches'), 1500)
     } catch {
-      toast.error('Something went wrong. Please try again.')
+      toast.error('Upload failed. Please check your connection and try again.')
       setUploadState('idle')
+      return
     }
+
+    // ── Step 2: Analyze (non-fatal — always redirect to Matched Jobs) ───────
+    setUploadState('analyzing')
+    toast.info('Analyzing your profile and matching jobs…')
+
+    try {
+      const analyzeRes = await fetch('/api/resume/analyze', { method: 'POST' })
+      let analyzeData: Record<string, unknown> = {}
+      try { analyzeData = await analyzeRes.json() } catch { /* non-JSON response (e.g. 504 timeout page) */ }
+
+      if (analyzeRes.ok) {
+        track.resumeUpload()
+        toast.success(`Found ${analyzeData.matchCount ?? 0} job matches! Redirecting…`)
+      } else {
+        toast.warning(
+          (analyzeData.error as string) ?? 'Analysis took too long. Your resume is saved — search for jobs on the Matches page.'
+        )
+      }
+    } catch {
+      toast.warning('Job analysis timed out. Your resume is saved — you can search for jobs on the Matches page.')
+    }
+
+    setUploadState('success')
+    setTimeout(() => router.push('/matches'), 2000)
   }, [router])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

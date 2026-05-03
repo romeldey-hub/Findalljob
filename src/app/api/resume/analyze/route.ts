@@ -7,7 +7,7 @@ import { JobSourceRouter } from '@/lib/jobs/router'
 import { createNotification } from '@/lib/notifications'
 import type { ParsedResume, NormalizedJob } from '@/types'
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 function apiErrMsg(err: unknown): string {
   if (err instanceof Error) return err.message
