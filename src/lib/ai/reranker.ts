@@ -61,27 +61,34 @@ Return all ${batch.length} jobs. Use the exact integer shown in [brackets] as "i
 
 export async function rerankJobs(
   resume: ParsedResume,
-  jobs: NormalizedJob[]
+  jobs: NormalizedJob[],
+  rawText?: string   // full resume text — gives Claude the same context as reading the original
 ): Promise<RankedJob[]> {
   const skills     = Array.isArray(resume.skills)     ? resume.skills     : []
   const experience = Array.isArray(resume.experience) ? resume.experience : []
   const education  = Array.isArray(resume.education)  ? resume.education  : []
 
-  const expLines = experience.slice(0, 5).map((e) => {
-    const bullets = (e.bullets ?? []).slice(0, 2).join('; ')
-    return `• ${e.title ?? ''} at ${e.company ?? ''} (${e.start_date ?? ''}–${e.end_date ?? 'Present'})${bullets ? ': ' + bullets : ''}`
-  }).join('\n')
+  let candidateSummary: string
 
-  const eduLine = education.slice(0, 2).map((e) =>
-    `${e.degree ?? ''} ${e.field ?? ''} – ${e.school ?? ''} (${e.graduation_year ?? ''})`
-  ).join(', ')
-
-  const candidateSummary = `Name: ${resume.name ?? 'Unknown'}
+  if (rawText && rawText.trim().length > 200) {
+    // Full resume text preserves domain-specific terminology, government body names,
+    // relationship capital, and achievements that get compressed out of structured summaries.
+    candidateSummary = `FULL RESUME:\n${rawText.slice(0, 2500)}`
+  } else {
+    const expLines = experience.slice(0, 5).map((e) => {
+      const bullets = (e.bullets ?? []).slice(0, 2).join('; ')
+      return `• ${e.title ?? ''} at ${e.company ?? ''} (${e.start_date ?? ''}–${e.end_date ?? 'Present'})${bullets ? ': ' + bullets : ''}`
+    }).join('\n')
+    const eduLine = education.slice(0, 2).map((e) =>
+      `${e.degree ?? ''} ${e.field ?? ''} – ${e.school ?? ''} (${e.graduation_year ?? ''})`
+    ).join(', ')
+    candidateSummary = `Name: ${resume.name ?? 'Unknown'}
 Profile: ${(resume.summary ?? '').slice(0, 500) || 'Not provided'}
 Key Skills: ${skills.slice(0, 30).join(', ') || 'Not specified'}
 Experience:
 ${expLines || 'Not specified'}
 Education: ${eduLine || 'Not specified'}`
+  }
 
   const batches: NormalizedJob[][] = []
   for (let i = 0; i < jobs.length; i += BATCH_SIZE) {

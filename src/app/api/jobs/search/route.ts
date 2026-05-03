@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   // ── 2. Get active resume ────────────────────────────────────────────────────
   const { data: resume } = await supabase
     .from('resumes')
-    .select('id, parsed_data')
+    .select('id, parsed_data, raw_text')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
 
   let ranked
   try {
-    ranked = await rerankJobs(safeParsed, jobs)
+    ranked = await rerankJobs(safeParsed, jobs, resume?.raw_text ?? undefined)
     console.log(`[search] rerank produced ${ranked.length} results`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

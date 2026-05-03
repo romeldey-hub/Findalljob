@@ -169,8 +169,8 @@ export async function POST() {
   }
 
   // 4a. Run up to 4 sanitized AI strategy queries through the main stage
-  for (const query of cleanedQueries.slice(0, 3)) {
-    if (jobs.length >= 15) break
+  for (const query of cleanedQueries.slice(0, 4)) {
+    if (jobs.length >= 25) break
     console.log('[analyze] strategy query:', query, '| stage:', mainStage)
     try {
       const r = await router.search({ title: query, location: profileLocation, countryCode, limit: 25 }, mainStage)
@@ -267,7 +267,7 @@ export async function POST() {
   console.log('[analyze] starting Claude rerank for', jobs.length, 'jobs…')
   let ranked
   try {
-    ranked = await rerankJobs(parsedResume, jobs)
+    ranked = await rerankJobs(parsedResume, jobs, resume.raw_text ?? undefined)
     console.log('[analyze] rerank complete, top score:', ranked[0]?.score)
   } catch (err) {
     const msg = apiErrMsg(err)

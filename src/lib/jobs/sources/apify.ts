@@ -129,7 +129,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(30_000),
+      signal:  AbortSignal.timeout(45_000),
     })
 
     console.log(`[apify] task ${taskId} → status=${res.status}`)
@@ -154,7 +154,7 @@ export class ApifyAdapter implements JobSourceAdapter {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
       body:    JSON.stringify(input),
-      signal:  AbortSignal.timeout(30_000),
+      signal:  AbortSignal.timeout(45_000),
     })
 
     console.log(`[apify] actor ${actorId} → status=${res.status}`)
