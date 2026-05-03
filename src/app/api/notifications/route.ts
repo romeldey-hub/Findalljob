@@ -13,7 +13,12 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // Table not yet created (migration pending) — return empty rather than crash
+    const missing = error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')
+    if (missing) return NextResponse.json({ notifications: [], unreadCount: 0 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
   const unreadCount = (data ?? []).filter(n => !n.is_read).length
   return NextResponse.json({ notifications: data ?? [], unreadCount })
@@ -33,7 +38,7 @@ export async function PATCH(request: NextRequest) {
       .update({ is_read: true })
       .eq('user_id', user.id)
       .eq('is_read', false)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error && error.code !== '42P01') return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
   }
 
