@@ -5,6 +5,7 @@ export interface RankedJob {
   externalId: string
   score: number
   reasoning: string
+  bridge_advice: string
   matched_skills: string[]
   missing_skills: string[]
 }
@@ -14,6 +15,7 @@ interface ClaudeRankedItem {
   index: number
   score: number
   reasoning: string
+  bridge_advice: string
   matched_skills: string[]
   missing_skills: string[]
 }
@@ -23,18 +25,18 @@ Score each job 0-100 based on genuine fit. Be realistic — 85+ means excellent 
 Never inflate scores. A score of 70 is a good match.`
 
 const BATCH_SIZE = 10   // jobs per Claude call
-const MAX_TOKENS = 4096 // per batch call
+const MAX_TOKENS = 5000 // per batch call — increased for richer per-job reasoning
 
 function buildPrompt(candidateSummary: string, batch: NormalizedJob[], offset: number): string {
   const jobsList = batch
     .map(
       (j, i) =>
         `[${offset + i}] ${j.title} at ${j.company} (${j.location})
-Description: ${(j.description ?? '').slice(0, 400)}`
+Description: ${(j.description ?? '').slice(0, 600)}`
     )
     .join('\n\n')
 
-  return `Match this candidate to each job below. For each job return its index number, a score, one-sentence reasoning, and skill lists.
+  return `Match this candidate to each job below. For each job return index, score, 2-3 sentence reasoning with specific evidence, a bridge tip, and skill lists.
 
 CANDIDATE:
 ${candidateSummary}
@@ -47,13 +49,14 @@ Return a JSON array — one entry per job, sorted by score descending:
   {
     "index": ${offset},
     "score": 75,
-    "reasoning": "One sentence explaining fit or gaps.",
+    "reasoning": "2-3 sentences citing specific evidence from the candidate's background that explains fit or gaps.",
+    "bridge_advice": "One actionable sentence on how to reframe or address the main skill gap for this specific role.",
     "matched_skills": ["skill1", "skill2"],
     "missing_skills": ["skill3"]
   }
 ]
 
-Return all ${batch.length} jobs. Use the exact integer shown in the [brackets] as "index". Do not include the job title or ID — only the integer index.`
+Return all ${batch.length} jobs. Use the exact integer shown in [brackets] as "index".`
 }
 
 export async function rerankJobs(
@@ -62,11 +65,23 @@ export async function rerankJobs(
 ): Promise<RankedJob[]> {
   const skills     = Array.isArray(resume.skills)     ? resume.skills     : []
   const experience = Array.isArray(resume.experience) ? resume.experience : []
+  const education  = Array.isArray(resume.education)  ? resume.education  : []
+
+  const expLines = experience.slice(0, 5).map((e) => {
+    const bullets = (e.bullets ?? []).slice(0, 2).join('; ')
+    return `• ${e.title ?? ''} at ${e.company ?? ''} (${e.start_date ?? ''}–${e.end_date ?? 'Present'})${bullets ? ': ' + bullets : ''}`
+  }).join('\n')
+
+  const eduLine = education.slice(0, 2).map((e) =>
+    `${e.degree ?? ''} ${e.field ?? ''} – ${e.school ?? ''} (${e.graduation_year ?? ''})`
+  ).join(', ')
 
   const candidateSummary = `Name: ${resume.name ?? 'Unknown'}
-Skills: ${skills.slice(0, 20).join(', ') || 'Not specified'}
-Recent Experience: ${experience.slice(0, 3).map((e) => `${e.title ?? ''} at ${e.company ?? ''}`).join('; ') || 'Not specified'}
-Summary: ${(resume.summary ?? '').slice(0, 300) || 'Not provided'}`
+Profile: ${(resume.summary ?? '').slice(0, 500) || 'Not provided'}
+Key Skills: ${skills.slice(0, 30).join(', ') || 'Not specified'}
+Experience:
+${expLines || 'Not specified'}
+Education: ${eduLine || 'Not specified'}`
 
   const batches: NormalizedJob[][] = []
   for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
@@ -90,6 +105,7 @@ Summary: ${(resume.summary ?? '').slice(0, 300) || 'Not provided'}`
             externalId:     jobs[r.index].externalId,   // safe — index comes from AI, mapped here
             score:          Math.min(100, Math.max(0, Number(r.score) || 0)),
             reasoning:      r.reasoning ?? '',
+            bridge_advice:  r.bridge_advice ?? '',
             matched_skills: Array.isArray(r.matched_skills) ? r.matched_skills : [],
             missing_skills: Array.isArray(r.missing_skills) ? r.missing_skills : [],
           }))

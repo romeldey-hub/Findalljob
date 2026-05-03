@@ -28,6 +28,7 @@ interface MatchRecord {
   id: string
   ai_score: number
   ai_reasoning: string
+  bridge_advice?: string
   matched_skills: string[]
   missing_skills: string[]
   job: {
@@ -370,6 +371,14 @@ function JobCard({
             )}
           </div>
 
+          {/* ── Bridge advice ────────────────────────────────────── */}
+          {match.bridge_advice && (
+            <div className="flex items-start gap-1.5 mt-2 mb-1 px-2.5 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30">
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-500 shrink-0 mt-px">Tip:</span>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed">{match.bridge_advice}</p>
+            </div>
+          )}
+
           {/* ── Action buttons ───────────────────────────────────── */}
           <div className="space-y-1.5">
             <p className="text-[11px] font-medium text-gray-400 dark:text-slate-500">Increase your chances before applying</p>
@@ -646,6 +655,7 @@ export default function MatchesPage() {
   const [sortOrder, setSortOrder]     = useState<'desc' | 'asc'>('desc')
   const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
   const [optimizeJobId, setOptimizeJobId]   = useState<string | null>(null)
+  const [tierFilter, setTierFilter]         = useState<'all' | 'high' | 'medium' | 'stretch'>('all')
 
   // mode determines which list is rendered — never both simultaneously
   const [mode, setMode]                 = useState<'ai' | 'manual'>('ai')
@@ -708,6 +718,17 @@ export default function MatchesPage() {
   const sortedJobs                    = filteredJobs.slice().sort((a, b) =>
     sortOrder === 'desc' ? b.ai_score - a.ai_score : a.ai_score - b.ai_score
   )
+  const tieredJobs = tierFilter === 'all' ? sortedJobs : sortedJobs.filter((m) => {
+    if (tierFilter === 'high')    return m.ai_score >= 80
+    if (tierFilter === 'medium')  return m.ai_score >= 60 && m.ai_score < 80
+    if (tierFilter === 'stretch') return m.ai_score < 60
+    return true
+  })
+  const tierCounts = {
+    high:    sortedJobs.filter((m) => m.ai_score >= 80).length,
+    medium:  sortedJobs.filter((m) => m.ai_score >= 60 && m.ai_score < 80).length,
+    stretch: sortedJobs.filter((m) => m.ai_score < 60).length,
+  }
   const isLoading                     = analyzing || searching
 
   // Auto-trigger on first load when user has a resume but no AI matches yet
@@ -729,6 +750,7 @@ export default function MatchesPage() {
     setSuggestions([])
     setAnalyzing(true)
     setAnalyzeError('')
+    setTierFilter('all')
     try {
       const res = await fetch('/api/resume/analyze', { method: 'POST' })
       const result = await res.json()
@@ -962,11 +984,39 @@ export default function MatchesPage() {
                 </>}
           </p>
 
+          {/* Tier tabs — visible when there are jobs to show */}
+          {sortedJobs.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {([
+                { id: 'all',     label: 'All',              count: sortedJobs.length,   dot: '' },
+                { id: 'high',    label: 'High-probability', count: tierCounts.high,     dot: 'bg-green-500' },
+                { id: 'medium',  label: 'Medium',           count: tierCounts.medium,   dot: 'bg-blue-500' },
+                { id: 'stretch', label: 'Stretch',          count: tierCounts.stretch,  dot: 'bg-amber-500' },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setTierFilter(tab.id)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold border transition-all ${
+                    tierFilter === tab.id
+                      ? 'bg-[#0F172A] dark:bg-[#2563EB] text-white border-transparent'
+                      : 'bg-white dark:bg-[#1E293B] text-gray-500 dark:text-slate-400 border-[#E5E7EB] dark:border-[#334155] hover:border-gray-300 dark:hover:border-slate-500'
+                  }`}
+                >
+                  {tab.dot && <span className={`w-1.5 h-1.5 rounded-full ${tab.dot} flex-shrink-0`} />}
+                  {tab.label}
+                  <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${
+                    tierFilter === tab.id ? 'bg-white/20' : 'bg-[#F1F5F9] dark:bg-[#263549] text-gray-400 dark:text-slate-500'
+                  }`}>{tab.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Count bar — stays visible while loading */}
           {sortedJobs.length > 0 && (
             <div className="flex items-center gap-2 text-[13px] text-gray-500 dark:text-slate-500">
               <Clock className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
-              <span className="font-bold text-[#0F172A] dark:text-[#F1F5F9]">{sortedJobs.length} matches</span>
+              <span className="font-bold text-[#0F172A] dark:text-[#F1F5F9]">{tieredJobs.length} matches</span>
               <span className="text-gray-200 dark:text-slate-700">·</span>
               <button
                 onClick={() => setSortOrder((p) => p === 'desc' ? 'asc' : 'desc')}
@@ -1047,19 +1097,26 @@ export default function MatchesPage() {
           )}
 
           {/* Empty — jobs exist but all filtered out */}
-          {!isLoading && jobsToDisplay.length > 0 && sortedJobs.length === 0 && (
+          {!isLoading && jobsToDisplay.length > 0 && tieredJobs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-10 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
               <SlidersHorizontal className="w-5 h-5 text-gray-300 dark:text-slate-600 mb-2" />
               <p className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9]">No jobs match the current filters</p>
-              <button onClick={() => setFilters(DEFAULT_FILTERS)} className="mt-3 text-[12px] font-semibold text-[#2563EB] hover:underline">
-                Clear filters
-              </button>
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={() => setFilters(DEFAULT_FILTERS)} className="text-[12px] font-semibold text-[#2563EB] hover:underline">
+                  Clear filters
+                </button>
+                {tierFilter !== 'all' && (
+                  <button onClick={() => setTierFilter('all')} className="text-[12px] font-semibold text-amber-600 hover:underline">
+                    Show all tiers
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Job cards — dimmed while loading */}
           <div className={`space-y-4 transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-            {sortedJobs.map((match, i) => (
+            {tieredJobs.map((match, i) => (
               <JobCard
                 key={match.id}
                 match={match}

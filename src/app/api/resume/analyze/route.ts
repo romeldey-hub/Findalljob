@@ -132,7 +132,15 @@ export async function POST() {
 
   const primaryQuery = strategy.search_queries[0]
 
-  // ── 4. Fetch jobs via multi-source router (Adzuna → JSearch → Apify) ────────
+  // India profiles: Apify (Naukri/LinkedIn) has far better coverage for senior India roles
+  // than Adzuna/JSearch — flip the priority so Apify runs first.
+  const isIndiaProfile = /india|new delhi|delhi ncr|ncr|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram/i
+    .test(profileLocation)
+  const mainStage     = isIndiaProfile ? 'fallback' : 'primary'
+  const reserveStage  = isIndiaProfile ? 'primary'  : 'fallback'
+  console.log('[analyze] profile location:', profileLocation, '| India profile:', isIndiaProfile, '| main stage:', mainStage)
+
+  // ── 4. Fetch jobs via multi-source router ────────────────────────────────────
   const router = new JobSourceRouter()
   let jobs: NormalizedJob[] = []
   const seenKeys = new Set<string>()
@@ -147,14 +155,14 @@ export async function POST() {
     }
   }
 
-  // 4a. Run up to 3 AI strategy queries (stop early when ≥ 15 jobs)
-  for (const query of strategy.search_queries.slice(0, 3)) {
+  // 4a. Run up to 4 AI strategy queries through the main stage (stop early when ≥ 15 jobs)
+  for (const query of strategy.search_queries.slice(0, 4)) {
     if (jobs.length >= 15) break
-    console.log('[analyze] strategy query:', query, '| location:', profileLocation)
+    console.log('[analyze] strategy query:', query, '| stage:', mainStage)
     try {
-      const r = await router.search({ title: query, location: profileLocation, limit: 25 }, 'primary')
+      const r = await router.search({ title: query, location: profileLocation, limit: 25 }, mainStage)
       addUnique(r.jobs)
-      console.log('[analyze] query "' + query + '" returned', r.jobs.length, 'raw jobs (total unique:', jobs.length, ')')
+      console.log('[analyze] query "' + query + '" → ' + r.jobs.length + ' raw (total unique: ' + jobs.length + ')')
     } catch (err) {
       console.error('[analyze] query "' + query + '" error:', apiErrMsg(err))
     }
@@ -162,9 +170,9 @@ export async function POST() {
 
   // 4b. Drop location constraint if still too few (catches country-only locations)
   if (jobs.length < 5) {
-    console.log('[analyze] trying without location restriction for broader results')
+    console.log('[analyze] trying without location restriction')
     try {
-      const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, 'primary')
+      const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, mainStage)
       addUnique(r.jobs)
       console.log('[analyze] no-location search, total now', jobs.length, 'jobs')
     } catch (err) {
@@ -172,15 +180,15 @@ export async function POST() {
     }
   }
 
-  // 4c. Apify fallback if primary sources still insufficient
+  // 4c. Switch to reserve sources if still insufficient
   if (jobs.length < 5) {
-    console.log('[analyze] primary sources insufficient — trying Apify fallback')
+    console.log('[analyze] switching to reserve stage:', reserveStage)
     try {
-      const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, 'fallback')
+      const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, reserveStage)
       addUnique(r.jobs)
-      console.log('[analyze] Apify fallback, total now', jobs.length, 'jobs')
+      console.log('[analyze] reserve stage, total now', jobs.length, 'jobs')
     } catch (err) {
-      console.error('[analyze] Apify fallback error:', apiErrMsg(err))
+      console.error('[analyze] reserve stage error:', apiErrMsg(err))
     }
   }
 
@@ -269,7 +277,7 @@ export async function POST() {
         job_id:           dbJobId,
         similarity_score: r.score / 100,
         ai_score:         r.score,
-        ai_reasoning:     JSON.stringify({ r: r.reasoning, ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
+        ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
       }
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)

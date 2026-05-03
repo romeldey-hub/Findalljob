@@ -5,6 +5,7 @@ import type { ApplyStatus }   from '@/types'
 
 function decodeReasoning(raw: string): {
   reasoning:      string
+  bridge_advice:  string
   matched_skills: string[]
   missing_skills: string[]
 } {
@@ -13,12 +14,13 @@ function decodeReasoning(raw: string): {
     if (typeof parsed === 'object' && typeof parsed.r === 'string') {
       return {
         reasoning:      parsed.r,
+        bridge_advice:  typeof parsed.bridge === 'string' ? parsed.bridge : '',
         matched_skills: Array.isArray(parsed.ms)   ? parsed.ms   : [],
         missing_skills: Array.isArray(parsed.miss) ? parsed.miss : [],
       }
     }
   } catch { /* plain string fallback */ }
-  return { reasoning: raw, matched_skills: [], missing_skills: [] }
+  return { reasoning: raw, bridge_advice: '', matched_skills: [], missing_skills: [] }
 }
 
 function isColumnError(code?: string, msg?: string): boolean {
@@ -107,6 +109,7 @@ export async function GET() {
     return {
       ...m,
       ai_reasoning:   decoded.reasoning,
+      bridge_advice:  decoded.bridge_advice,
       matched_skills: decoded.matched_skills,
       missing_skills: decoded.missing_skills,
       job: {

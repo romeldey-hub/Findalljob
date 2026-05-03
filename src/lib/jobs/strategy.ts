@@ -19,20 +19,24 @@ const MIN_RESUME_LEN = 100                 // skip Claude if resume text is too 
 const SYSTEM = `You are a job-board search expert. Respond ONLY with valid JSON. No markdown, no explanation.`
 
 function buildPrompt(resumeText: string): string {
-  return `Analyze this resume and generate 4 targeted job title search queries.
+  return `Analyze this resume and generate 6 targeted job search queries for Naukri, LinkedIn, and Indeed.
 
-Requirements:
-- Each query must be an exact job title that employers use on job boards (Adzuna, Indeed, LinkedIn)
-- Include the candidate's primary role plus 2–3 seniority or synonym variants
-- Keep each query concise: 2–4 words, job title only (no skills, location, or modifiers)
-- Order from most specific to most general so general fallbacks are tried last
+Generate a MIX of two types:
+(A) Exact job titles employers post — 2-4 words, e.g. "Business Development Director", "Sales Head"
+(B) Domain-compound queries — role + industry/expertise area, e.g. "government procurement sales", "semiconductor OEM enterprise", "GeM marketplace director"
+
+Rules:
+- Queries 1-2: exact job titles (primary role + one seniority/synonym variant)
+- Queries 3-5: domain-compound queries encoding the candidate's industry sector, domain expertise, and key technologies from the resume
+- Query 6: broad fallback title (most general form of their role)
+- No location, no soft skills, no generic terms like "professional" or "expert"
 
 Resume (first 2500 chars):
 ${resumeText.slice(0, 2500)}
 
 Return ONLY this JSON:
 {
-  "search_queries": ["Title 1", "Title 2", "Title 3", "Title 4"]
+  "search_queries": ["Title 1", "Title 2", "Domain compound 3", "Domain compound 4", "Domain compound 5", "Broad fallback 6"]
 }`
 }
 
@@ -86,7 +90,7 @@ export async function generateSearchStrategy(
   }
 
   try {
-    const raw     = await callClaudeJSON<SearchStrategy>(buildPrompt(resumeText), SYSTEM, 256)
+    const raw     = await callClaudeJSON<SearchStrategy>(buildPrompt(resumeText), SYSTEM, 512)
     const queries = (raw.search_queries ?? [])
       .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
 
