@@ -220,6 +220,26 @@ export async function POST() {
     }
   }
 
+  // 4d. Company-targeted search — compound "CompanyName + primaryRole" queries
+  // Mirrors Claude.ai's approach of searching specific employers in the candidate's ecosystem
+  if (strategy.target_companies?.length) {
+    console.log('[analyze] company-targeted search for:', strategy.target_companies.slice(0, 3))
+    for (const company of strategy.target_companies.slice(0, 3)) {
+      if (jobs.length >= 40) break
+      const companyQuery = sanitizeQuery(`${company} ${primaryQuery}`)
+      try {
+        const r = await router.search(
+          { title: companyQuery, location: profileLocation, countryCode, limit: 15 },
+          mainStage
+        )
+        addUnique(r.jobs)
+        console.log(`[analyze] company "${company}" → ${r.jobs.length} raw (total: ${jobs.length})`)
+      } catch (err) {
+        console.error(`[analyze] company search "${company}" error:`, apiErrMsg(err))
+      }
+    }
+  }
+
   console.log('[analyze] total jobs fetched:', jobs.length)
 
   if (!jobs.length) {
