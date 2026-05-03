@@ -72,6 +72,15 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
       maxItems: p.limit ?? 20,
     }),
   },
+  {
+    source:  'apify_upwork',
+    taskId:  process.env.APIFY_UPWORK_TASK_ID,
+    actorId: 'neatrat~upwork-job-scraper',  // public fallback — no task setup needed
+    buildInput: (p) => ({
+      query:    p.title,
+      maxItems: p.limit ?? 20,
+    }),
+  },
 ]
 
 export class ApifyAdapter implements JobSourceAdapter {
@@ -186,17 +195,17 @@ export class ApifyAdapter implements JobSourceAdapter {
         ).trim()
 
         return {
-          // jobId = Naukri; id = LinkedIn/generic; jobkey/job_id = Indeed/JSearch
+          // jobId = Naukri; id = LinkedIn/Upwork/generic; jobkey/job_id = Indeed/JSearch
           externalId: String(
             job.jobkey ?? job.job_id ?? job.jobId ?? job.id ?? `${source}-${Date.now()}-${i}`
           ),
           source,
-          // jobTitle = Naukri/LinkedIn; positionName = Indeed; title = generic
+          // jobTitle = Naukri/LinkedIn; positionName = Indeed; title = generic/Upwork
           title:       String(job.positionName ?? job.jobTitle ?? job.title ?? job.job_title ?? '').trim(),
-          // companyName = Naukri/LinkedIn; company/employer_name = other sources
-          company:     String(job.company ?? job.companyName ?? job.employer_name ?? 'Unknown').trim(),
+          // companyName = Naukri/LinkedIn; clientName = Upwork; company/employer_name = other sources
+          company:     String(job.company ?? job.companyName ?? job.clientName ?? job.employer_name ?? 'Unknown').trim(),
           location:    String(job.location ?? job.job_city ?? job.job_location ?? params.location).trim(),
-          // jobDescription = Naukri; description/snippet = generic
+          // jobDescription = Naukri; description/snippet = generic/Upwork
           description: String(job.description ?? job.jobDescription ?? job.snippet ?? job.job_description ?? '').trim(),
           // Prefer listing URL for url; use direct ATS link for applyUrl
           url:      listingUrl || directApplyUrl,
@@ -204,8 +213,8 @@ export class ApifyAdapter implements JobSourceAdapter {
           postedAt: job.postedAt ?? job.datePosted
             ? new Date(String(job.postedAt ?? job.datePosted)).toISOString()
             : undefined,
-          salary: job.salary
-            ? String(job.salary)
+          salary: (job.salary ?? job.budget)
+            ? String(job.salary ?? job.budget)
             : undefined,
         }
       })
