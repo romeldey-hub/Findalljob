@@ -37,8 +37,8 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
       location: p.location,
       keyword:  p.title,
       maxItems: p.limit ?? 20,
-      // Pass country so the actor doesn't default to US
-      ...(p.countryCode ? { country: p.countryCode } : {}),
+      // Actor requires uppercase country code (e.g. 'IN', not 'in')
+      ...(p.countryCode ? { country: p.countryCode.toUpperCase() } : {}),
     }),
   },
   {
@@ -76,16 +76,13 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
       maxItems: p.limit ?? 20,
     }),
   },
-  {
-    source:     'apify_upwork',
-    taskId:     process.env.APIFY_UPWORK_TASK_ID,
-    actorId:    'neatrat~upwork-job-scraper',  // public fallback — no task setup needed
-    timeoutMs:  90_000,                         // Upwork actor is slower than others
-    buildInput: (p) => ({
-      query:    p.title,
-      maxItems: p.limit ?? 20,
-    }),
-  },
+  // Upwork actor (neatrat~upwork-job-scraper) consistently aborts — disabled until stable
+  // {
+  //   source:    'apify_upwork',
+  //   actorId:   'neatrat~upwork-job-scraper',
+  //   timeoutMs: 90_000,
+  //   buildInput: (p) => ({ query: p.title, maxItems: p.limit ?? 20 }),
+  // },
 ]
 
 export class ApifyAdapter implements JobSourceAdapter {

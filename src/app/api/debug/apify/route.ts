@@ -47,14 +47,10 @@ export async function GET() {
   const tokenPresent = Boolean(TOKEN)
   const tokenPrefix  = TOKEN ? TOKEN.slice(0, 12) + '...' : 'NOT SET'
 
-  const [indeed, indeedAlt, naukri, linkedin, upwork] = await Promise.allSettled([
-    // Primary Indeed actor (misceres) — tends to default to US; country:'in' should help
+  const [indeed, naukri, linkedin] = await Promise.allSettled([
+    // misceres actor requires uppercase country code ('IN' not 'in')
     testActor('misceres~indeed-scraper', {
-      position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3, country: 'in',
-    }),
-    // Alternative Indeed actor (orgupdate) — may have better India support
-    testActor('orgupdate~indeed-jobs-scraper', {
-      keyword: 'Software Engineer', location: 'India', maxItems: 3, country: 'in',
+      position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3, country: 'IN',
     }),
     testActor('muhammetakkurtt~naukri-job-scraper', {
       keyword: 'Software Engineer', maxJobs: 50, freshness: '30', sortBy: 'date',
@@ -64,19 +60,14 @@ export async function GET() {
       count:         10,
       scrapeCompany: false,
     }),
-    testActor('neatrat~upwork-job-scraper', {
-      query: 'Software Engineer', maxItems: 3,
-    }, 120_000),   // Upwork is slower — give it 2 minutes
   ])
 
   return NextResponse.json({
     token: { present: tokenPresent, prefix: tokenPrefix },
     actors: {
-      indeed:    indeed.status    === 'fulfilled' ? indeed.value    : { error: indeed.reason },
-      indeedAlt: indeedAlt.status === 'fulfilled' ? indeedAlt.value : { error: indeedAlt.reason },
-      naukri:    naukri.status    === 'fulfilled' ? naukri.value    : { error: naukri.reason },
-      linkedin:  linkedin.status  === 'fulfilled' ? linkedin.value  : { error: linkedin.reason },
-      upwork:    upwork.status    === 'fulfilled' ? upwork.value    : { error: upwork.reason },
+      indeed:   indeed.status   === 'fulfilled' ? indeed.value   : { error: indeed.reason },
+      naukri:   naukri.status   === 'fulfilled' ? naukri.value   : { error: naukri.reason },
+      linkedin: linkedin.status === 'fulfilled' ? linkedin.value : { error: linkedin.reason },
     },
   })
 }
