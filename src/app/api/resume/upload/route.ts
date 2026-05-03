@@ -142,19 +142,28 @@ export async function POST(request: NextRequest) {
     const nextVersion = (latestVersionRow?.version ?? 0) + 1
 
     // Save resume record
-    const { data: resume, error: dbError } = await supabase
+    const baseInsert = {
+      user_id:     user.id,
+      file_url:    publicUrl,
+      raw_text:    rawText,
+      parsed_data: detectedSections.length > 0 ? { sections: detectedSections } : {},
+      version:     nextVersion,
+      is_active:   true,
+    }
+
+    let { data: resume, error: dbError } = await supabase
       .from('resumes')
-      .insert({
-        user_id:     user.id,
-        file_url:    publicUrl,
-        raw_text:    rawText,
-        parsed_data: detectedSections.length > 0 ? { sections: detectedSections } : {},
-        version:     nextVersion,
-        is_active:   true,
-        resume_hash: resumeHash,
-      })
+      .insert({ ...baseInsert, resume_hash: resumeHash })
       .select()
       .single()
+
+    // If resume_hash column doesn't exist in this environment, retry without it
+    if (dbError && (dbError.code === '42703' || dbError.message?.includes('resume_hash'))) {
+      console.warn('[resume/upload] resume_hash column missing, retrying without it')
+      const retry = await supabase.from('resumes').insert(baseInsert).select().single()
+      resume = retry.data
+      dbError = retry.error
+    }
 
     if (dbError) {
       console.error('[resume/upload] db insert error:', dbError.message, dbError.details)
