@@ -47,7 +47,7 @@ export async function GET() {
   const tokenPresent = Boolean(TOKEN)
   const tokenPrefix  = TOKEN ? TOKEN.slice(0, 12) + '...' : 'NOT SET'
 
-  const [indeed, naukri, linkedin] = await Promise.allSettled([
+  const [indeed, naukri, linkedin, googleJobs] = await Promise.allSettled([
     // misceres actor requires uppercase country code ('IN' not 'in')
     testActor('misceres~indeed-scraper', {
       position: 'Software Engineer', location: 'India', keyword: 'Software Engineer', maxItems: 3, country: 'IN',
@@ -60,14 +60,21 @@ export async function GET() {
       count:         10,
       scrapeCompany: false,
     }),
+    // orgupdate~google-jobs-scraper — testing whether it respects India location
+    testActor('orgupdate~google-jobs-scraper', {
+      query:    'Software Engineer',
+      location: 'India',
+      maxItems: 5,
+    }),
   ])
 
   return NextResponse.json({
     token: { present: tokenPresent, prefix: tokenPrefix },
     actors: {
-      indeed:   indeed.status   === 'fulfilled' ? indeed.value   : { error: indeed.reason },
-      naukri:   naukri.status   === 'fulfilled' ? naukri.value   : { error: naukri.reason },
-      linkedin: linkedin.status === 'fulfilled' ? linkedin.value : { error: linkedin.reason },
+      indeed:     indeed.status     === 'fulfilled' ? indeed.value     : { error: indeed.reason },
+      naukri:     naukri.status     === 'fulfilled' ? naukri.value     : { error: naukri.reason },
+      linkedin:   linkedin.status   === 'fulfilled' ? linkedin.value   : { error: linkedin.reason },
+      googleJobs: googleJobs.status === 'fulfilled' ? googleJobs.value : { error: googleJobs.reason },
     },
   })
 }
