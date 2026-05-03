@@ -97,9 +97,11 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
         toast.error(saveData.error ?? 'Failed to save. Please try again.')
         return
       }
-      toast.success(mode === 'general' ? 'Resume improved and saved!' : 'Resume optimized and saved!')
+      toast.success(mode === 'general' ? 'Resume improved! Re-analyzing your matches…' : 'Resume optimized! Re-analyzing your matches…')
+      // Clear the guard so the matches page auto-triggers a fresh analysis with the updated resume
+      if (typeof window !== 'undefined') localStorage.removeItem('lastAnalyzedAt')
       onClose()
-      if (redirectTo) router.push(redirectTo)
+      router.push('/matches')
     } catch {
       toast.error('Something went wrong. Please try again.')
     } finally {

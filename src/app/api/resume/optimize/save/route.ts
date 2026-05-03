@@ -65,14 +65,60 @@ export async function POST(request: NextRequest) {
     id = inserted.id; createdAt = inserted.created_at
   }
 
+  // Write optimized content back to the active resume so the next analysis uses it
+  if (resume?.id) {
+    const parsedUpdate = {
+      name:           optimizedData.name,
+      email:          optimizedData.email,
+      phone:          optimizedData.phone,
+      location:       optimizedData.location,
+      summary:        optimizedData.summary,
+      skills:         optimizedData.skills ?? [],
+      experience:     (optimizedData.experience ?? []).map(e => ({
+        title: e.title, company: e.company, location: e.location,
+        start_date: e.start_date, end_date: e.end_date, bullets: e.bullets ?? [],
+      })),
+      education:      optimizedData.education ?? [],
+      certifications: optimizedData.certifications ?? [],
+    }
+
+    const lines: string[] = [
+      optimizedData.name, optimizedData.email, optimizedData.phone, optimizedData.location,
+    ].filter(Boolean) as string[]
+    if (optimizedData.summary) lines.push('\nSUMMARY\n' + optimizedData.summary)
+    if (optimizedData.experience?.length) {
+      lines.push('\nEXPERIENCE')
+      for (const exp of optimizedData.experience) {
+        lines.push(`${exp.title} at ${exp.company} (${exp.start_date} – ${exp.end_date ?? 'Present'})`)
+        for (const b of exp.bullets ?? []) lines.push(`• ${b}`)
+      }
+    }
+    if (optimizedData.skills?.length) lines.push('\nSKILLS\n' + optimizedData.skills.join(', '))
+    if (optimizedData.education?.length) {
+      lines.push('\nEDUCATION')
+      for (const edu of optimizedData.education)
+        lines.push(`${edu.degree} ${edu.field} – ${edu.school} (${edu.graduation_year})`)
+    }
+    if (optimizedData.certifications?.length)
+      lines.push('\nCERTIFICATIONS\n' + optimizedData.certifications.join('\n'))
+
+    const { error: resumeUpdateError } = await supabase
+      .from('resumes')
+      .update({ parsed_data: parsedUpdate, raw_text: lines.join('\n') })
+      .eq('id', resume.id)
+      .eq('user_id', user.id)
+
+    if (resumeUpdateError) console.error('[optimize/save] resume update error:', resumeUpdateError.message)
+  }
+
   await createNotification({
     userId: user.id,
     type: 'resume',
     title: 'Resume optimisation complete',
     body: `Your resume has been tailored and saved. ATS score: ${optimizedData.ats_score ?? '—'}.`,
-    ctaLabel: 'View Resume',
-    ctaHref: '/optimizer',
+    ctaLabel: 'View Matched Jobs',
+    ctaHref: '/matches',
   })
 
-  return NextResponse.json({ id, createdAt })
+  return NextResponse.json({ id, createdAt, updatedResume: true })
 }
