@@ -14,9 +14,10 @@ declare global {
 
 interface RazorpayPaymentProps {
   isLoading?: boolean
+  label?: string
 }
 
-export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProps) {
+export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to Pro' }: RazorpayPaymentProps) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
@@ -115,7 +116,7 @@ export function RazorpayPaymentWidget({ isLoading = false }: RazorpayPaymentProp
       disabled={loading || isLoading}
       className="w-full bg-amber-500 hover:bg-amber-600 text-white"
     >
-      {loading ? 'Processing...' : 'Upgrade to Pro'}
+      {loading ? 'Processing...' : label}
     </Button>
   )
 }

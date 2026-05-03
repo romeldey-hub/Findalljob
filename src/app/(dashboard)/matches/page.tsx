@@ -6,16 +6,19 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import {
-  Search, MapPin, Building2, ExternalLink, Wand2,
+  Search, MapPin, Building2, Wand2,
   PlusCircle, Loader2, Briefcase, Lightbulb,
   CheckCircle2, XCircle, RefreshCw,
   Bookmark, BookmarkCheck, Clock, Sparkles,
-  SlidersHorizontal, ChevronDown, User, UserCheck,
+  SlidersHorizontal, ChevronDown, User, UserCheck, Mic,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { track } from '@/lib/analytics'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { PaywallModal } from '@/components/PaywallModal'
+import { InterviewModal } from '@/components/InterviewModal'
+import { ApplyButton, sourceLabel, VerifiedBadge } from '@/components/jobs/ApplyButton'
+import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -33,6 +36,9 @@ interface MatchRecord {
     company: string
     location: string
     url: string
+    apply_url?: string
+    apply_status?: 'active' | 'broken' | 'unverified'
+    verified_label?: 'verified' | 'stale' | 'unverified'
     salary?: string
     description: string
     source?: string
@@ -187,13 +193,14 @@ function applyFilters(matches: MatchRecord[], filters: FilterState): MatchRecord
 // ── JobCard ───────────────────────────────────────────────────────────────────
 
 function JobCard({
-  match, onOptimize,
+  match, onOptimize, onInterview,
   initialSaved = false, initialApplicationId,
   isOptimized = false, isManual = false, isNew = false,
   animIndex = 0,
 }: {
   match: MatchRecord
   onOptimize: (id: string) => void
+  onInterview: (match: MatchRecord) => void
   initialSaved?: boolean
   initialApplicationId?: string
   isOptimized?: boolean
@@ -211,10 +218,7 @@ function JobCard({
     setApplicationId(initialApplicationId)
   }, [initialSaved, initialApplicationId])
 
-  async function handleApply() {
-    if (!job.url) { toast.error('No apply URL for this job'); return }
-    track.applyClick(job.title)
-    window.open(job.url, '_blank')
+  async function handleApplyCallback() {
     try {
       const res = await fetch('/api/applications', {
         method: 'POST',
@@ -286,10 +290,20 @@ function JobCard({
             </span>
           )}
 
-          {/* Title */}
-          <h3 className="font-bold text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] mb-1.5 pr-2">
-            {job.title}
-          </h3>
+          {/* Title + source badge + verified badge */}
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <h3 className="font-bold text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] pr-2">
+              {job.title}
+            </h3>
+            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              {sourceLabel(job.source) && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-500 dark:text-slate-400 border border-[#E5E7EB] dark:border-[#334155]">
+                  {sourceLabel(job.source)}
+                </span>
+              )}
+              <VerifiedBadge label={job.verified_label} />
+            </div>
+          </div>
 
           {/* Company · Location · Date · Job meta */}
           <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[13px] text-gray-400 dark:text-slate-500 mb-3">
@@ -356,24 +370,33 @@ function JobCard({
             )}
           </div>
 
-          {/* ── Action button ────────────────────────────────────── */}
-          {isOptimized ? (
-            <div className="inline-flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-[12px] font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5" />Optimized
-              </span>
-              <a href="/optimizer" className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors">
-                View →
-              </a>
-            </div>
-          ) : (
+          {/* ── Action buttons ───────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-2">
+            {isOptimized ? (
+              <div className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-[12px] font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />Optimized
+                </span>
+                <a href="/optimizer" className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors">
+                  View →
+                </a>
+              </div>
+            ) : (
+              <button
+                onClick={() => onOptimize(job.id)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#2563EB] text-[#2563EB] text-[12px] font-semibold hover:bg-[#EFF6FF] dark:hover:bg-[#1E3A5F] active:bg-blue-100 transition-all hover:scale-[1.02] active:scale-100"
+              >
+                <Wand2 className="w-3.5 h-3.5" />Optimize for this job
+              </button>
+            )}
+
             <button
-              onClick={() => onOptimize(job.id)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#2563EB] text-[#2563EB] text-[12px] font-semibold hover:bg-[#EFF6FF] dark:hover:bg-[#1E3A5F] active:bg-blue-100 transition-all hover:scale-[1.02] active:scale-100"
+              onClick={() => onInterview(match)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#7C3AED] text-[#7C3AED] dark:text-violet-400 dark:border-violet-700 text-[12px] font-semibold hover:bg-violet-50 dark:hover:bg-violet-900/20 active:bg-violet-100 transition-all hover:scale-[1.02] active:scale-100"
             >
-              <Wand2 className="w-3.5 h-3.5" />Optimize Resume
+              <Mic className="w-3.5 h-3.5" />Mock Interview
             </button>
-          )}
+          </div>
         </div>
 
         {/* ── RIGHT: bookmark + score + apply ───────────────────── */}
@@ -396,14 +419,8 @@ function JobCard({
           {/* Score ring */}
           <ScoreRing score={match.ai_score} />
 
-          {/* Apply Now */}
-          <button
-            onClick={handleApply}
-            disabled={!job.url}
-            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[12px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
-          >
-            Apply Now <ExternalLink className="w-3 h-3" />
-          </button>
+          {/* Apply Now — with loading state + fallback */}
+          <ApplyButton job={job} onApply={handleApplyCallback} />
         </div>
       </div>
     </div>
@@ -624,6 +641,8 @@ export default function MatchesPage() {
   const [filters, setFilters]         = useState<FilterState>(DEFAULT_FILTERS)
   const [showPaywall, setShowPaywall] = useState(false)
   const [sortOrder, setSortOrder]     = useState<'desc' | 'asc'>('desc')
+  const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
+  const [optimizeJobId, setOptimizeJobId]   = useState<string | null>(null)
 
   // mode determines which list is rendered — never both simultaneously
   const [mode, setMode]                 = useState<'ai' | 'manual'>('ai')
@@ -750,10 +769,15 @@ export default function MatchesPage() {
 
       let result = await doSearch(false)
 
-      // ── Phase 2: Apify fallback if primary returned nothing ──────────────
-      if ((result.matches ?? []).length === 0) {
+      // ── Phase 2: Apify fallback when primary returns too few results ──────
+      // Threshold matches the analyze route (< 5) so both flows behave identically.
+      if ((result.matches ?? []).length < 5) {
         setSearchStage('fallback')
-        result = await doSearch(true)
+        const apifyResult = await doSearch(true)
+        // Use Apify result only if it found more matches than primary
+        if ((apifyResult.matches ?? []).length > (result.matches ?? []).length) {
+          result = apifyResult
+        }
       }
 
       const matches: MatchRecord[] = result.matches ?? []
@@ -790,9 +814,12 @@ export default function MatchesPage() {
 
   function handleOptimize(jobId: string) {
     const isPro = profileData?.plan === 'pro'
-    const hasUsedPreview = profileData?.has_used_free_preview === true
-    if (!isPro && hasUsedPreview) { setShowPaywall(true); return }
-    router.push(`/optimizer?jobId=${jobId}`)
+    if (!isPro) { setShowPaywall(true); return }
+    setOptimizeJobId(jobId)
+  }
+
+  function handleInterview(match: MatchRecord) {
+    setInterviewMatch(match)
   }
 
   return (
@@ -801,7 +828,7 @@ export default function MatchesPage() {
       {/* ── Header ──────────────────────────────────────────────── */}
       <div>
         <h1 className="text-[22px] font-black text-[#0F172A] dark:text-[#F1F5F9] flex items-center gap-2 leading-tight">
-          Job Matches
+          Matched Jobs
           <Sparkles className="w-4 h-4 text-amber-400" />
         </h1>
         <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-0.5">AI-ranked jobs based on your resume.</p>
@@ -878,7 +905,7 @@ export default function MatchesPage() {
             <div className="flex items-center gap-2.5">
               <h2 className="text-[15px] font-bold text-[#0F172A] dark:text-[#F1F5F9] flex items-center gap-1.5">
                 {mode === 'ai'
-                  ? <><span>AI Job Matches</span><Sparkles className="w-3.5 h-3.5 text-amber-400" /></>
+                  ? <><span>Matched Jobs</span><Sparkles className="w-3.5 h-3.5 text-amber-400" /></>
                   : <><span>Search Results</span><Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" /></>}
               </h2>
               {sortedJobs.length > 0 && (
@@ -1039,6 +1066,7 @@ export default function MatchesPage() {
                 initialApplicationId={savedJobToAppId.get(match.job.id)}
                 isOptimized={optimizedJobIds.has(match.job.id)}
                 onOptimize={handleOptimize}
+                onInterview={handleInterview}
                 animIndex={i}
               />
             ))}
@@ -1059,6 +1087,29 @@ export default function MatchesPage() {
       </div>
 
       {showPaywall && profileData?.plan !== 'pro' && <PaywallModal onClose={() => setShowPaywall(false)} />}
+
+      {optimizeJobId && (
+        <OptimizeFlow
+          mode="job"
+          jobId={optimizeJobId}
+          redirectTo="/optimizer"
+          onClose={() => setOptimizeJobId(null)}
+        />
+      )}
+
+      {interviewMatch && (
+        <InterviewModal
+          job={{
+            id: interviewMatch.job.id,
+            title: interviewMatch.job.title,
+            company: interviewMatch.job.company,
+            description: interviewMatch.job.description,
+          }}
+          isPro={profileData?.plan === 'pro'}
+          mode="job-based"
+          onClose={() => setInterviewMatch(null)}
+        />
+      )}
     </div>
   )
 }

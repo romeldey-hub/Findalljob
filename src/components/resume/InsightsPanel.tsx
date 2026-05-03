@@ -1,14 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
-  Wand2, Download, MessageSquare, Lightbulb,
+  Wand2, Download, Mic, Lightbulb,
   ChevronRight, Loader2,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { ParsedResume } from '@/types'
 import { toDataUri } from '@/lib/utils'
 import { useCountUp, useAnimate } from '@/lib/useAnimations'
+import { ResumePrintView } from '@/components/resume/ResumePrintView'
+import { InterviewModal } from '@/components/InterviewModal'
+import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
+import useSWR from 'swr'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 
@@ -110,24 +116,50 @@ function ScoreBar({ label, value, index = 0 }: { label: string; value: number; i
   )
 }
 
-// ── ActionBtn ─────────────────────────────────────────────────────────────────
+// ── ActionCard ────────────────────────────────────────────────────────────────
 
-function ActionBtn({
-  icon, children, onClick, disabled = false,
+function ActionCard({
+  icon, label, subtext, onClick, disabled = false, primary = false,
 }: {
   icon: React.ReactNode
-  children: React.ReactNode
+  label: string
+  subtext: string
   onClick: () => void
   disabled?: boolean
+  primary?: boolean
 }) {
+  if (primary) {
+    return (
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-left transition-all hover:scale-[1.01] active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-[13px] leading-tight">{label}</p>
+          <p className="text-[11px] text-blue-200 mt-0.5">{subtext}</p>
+        </div>
+        <ChevronRight className="w-4 h-4 text-blue-300 flex-shrink-0" />
+      </button>
+    )
+  }
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-700 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:scale-[1.01] active:scale-100 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-left hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:scale-[1.01] active:scale-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      <span className="text-gray-400 dark:text-slate-500 flex-shrink-0">{icon}</span>
-      {children}
+      <div className="w-7 h-7 rounded-lg bg-[#F1F5F9] dark:bg-[#263549] flex items-center justify-center flex-shrink-0">
+        <span className="text-gray-400 dark:text-slate-500">{icon}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] leading-tight">{label}</p>
+        <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">{subtext}</p>
+      </div>
+      <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0" />
     </button>
   )
 }
@@ -135,8 +167,29 @@ function ActionBtn({
 // ── InsightsPanel ─────────────────────────────────────────────────────────────
 
 export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedResume; avatarUrl?: string | null }) {
-  const router     = useRouter()
-  const [pdfBusy, setPdfBusy] = useState(false)
+  const router       = useRouter()
+  const printRef     = useRef<HTMLDivElement>(null)
+  const [pdfBusy, setPdfBusy]             = useState(false)
+  const [avatarDataUri, setAvatarDataUri] = useState<string | null>(null)
+  const [showInterview, setShowInterview] = useState(false)
+  const [showOptimize, setShowOptimize]   = useState(false)
+
+  const { data: profileData } = useSWR('/api/profile', fetcher)
+  const isPro = profileData?.plan === 'pro'
+
+  // Extract most-recent job from resume for interview context
+  const recentExp = parsedData.experience?.[0]
+  const interviewJob = {
+    id:          'resume',
+    title:       recentExp?.title    ?? 'General Practice',
+    company:     recentExp?.company  ?? '',
+    description: '',
+  }
+
+  useEffect(() => {
+    if (!avatarUrl) { setAvatarDataUri(null); return }
+    toDataUri(avatarUrl).then(setAvatarDataUri).catch(() => setAvatarDataUri(null))
+  }, [avatarUrl])
 
   const { overall, skillsMatch, expScore, contentQuality } = computeScores(parsedData)
 
@@ -145,24 +198,22 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
     : 'Expand each role with 3–5 bullet points highlighting key responsibilities and measurable outcomes.'
 
   async function handleDownloadPDF() {
+    if (!printRef.current) return
     setPdfBusy(true)
     try {
-      const [pdfAvatarUrl, { pdf }, { createElement }, { ResumePDF }] = await Promise.all([
-        avatarUrl ? toDataUri(avatarUrl) : Promise.resolve(null),
-        import('@react-pdf/renderer'),
-        import('react'),
-        import('@/components/resume/ResumePDF'),
+      const [{ toPng }, { jsPDF }] = await Promise.all([
+        import('html-to-image'),
+        import('jspdf'),
       ])
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const blob = await (pdf as any)(createElement(ResumePDF, { data: parsedData, avatarUrl: pdfAvatarUrl } as any) as any).toBlob()
-      const url  = URL.createObjectURL(blob)
-      const a    = Object.assign(document.createElement('a'), {
-        href: url,
-        download: `${parsedData.name ?? 'resume'}.pdf`,
+      const dataUrl = await toPng(printRef.current, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        skipFonts: true,
+        cacheBust: true,
       })
-      document.body.appendChild(a); a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      pdf.addImage(dataUrl, 'PNG', 0, 0, 210, 297)
+      pdf.save(`${parsedData.name ?? 'resume'}.pdf`)
     } catch (err) {
       console.error('PDF generation failed', err)
     } finally {
@@ -186,31 +237,35 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
         </div>
       </div>
 
-      {/* ── Quick Actions ────────────────────────────────────────── */}
+      {/* ── Next Steps ───────────────────────────────────────────── */}
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
-        <h3 className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] mb-3 tracking-tight">Quick Actions</h3>
+        <h3 className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] mb-3 tracking-tight">
+          Next Steps to Get Hired Faster
+        </h3>
         <div className="space-y-2">
-          <ActionBtn
-            icon={<Wand2 className="w-3.5 h-3.5" />}
-            onClick={() => router.push('/optimizer')}
-          >
-            Optimize Resume
-          </ActionBtn>
-          <ActionBtn
+          <ActionCard
+            icon={<Wand2 className="w-4 h-4 text-white" />}
+            label="Optimize Resume"
+            subtext="Boost your chances"
+            onClick={() => setShowOptimize(true)}
+            primary
+          />
+          <ActionCard
+            icon={<Mic className="w-4 h-4 text-white" />}
+            label="Start Mock Interview"
+            subtext="Practice before you apply"
+            onClick={() => setShowInterview(true)}
+            primary
+          />
+          <ActionCard
             icon={pdfBusy
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Download className="w-3.5 h-3.5" />}
+            label={pdfBusy ? 'Generating PDF…' : 'Download Resume'}
+            subtext="Ready to submit"
             onClick={handleDownloadPDF}
             disabled={pdfBusy}
-          >
-            {pdfBusy ? 'Generating PDF…' : 'Download PDF'}
-          </ActionBtn>
-          <ActionBtn
-            icon={<MessageSquare className="w-3.5 h-3.5" />}
-            onClick={() => router.push('/optimizer')}
-          >
-            Get AI Feedback
-          </ActionBtn>
+          />
         </div>
       </div>
 
@@ -228,6 +283,30 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
           View Suggestions <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Hidden A4 element captured by html-to-image for PDF download */}
+      <div style={{ position: 'absolute', left: -9999, top: 0, pointerEvents: 'none' }} aria-hidden="true">
+        <div ref={printRef}>
+          <ResumePrintView data={parsedData} avatarUrl={avatarDataUri} />
+        </div>
+      </div>
+
+      {showInterview && (
+        <InterviewModal
+          job={interviewJob}
+          isPro={isPro}
+          onClose={() => setShowInterview(false)}
+          mode="resume"
+        />
+      )}
+
+      {showOptimize && (
+        <OptimizeFlow
+          mode="general"
+          avatarUrl={avatarDataUri}
+          onClose={() => setShowOptimize(false)}
+        />
+      )}
 
     </aside>
   )

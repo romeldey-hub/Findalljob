@@ -1,3 +1,6 @@
+// Always fetch fresh data — never serve a cached version after an avatar/profile update
+export const dynamic = 'force-dynamic'
+
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isProUser } from '@/lib/admin'
 import { resolveAvatar } from '@/lib/avatar'
@@ -48,6 +51,7 @@ export default async function SettingsPage() {
   const isPro     = isProUser(user?.email, extRow?.role, profile?.subscription_status, effectiveProUntil)
   const headline  = extRow?.headline ?? (user?.user_metadata?.headline as string | undefined) ?? ''
   const avatarUrl = resolveAvatar(avatarRow, user)
+  console.log('[settings] fetched avatar_url from DB:', avatarRow?.avatar_url, '| resolved:', avatarUrl)
 
   const identities   = user?.identities ?? []
   const isGoogleUser = identities.some(i => i.provider === 'google')

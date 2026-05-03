@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { optimizeResume, calculateImprovedScore } from '@/lib/ai/optimizer'
+import { optimizeResume, optimizeResumeGeneral, calculateImprovedScore } from '@/lib/ai/optimizer'
 import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
 import { parseResumeFromPDF } from '@/lib/ai/parser'
 import type { ParsedResume } from '@/types'
 
 function reconstructResumeText(p: ParsedResume): string {
+  // Fast path: if the parser captured the full section map, use it — 100% lossless
+  if (p.sections?.length) {
+    const header = [p.name, p.email, p.phone, p.location].filter(Boolean).join('\n')
+    const body   = p.sections.map(s => `\n${s.title.toUpperCase()}\n${s.content}`).join('\n')
+    return (header + body).trim()
+  }
+
+  // Fallback: rebuild from structured fields (older records without sections[])
   const lines: string[] = []
   if (p.name)     lines.push(p.name)
   if (p.email)    lines.push(p.email)
@@ -28,6 +35,7 @@ function reconstructResumeText(p: ParsedResume): string {
       lines.push(`${edu.degree} ${edu.field} – ${edu.school} (${edu.graduation_year})`)
     }
   }
+  if (p.certifications?.length) lines.push('\nCERTIFICATIONS\n' + p.certifications.join('\n'))
   return lines.join('\n')
 }
 
@@ -92,25 +100,66 @@ export async function POST(request: NextRequest) {
   )
   const isPro = isProUser(user.email, profile.role, profile.subscription_status, effectiveProUntil)
 
-  if (!isPro) {
-    // Check anti-abuse hash first (catches delete-and-re-signup)
-    const emailHash = createHash('sha256').update(user.email ?? '').digest('hex')
-    const admin = createAdminClient()
-    const { data: hashRow } = await admin
-      .from('preview_email_hashes')
-      .select('email_hash')
-      .eq('email_hash', emailHash)
-      .maybeSingle()
+  const body = await request.json()
+  const mode = (body.mode as string | undefined) ?? 'job-specific'
 
-    if (hashRow || profile?.has_used_free_preview) {
-      return NextResponse.json(
-        { requiresUpgrade: true, error: 'Upgrade to Pro for unlimited AI resume optimizations.' },
-        { status: 402 }
-      )
+  // ── GENERAL MODE (free for all users) ──────────────────────────────────────
+  if (mode === 'general') {
+    const resumeResult = await supabase
+      .from('resumes')
+      .select('id, raw_text, parsed_data, file_url')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .single()
+
+    if (resumeResult.error || !resumeResult.data) {
+      return NextResponse.json({ error: 'No active resume found' }, { status: 404 })
     }
+
+    const { file_url } = resumeResult.data
+    let raw_text: string = resumeResult.data.raw_text ?? ''
+
+    if (!raw_text || raw_text.length < 50) {
+      const parsed = resumeResult.data.parsed_data as ParsedResume | null
+      if (parsed?.name) {
+        raw_text = reconstructResumeText(parsed)
+      } else if (file_url) {
+        try {
+          const fileRes = await fetch(file_url)
+          if (!fileRes.ok) throw new Error('Could not download resume file')
+          const buffer = Buffer.from(await fileRes.arrayBuffer())
+          const reparsed = await parseResumeFromPDF(buffer)
+          raw_text = reconstructResumeText(reparsed)
+        } catch (err) {
+          console.error('[optimize:general] PDF re-parse failed:', err)
+          return NextResponse.json({ error: 'Could not read resume content. Please re-upload your resume.' }, { status: 400 })
+        }
+      } else {
+        return NextResponse.json({ error: 'Resume has no readable content. Please re-upload your resume.' }, { status: 400 })
+      }
+    }
+
+    let optimizedData
+    try {
+      optimizedData = await optimizeResumeGeneral(raw_text)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[optimize:general] Claude failed:', msg)
+      return NextResponse.json({ error: `AI optimization failed: ${msg}` }, { status: 500 })
+    }
+
+    return NextResponse.json({ optimizedData, mode: 'general', isFreePreview: false })
   }
 
-  const { jobId } = await request.json()
+  // ── JOB-SPECIFIC MODE (Pro only) ────────────────────────────────────────────
+  if (!isPro) {
+    return NextResponse.json(
+      { requiresUpgrade: true, error: 'Upgrade to Pro to optimize your resume for a specific job.' },
+      { status: 402 }
+    )
+  }
+
+  const { jobId } = body
   if (!jobId) return NextResponse.json({ error: 'jobId required' }, { status: 400 })
 
   const [resumeResult, jobResult, matchResult] = await Promise.all([
@@ -143,7 +192,6 @@ export async function POST(request: NextRequest) {
   const { file_url } = resumeResult.data
   let raw_text: string = resumeResult.data.raw_text ?? ''
 
-  // If raw_text is missing, fall back to reconstructing from parsed_data or re-parsing the PDF
   if (!raw_text || raw_text.length < 50) {
     const parsed = resumeResult.data.parsed_data as ParsedResume | null
     if (parsed?.name) {
@@ -163,8 +211,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Resume has no readable content. Please re-upload your resume.' }, { status: 400 })
     }
   }
-  const { title, company, location, description, url, salary } = jobResult.data
 
+  const { title, company, location, description, url, salary } = jobResult.data
   const originalScore = matchResult.data?.ai_score ?? 0
 
   let optimizedData
@@ -176,31 +224,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `AI optimization failed: ${msg}` }, { status: 500 })
   }
 
-  // Replace Claude's ats_score with the formula-derived score so it reflects
-  // real per-dimension improvements and never drops below the original match score.
   if (originalScore > 0 && optimizedData.score_improvements) {
     optimizedData.ats_score = calculateImprovedScore(originalScore, optimizedData.score_improvements)
     optimizedData.original_score = originalScore
   } else if (originalScore > 0 && optimizedData.ats_score < originalScore) {
-    // Fallback: score_improvements missing — keep original as floor
     optimizedData.ats_score = originalScore
     optimizedData.original_score = originalScore
-  }
-
-  let isFreePreview = false
-  if (!isPro) {
-    // Mark free preview as used — both on profile and in the global hash table
-    const emailHash = createHash('sha256').update(user.email ?? '').digest('hex')
-    await Promise.all([
-      adminClient
-        .from('profiles')
-        .update({ has_used_free_preview: true, ai_actions_used: (profile.ai_actions_used ?? 0) + 1 })
-        .eq('user_id', user.id),
-      adminClient
-        .from('preview_email_hashes')
-        .upsert({ email_hash: emailHash }, { onConflict: 'email_hash', ignoreDuplicates: true }),
-    ])
-    isFreePreview = true
   }
 
   return NextResponse.json({
@@ -211,7 +240,7 @@ export async function POST(request: NextRequest) {
     description: description ?? '',
     salary: salary ?? null,
     applyUrl: url,
-    isFreePreview,
+    isFreePreview: false,
   })
 }
 

@@ -25,6 +25,12 @@ export interface ParsedResume {
   experience: ResumeExperience[]
   education: ResumeEducation[]
   certifications: string[]
+  /**
+   * Lossless section map: every section found in the original resume,
+   * including Languages, Personal Details, Declaration, and any custom sections.
+   * Used to pass complete content to AI optimization.
+   */
+  sections?: Array<{ title: string; content: string }>
 }
 
 export interface Resume {
@@ -40,7 +46,66 @@ export interface Resume {
 
 // ─── Jobs ─────────────────────────────────────────────────────────────────────
 
-export type JobSource = 'adzuna' | 'jsearch' | 'apify' | 'manual'
+/** Tier 1: direct ATS | Tier 2: Apify platform | Tier 3: aggregators */
+export type JobSource =
+  | 'greenhouse' | 'lever' | 'workable'           // Tier 1
+  | 'apify_indeed' | 'apify_linkedin'             // Tier 2
+  | 'apify_naukri' | 'apify_apna' | 'apify'      // Tier 2 (apify = legacy)
+  | 'adzuna' | 'jsearch'                          // Tier 3
+  | 'manual'
+
+export type ApplyStatus = 'active' | 'broken' | 'unverified'
+
+/**
+ * UI-facing freshness label derived from apply_status + last_verified_at.
+ * - verified: active + verified within 48 h
+ * - stale:    active + not verified recently (old check or never)
+ * - unverified: never checked
+ */
+export type VerifiedLabel = 'verified' | 'stale' | 'unverified'
+
+/** Source tier used for sorting (lower = higher priority) */
+export const SOURCE_TIER: Record<JobSource, 1 | 2 | 3> = {
+  greenhouse: 1, lever: 1, workable: 1,
+  apify_indeed: 2, apify_linkedin: 2, apify_naukri: 2, apify_apna: 2, apify: 2,
+  adzuna: 3, jsearch: 3,
+  manual: 1, // manual always surfaces first
+}
+
+/** Compute the UI-facing verification label from DB fields. */
+export function computeVerifiedLabel(
+  applyStatus: ApplyStatus | undefined,
+  lastVerifiedAt: string | null | undefined
+): VerifiedLabel {
+  if (applyStatus !== 'active') return 'unverified'
+  if (!lastVerifiedAt) return 'stale'
+  const ageMs = Date.now() - new Date(lastVerifiedAt).getTime()
+  return ageMs < 48 * 60 * 60 * 1000 ? 'verified' : 'stale'
+}
+
+/**
+ * Freshness score for ranking: higher = better.
+ * source_tier (0–60) + recency (0–40)
+ */
+export function computeFreshnessScore(job: {
+  source: JobSource
+  postedAt?: string | null
+}): number {
+  const tierScore = (4 - SOURCE_TIER[job.source]) * 20  // tier1→60, tier2→40, tier3→20
+  let recencyScore = 10 // no date → weakly fresh
+  if (job.postedAt) {
+    const ageDays = (Date.now() - new Date(job.postedAt).getTime()) / 86_400_000
+    recencyScore = ageDays < 1 ? 40 : ageDays < 3 ? 28 : ageDays < 7 ? 16 : ageDays < 14 ? 6 : 0
+  }
+  return tierScore + recencyScore
+}
+
+/** Canonical dedup key: md5-equivalent string for cross-source comparison. */
+export function computeCanonicalKey(company: string, title: string, location: string): string {
+  const norm  = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60)
+  const city  = location.split(',')[0]
+  return `${norm(company)}|${norm(title)}|${norm(city)}`
+}
 
 export interface NormalizedJob {
   externalId: string
@@ -49,7 +114,10 @@ export interface NormalizedJob {
   company: string
   location: string
   description: string
+  /** Job listing page URL (for viewing the detail page) */
   url: string
+  /** Direct apply endpoint — ATS URL if available, else same as url */
+  applyUrl?: string
   postedAt?: string
   salary?: string
 }
@@ -63,6 +131,8 @@ export interface Job {
   location: string
   description: string
   url: string
+  apply_url?: string
+  apply_status?: ApplyStatus
   salary?: string
   requirements: Record<string, unknown>
   scraped_at: string

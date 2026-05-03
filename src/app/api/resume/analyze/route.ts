@@ -3,9 +3,9 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { parseResume, parseResumeFromPDF, generateHeadline } from '@/lib/ai/parser'
 import { rerankJobs } from '@/lib/ai/reranker'
 import { generateCvSuggestions } from '@/lib/ai/suggestions'
-import { AdzunaAdapter } from '@/lib/jobs/sources/adzuna'
+import { JobSourceRouter } from '@/lib/jobs/router'
 import { createNotification } from '@/lib/notifications'
-import type { ParsedResume } from '@/types'
+import type { ParsedResume, NormalizedJob } from '@/types'
 
 export const maxDuration = 60
 
@@ -113,65 +113,92 @@ export async function POST() {
     console.error('[analyze] headline generation failed (non-fatal):', err)
   }
 
-  // ── 3. Build Adzuna search query ────────────────────────────────────────────
-  const recentTitle = parsedResume.experience?.[0]?.title ?? ''
-  const topSkills = parsedResume.skills.slice(0, 4).join(' ')
-  const searchQuery = `${recentTitle} ${topSkills}`.trim().slice(0, 100) || 'software engineer'
+  // ── 3. Build search query ────────────────────────────────────────────────────
+  // Use job title only — adding skills to the query hurts recall on Adzuna/JSearch
+  const recentTitle     = parsedResume.experience?.[0]?.title?.trim() ?? ''
+  const profileLocation = parsedResume.location?.trim() || 'India'
+  const primaryQuery    = recentTitle || parsedResume.skills?.[0] || 'software engineer'
+  // Broad fallback: first word of the title (e.g. "Sales" from "Senior Sales Manager")
+  const broadQuery      = recentTitle.split(/\s+/).slice(-2).join(' ') || primaryQuery
 
-  console.log('[analyze] search query:', searchQuery)
+  console.log('[analyze] primaryQuery:', primaryQuery, '| location:', profileLocation)
 
-  // ── 4. Fetch jobs from Adzuna ───────────────────────────────────────────────
-  const adzuna = new AdzunaAdapter()
-  if (!(await adzuna.isAvailable())) {
-    return NextResponse.json(
-      { error: 'ADZUNA_APP_ID / ADZUNA_APP_KEY not configured in .env.local' },
-      { status: 500 }
-    )
-  }
+  // ── 4. Fetch jobs via multi-source router (Adzuna → JSearch → Apify) ────────
+  const router = new JobSourceRouter()
+  let jobs: NormalizedJob[] = []
 
-  let jobs
+  // 4a. Primary sources: Adzuna + JSearch in waterfall
   try {
-    jobs = await adzuna.search({ title: searchQuery, location: '', countryCode: 'in', limit: 25 })
-    if (!jobs.length) {
-      const fallback = parsedResume.skills[0] ?? 'engineer'
-      console.log('[analyze] Adzuna retry with fallback query:', fallback)
-      jobs = await adzuna.search({ title: fallback, location: '', countryCode: 'in', limit: 25 })
-    }
+    const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, 'primary')
+    jobs = r.jobs
+    console.log('[analyze] primary sources returned', jobs.length, 'jobs from', r.sourcesUsed.join(', ') || 'none')
   } catch (err) {
-    const msg = apiErrMsg(err)
-    console.error('[analyze] Adzuna fetch failed:', msg)
-    return NextResponse.json(
-      { error: `Could not fetch jobs from Adzuna: ${msg}` },
-      { status: 502 }
-    )
+    console.error('[analyze] primary router error:', apiErrMsg(err))
   }
 
-  console.log('[analyze] Adzuna returned', jobs?.length ?? 0, 'jobs')
+  // 4b. Broaden title if primary returned too few (e.g. very specific title like "MEP Sales Head")
+  if (jobs.length < 5 && broadQuery !== primaryQuery) {
+    console.log('[analyze] broadening query to:', broadQuery)
+    try {
+      const r = await router.search({ title: broadQuery, location: profileLocation, limit: 25 }, 'primary')
+      if (r.jobs.length > jobs.length) {
+        jobs = r.jobs
+        console.log('[analyze] broad query returned', jobs.length, 'jobs')
+      }
+    } catch (err) {
+      console.error('[analyze] broad query error:', apiErrMsg(err))
+    }
+  }
 
-  if (!jobs?.length) {
+  // 4c. Apify fallback if primary sources insufficient
+  if (jobs.length < 5) {
+    console.log('[analyze] primary sources insufficient — trying Apify fallback')
+    try {
+      const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, 'fallback')
+      if (r.jobs.length > 0) {
+        jobs = [...jobs, ...r.jobs]
+        console.log('[analyze] Apify added', r.jobs.length, 'jobs, total now', jobs.length)
+      }
+    } catch (err) {
+      console.error('[analyze] Apify fallback error:', apiErrMsg(err))
+    }
+  }
+
+  console.log('[analyze] total jobs fetched:', jobs.length)
+
+  if (!jobs.length) {
     return NextResponse.json({
       matchCount: 0,
       cvSuggestions: [],
-      message: 'No jobs found on Adzuna India for your profile. Try the search form with a specific job title.',
+      message: `No jobs found for "${primaryQuery}". Try the search form above with a specific job title and location.`,
     })
   }
 
   // ── 5. Upsert jobs into the jobs table ─────────────────────────────────────
-  await admin.from('jobs').upsert(
-    jobs.map((j) => ({
-      external_id: j.externalId,
-      source: j.source,
-      title: j.title,
-      company: j.company,
-      location: j.location,
-      description: j.description,
-      url: j.url,
-      salary: j.salary ?? null,
-      requirements: {},
-      scraped_at: new Date().toISOString(),
-    })),
-    { onConflict: 'external_id,source' }
-  )
+  const baseJobRows = jobs.map((j) => ({
+    external_id:  j.externalId,
+    source:       j.source,
+    title:        j.title,
+    company:      j.company,
+    location:     j.location,
+    description:  j.description,
+    url:          j.url,
+    salary:       j.salary ?? null,
+    requirements: {},
+    scraped_at:   new Date().toISOString(),
+  }))
+  const extendedJobRows = jobs.map((j, i) => ({
+    ...baseJobRows[i],
+    apply_url:    j.applyUrl ?? j.url,
+    apply_status: 'unverified',
+  }))
+
+  let { error: upsertErr } = await admin.from('jobs').upsert(extendedJobRows, { onConflict: 'external_id,source' })
+  if (upsertErr && (upsertErr.code === '42703' || upsertErr.code === 'PGRST204' || upsertErr.message?.includes('apply_url'))) {
+    console.warn('[analyze] migration pending — retrying upsert without new columns')
+    ;({ error: upsertErr } = await admin.from('jobs').upsert(baseJobRows, { onConflict: 'external_id,source' }))
+  }
+  if (upsertErr) console.error('[analyze] jobs upsert error:', upsertErr.message)
 
   const { data: dbJobs } = await admin
     .from('jobs')

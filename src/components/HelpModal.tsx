@@ -21,7 +21,7 @@ const HELP_DATA: HelpSection[] = [
     items: [
       {
         question: 'How do I start using the platform?',
-        answer: 'Upload your resume on the "My Resume" page, then head to "Job Matches" to explore AI-ranked results. Once you find a role you like, use the Optimizer to tailor your resume and hit Apply.',
+        answer: 'Upload your resume on the "My Resume" page, then head to "Matched Jobs" to explore AI-ranked results. Once you find a role you like, use the Optimizer to tailor your resume and hit Apply.',
       },
       {
         question: 'Where do I upload my resume?',

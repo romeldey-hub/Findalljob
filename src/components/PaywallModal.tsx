@@ -1,6 +1,6 @@
 'use client'
 
-import { X, Crown, Wand2, Sparkles } from 'lucide-react'
+import { X, Crown, Wand2, Sparkles, Mic, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 
 interface PaywallModalProps {
@@ -35,19 +35,20 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
         {/* Copy */}
         <div className="text-center mb-6">
           <h3 className="font-bold text-[18px] text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">
-            Unlock AI Resume Optimization
+            Unlock full interview access
           </h3>
           <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed">
-            You&apos;ve used your free preview. Upgrade to Pro for unlimited AI-tailored resumes that get you more interviews.
+            Get hired faster with AI-powered tools
           </p>
         </div>
 
         {/* Feature bullets */}
         <div className="space-y-2.5 mb-6">
           {[
-            { icon: Wand2,    text: 'Unlimited AI resume optimizations' },
-            { icon: Sparkles, text: 'Keyword-matched rewrites per job description' },
-            { icon: Crown,    text: 'ATS score improvements · Priority support' },
+            { icon: Wand2,       text: 'Customize your resume for every job' },
+            { icon: Mic,         text: 'Practice mock interviews with AI feedback' },
+            { icon: TrendingUp,  text: 'Increase your match score instantly' },
+            { icon: Sparkles,    text: 'Discover jobs you\'re more likely to get' },
           ].map(({ icon: Icon, text }) => (
             <div key={text} className="flex items-center gap-3 text-[13px] text-gray-600 dark:text-slate-400">
               <div className="w-6 h-6 rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] flex items-center justify-center flex-shrink-0">
@@ -59,7 +60,7 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
         </div>
 
         {/* CTAs */}
-        <div className="flex gap-2.5">
+        <div className="flex gap-2.5 mb-2">
           <button
             onClick={handleMaybeLater}
             className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-all"
@@ -68,10 +69,11 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
           </button>
           <Link href="/settings" className="flex-1">
             <button className="w-full py-2.5 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[13px] font-bold transition-all flex items-center justify-center gap-1.5">
-              <Crown className="w-3.5 h-3.5 text-amber-400" />Upgrade to Pro
+              <Crown className="w-3.5 h-3.5 text-amber-400" />Start Getting Interview-Ready
             </button>
           </Link>
         </div>
+        <p className="text-center text-[11px] text-gray-400 dark:text-slate-500">Cancel anytime · No risk</p>
       </div>
     </div>
   )

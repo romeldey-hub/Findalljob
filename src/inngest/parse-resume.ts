@@ -6,6 +6,34 @@ import { createAdminClient } from '@/lib/supabase/server'
 type StepRun = { run: <T>(id: string, fn: () => Promise<T>) => Promise<T> }
 type ParseResumeEvent = { data: { resumeId: string; userId: string } }
 
+function buildFallbackSections(text: string): Array<{ title: string; content: string }> {
+  const lines = text.split('\n')
+  const HEADING = /^([A-Z][A-Za-z\s&\/]{2,40})$/
+  const sections: Array<{ title: string; content: string }> = []
+  let currentTitle = ''
+  let currentLines: string[] = []
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    const isHeading = (HEADING.test(line) || /^[A-Z\s]{4,30}$/.test(line)) &&
+                      !line.endsWith('.') && !line.endsWith(',') && line.split(' ').length <= 5
+    if (isHeading) {
+      if (currentTitle && currentLines.length > 0) {
+        sections.push({ title: currentTitle, content: currentLines.join('\n').trim() })
+      }
+      currentTitle = line
+      currentLines = []
+    } else if (currentTitle) {
+      currentLines.push(line)
+    }
+  }
+  if (currentTitle && currentLines.length > 0) {
+    sections.push({ title: currentTitle, content: currentLines.join('\n').trim() })
+  }
+  return sections
+}
+
 export const parseResumeJob = inngest.createFunction(
   {
     id: 'parse-resume',
@@ -35,7 +63,26 @@ export const parseResumeJob = inngest.createFunction(
 
     const parsedData = await step.run('claude-parse', async () => {
       try {
-        return await parseResumeFromPDF(pdfBuffer)
+        let result = await parseResumeFromPDF(pdfBuffer)
+
+        // Fetch raw_text for fallback
+        const supabase = createAdminClient()
+        const { data: resumeRow } = await supabase
+          .from('resumes')
+          .select('raw_text')
+          .eq('id', resumeId)
+          .single()
+        const rawText = resumeRow?.raw_text ?? ''
+
+        if ((!result.sections || result.sections.length === 0) && rawText.length > 50) {
+          const fallback = buildFallbackSections(rawText)
+          if (fallback.length > 0) {
+            result = { ...result, sections: fallback }
+            console.warn('[parse-resume] sections[] empty — regex fallback:', fallback.length, 'sections')
+          }
+        }
+
+        return result
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         // Persist error so the UI stops polling and shows the user what happened

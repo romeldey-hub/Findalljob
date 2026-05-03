@@ -9,17 +9,21 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { jobId, optimizedData } = await request.json() as {
-    jobId: string
+    jobId?: string | null
     optimizedData: OptimizedResumeData
   }
 
-  if (!jobId || !optimizedData) {
-    return NextResponse.json({ error: 'jobId and optimizedData are required' }, { status: 400 })
+  if (!optimizedData) {
+    return NextResponse.json({ error: 'optimizedData is required' }, { status: 400 })
   }
+
+  const normalizedJobId = jobId || null
 
   const [{ data: resume }, { data: existing }] = await Promise.all([
     supabase.from('resumes').select('id').eq('user_id', user.id).eq('is_active', true).single(),
-    supabase.from('optimized_resumes').select('id').eq('user_id', user.id).eq('job_id', jobId).maybeSingle(),
+    normalizedJobId
+      ? supabase.from('optimized_resumes').select('id').eq('user_id', user.id).eq('job_id', normalizedJobId).maybeSingle()
+      : supabase.from('optimized_resumes').select('id').eq('user_id', user.id).is('job_id', null).maybeSingle(),
   ])
 
   const payload = {
@@ -50,7 +54,7 @@ export async function POST(request: NextRequest) {
     // INSERT
     const { data: inserted, error } = await supabase
       .from('optimized_resumes')
-      .insert({ user_id: user.id, job_id: jobId, ...payload })
+      .insert({ user_id: user.id, job_id: normalizedJobId, ...payload })
       .select('id, created_at')
       .single()
 

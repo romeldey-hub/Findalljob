@@ -10,9 +10,9 @@ interface UpgradeModalProps {
 
 const PRO_BULLETS = [
   'Customize your resume for every job',
-  'Increase your job match score instantly',
-  'Get AI insights to improve your applications',
-  'Discover more relevant job opportunities',
+  'Practice mock interviews with AI feedback',
+  'Get shortlisted with higher match scores',
+  'Discover jobs you\'re actually likely to get',
 ]
 
 export function UpgradeModal({ onClose }: UpgradeModalProps) {
@@ -41,12 +41,15 @@ export function UpgradeModal({ onClose }: UpgradeModalProps) {
 
         <div className="flex items-center gap-2">
           <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <p className="font-bold text-[13px] text-white">Upgrade to Pro</p>
+          <p className="font-bold text-[13px] text-white">Unlock everything you need to get hired</p>
         </div>
 
-        <p className="text-[22px] font-bold text-white leading-none">
-          $5<span className="text-[13px] font-normal text-gray-400">/month</span>
-        </p>
+        <div>
+          <p className="text-[22px] font-bold text-white leading-none">
+            $5<span className="text-[13px] font-normal text-gray-400">/month</span>
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">One step closer to your next job</p>
+        </div>
 
         <ul className="space-y-1.5">
           {PRO_BULLETS.map((f) => (
@@ -57,7 +60,8 @@ export function UpgradeModal({ onClose }: UpgradeModalProps) {
           ))}
         </ul>
 
-        <RazorpayPaymentWidget />
+        <RazorpayPaymentWidget label="Start Getting Interview-Ready" />
+        <p className="text-center text-[10px] text-gray-500 -mt-1">Cancel anytime · No commitment</p>
       </div>
     </div>
   )

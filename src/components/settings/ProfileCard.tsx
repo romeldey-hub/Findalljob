@@ -19,58 +19,53 @@ export function ProfileCard({
   userId, initialName, email, initialHeadline, initialIsHeadlineEdited, initialAvatarUrl,
 }: ProfileCardProps) {
   const router = useRouter()
-  const [editing, setEditing]               = useState(false)
-  const [saving, setSaving]                 = useState(false)
-  const [name, setName]                     = useState(initialName)
-  const [headline, setHeadline]             = useState(initialHeadline)
-  // last persisted value — used only for Cancel revert
-  const [savedHeadline, setSavedHeadline]   = useState(initialHeadline)
-  // mirrors DB is_headline_edited; true once user saves a manual edit — persists across refreshes
+  const [editing, setEditing]             = useState(false)
+  const [saving, setSaving]               = useState(false)
+  const [name, setName]                   = useState(initialName)
+  const [headline, setHeadline]           = useState(initialHeadline)
+  const [savedHeadline, setSavedHeadline] = useState(initialHeadline)
   const [isHeadlineEdited, setIsHeadlineEdited] = useState(initialIsHeadlineEdited)
-  // Sync avatarSrc when the server re-renders with a new initialAvatarUrl
-  // (e.g. after router.refresh() following a successful upload)
-  const [avatarSrc, setAvatarSrc]           = useState<string | null>(initialAvatarUrl)
-  useEffect(() => { setAvatarSrc(initialAvatarUrl) }, [initialAvatarUrl])
-  const [avatarFile, setAvatarFile]         = useState<File | null>(null)
-  const fileInputRef                        = useRef<HTMLInputElement>(null)
-  const headlineInputRef                    = useRef<HTMLInputElement>(null)
 
-  // If the server rendered an empty headline, poll until the async AI generation completes
+  // Avatar state — separate from the edit/save cycle
+  const [avatarSrc, setAvatarSrc]         = useState<string | null>(initialAvatarUrl)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  // Prevent a stale router.refresh() prop from overwriting a freshly uploaded avatar
+  const justUploadedRef                   = useRef<string | null>(null)
+
   useEffect(() => {
-    if (initialHeadline) return // server already has it — nothing to do
+    if (justUploadedRef.current !== null) {
+      justUploadedRef.current = null
+      return
+    }
+    setAvatarSrc(initialAvatarUrl)
+  }, [initialAvatarUrl])
 
+  const fileInputRef     = useRef<HTMLInputElement>(null)
+  const headlineInputRef = useRef<HTMLInputElement>(null)
+
+  // Poll for AI-generated headline if the server didn't have one yet
+  useEffect(() => {
+    if (initialHeadline) return
     let attempts = 0
-    const MAX_ATTEMPTS = 10 // ~30 seconds total
     let timer: ReturnType<typeof setTimeout>
-
     async function poll() {
       try {
         const res = await fetch('/api/profile/headline')
         if (!res.ok) return
         const data = await res.json()
-        console.log('Fetched Headline:', data?.headline)
         if (data?.headline) {
           setHeadline(data.headline)
           setSavedHeadline(data.headline)
-          // don't touch isHeadlineEdited — DB value is authoritative
-          return // found — stop polling
+          return
         }
-      } catch {
-        // network error — retry
-      }
-      attempts++
-      if (attempts < MAX_ATTEMPTS) {
-        timer = setTimeout(poll, 3000)
-      }
+      } catch { /* retry */ }
+      if (++attempts < 10) timer = setTimeout(poll, 3000)
     }
-
-    // First check after 2 s — gives the analyze route time to finish
     timer = setTimeout(poll, 2000)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // runs once on mount; initialHeadline is stable at render time
+  }, [])
 
-  // Focus the headline input whenever editing mode is entered
   useEffect(() => {
     if (editing) headlineInputRef.current?.focus()
   }, [editing])
@@ -79,40 +74,65 @@ export function ProfileCard({
     .split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]).join('').toUpperCase() || 'U'
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // ── Immediate avatar upload ───────────────────────────────────────────────
+  // Upload fires the moment the user picks a file — no Save button required.
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    // Reset input so re-selecting the same file triggers onChange again
+    e.target.value = ''
+
     if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5 MB'); return }
-    setAvatarFile(file)
-    setAvatarSrc(URL.createObjectURL(file))
+
+    // Show local preview instantly while upload runs in background
+    const previewUrl = URL.createObjectURL(file)
+    setAvatarSrc(previewUrl)
+    setAvatarUploading(true)
+
+    try {
+      const dataUrl = await compressAvatar(file)
+
+      const res = await fetch('/api/profile/upload-avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_url: dataUrl }),
+      })
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}))
+        const msg = payload?.error ?? 'Failed to upload image. Please try again.'
+        console.error('[ProfileCard] upload error:', msg)
+        throw new Error(msg)
+      }
+
+      const { publicUrl } = await res.json() as { publicUrl: string }
+      console.log('[ProfileCard] upload success. URL:', publicUrl)
+
+      URL.revokeObjectURL(previewUrl)
+      justUploadedRef.current = publicUrl
+      setAvatarSrc(publicUrl)
+      toast.success('Profile photo updated successfully')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to upload image. Please try again.'
+      toast.error(msg, { duration: 6000 })
+      URL.revokeObjectURL(previewUrl)
+      setAvatarSrc(initialAvatarUrl) // revert to last known good value
+    } finally {
+      setAvatarUploading(false)
+    }
   }
 
   function handleCancel() {
     setEditing(false)
     setName(initialName)
     setHeadline(savedHeadline)
-    setAvatarSrc(initialAvatarUrl)
-    setAvatarFile(null)
+    // Avatar is saved immediately on upload — do not revert it here
   }
 
   async function handleSave() {
     if (!name.trim()) { toast.error('Name cannot be empty'); return }
     setSaving(true)
     try {
-      // 1 — compress + upload avatar if changed
-      if (avatarFile) {
-        const newAvatarDataUrl = await compressAvatar(avatarFile)
-        const res = await fetch('/api/profile/upload-avatar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ avatar_url: newAvatarDataUrl }),
-        })
-        if (!res.ok) throw new Error('Avatar save failed')
-        const { publicUrl } = await res.json() as { publicUrl: string }
-        setAvatarSrc(publicUrl)
-      }
-
-      // 2 — save full_name + headline to profiles table (headline falls back gracefully if column missing)
       const res = await fetch('/api/profile/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,18 +140,16 @@ export function ProfileCard({
       })
       if (!res.ok) throw new Error('Profile update failed')
 
-      // 3 — also persist headline in user_metadata so it survives until DB migration runs
       const supabase = createClient()
       await supabase.auth.updateUser({ data: { headline: headline.trim() } })
 
       toast.success('Profile updated successfully')
       setSavedHeadline(headline.trim())
-      setIsHeadlineEdited(true) // DB was updated; mirror it in client state
+      setIsHeadlineEdited(true)
       setEditing(false)
-      setAvatarFile(null)
       router.refresh()
-    } catch {
-      toast.error('Failed to save changes')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save changes')
     } finally {
       setSaving(false)
     }
@@ -182,20 +200,32 @@ export function ProfileCard({
                 ? <img src={avatarSrc} alt="" className="w-full h-full object-cover" onError={() => setAvatarSrc(null)} />
                 : <span className="text-2xl font-bold text-white">{initials}</span>}
             </div>
+
+            {/* Upload spinner overlay */}
+            {avatarUploading && (
+              <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-white animate-spin" />
+              </div>
+            )}
+
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#2563EB] border-2 border-white flex items-center justify-center hover:bg-blue-700 transition-colors shadow-sm"
+              disabled={avatarUploading}
+              className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#2563EB] border-2 border-white flex items-center justify-center hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
               title="Change photo"
             >
               <Camera className="w-3.5 h-3.5 text-white" />
             </button>
           </div>
+
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="text-[12px] font-semibold text-[#2563EB] hover:underline transition-colors"
+            disabled={avatarUploading}
+            className="text-[12px] font-semibold text-[#2563EB] hover:underline transition-colors disabled:opacity-50"
           >
-            Upload Photo
+            {avatarUploading ? 'Uploading…' : 'Upload Photo'}
           </button>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -253,9 +283,7 @@ export function ProfileCard({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Field({
-  label, hint, children,
-}: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="block text-[12px] font-semibold text-gray-500 dark:text-slate-400 mb-1.5">{label}</label>
@@ -274,24 +302,23 @@ function inputClass(editable: boolean) {
   ].join(' ')
 }
 
-// Resize + crop image to 128×128 JPEG data URL so it fits in user_metadata
+// Resize + centre-crop to 256×256 JPEG
 function compressAvatar(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const img = new Image()
+    const img    = new Image()
     const blobUrl = URL.createObjectURL(file)
     img.onload = () => {
-      const SIZE = 128
+      const SIZE = 256
       const canvas = document.createElement('canvas')
-      canvas.width = SIZE
+      canvas.width  = SIZE
       canvas.height = SIZE
-      const ctx = canvas.getContext('2d')!
-      // Centre-crop to square
+      const ctx  = canvas.getContext('2d')!
       const side = Math.min(img.width, img.height)
       const sx   = (img.width  - side) / 2
       const sy   = (img.height - side) / 2
       ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE)
       URL.revokeObjectURL(blobUrl)
-      resolve(canvas.toDataURL('image/jpeg', 0.82))
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
     }
     img.onerror = reject
     img.src = blobUrl

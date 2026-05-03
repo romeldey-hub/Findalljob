@@ -45,16 +45,18 @@ export const matchJobsJob = inngest.createFunction(
       const embeddings = await generateEmbeddingsBatch(jobTexts)
 
       const jobsToInsert = jobs.map((job, i) => ({
-        external_id: job.externalId,
-        source: job.source,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        description: job.description,
-        url: job.url,
+        external_id:  job.externalId,
+        source:       job.source,
+        title:        job.title,
+        company:      job.company,
+        location:     job.location,
+        description:  job.description,
+        url:          job.url,
+        apply_url:    job.applyUrl ?? job.url,
         requirements: {},
-        embedding: embeddings[i],
-        scraped_at: new Date().toISOString(),
+        embedding:    embeddings[i],
+        scraped_at:   new Date().toISOString(),
+        apply_status: 'unverified',
       }))
 
       const { error } = await supabase

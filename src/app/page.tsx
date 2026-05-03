@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import {
-  FileText, Briefcase, Wand2, Kanban, Sparkles, Bookmark,
-  Check, X, Zap, ArrowRight, Clock, TrendingUp,
+  FileText, Briefcase, Wand2, Kanban, Bookmark, Mic,
+  Check, X, Zap, ArrowRight, Clock, TrendingUp, Sparkles,
 } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
 
@@ -28,15 +28,16 @@ const features = [
     tag: '🔥 Most Powerful',
   },
   {
+    icon: Mic,
+    title: 'Mock Interview',
+    description: 'Practice real interview questions based on your resume and job role — get instant feedback and improve with every answer.',
+    hero: false,
+    tag: '⚡ Interview Ready',
+  },
+  {
     icon: Kanban,
     title: 'Application Tracker',
     description: 'Track your applications from applied → interview → offer.',
-    hero: false,
-  },
-  {
-    icon: Sparkles,
-    title: 'AI Insights',
-    description: 'Know exactly what\'s missing and how to improve your chances.',
     hero: false,
   },
   {
@@ -51,14 +52,14 @@ const whyPoints = [
   { icon: FileText,    text: 'Apply with job-specific resumes' },
   { icon: TrendingUp,  text: 'Increase match score instantly' },
   { icon: Clock,       text: 'Save hours of manual effort' },
-  { icon: Sparkles,    text: 'Get actionable AI suggestions' },
+  { icon: Sparkles,    text: 'Practice real interview questions before you apply' },
   { icon: Briefcase,   text: 'Discover jobs you actually qualify for' },
 ]
 
 const comparison = [
   { feature: 'Job Matching',       free: true,  pro: true },
   { feature: 'Resume per Job',     free: false, pro: true },
-  { feature: 'AI Insights',        free: false, pro: true },
+  { feature: 'Mock Interview + AI Feedback', free: false, pro: true },
   { feature: 'Match Score Boost',  free: false, pro: true },
 ]
 
@@ -72,6 +73,7 @@ const freeFeatures = [
 const proFeatures = [
   'Customize your resume for every job',
   'Increase your job match score instantly',
+  'Mock interview practice with AI feedback',
   'Get AI insights to improve applications',
   'Discover more relevant job opportunities',
   'Faster AI processing',
@@ -85,7 +87,7 @@ export default function LandingPage() {
 
       {/* ── Nav ─────────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#040D21]/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
-        <LogoMark href="/" size="sm" />
+        <LogoMark href="/" size="sm" onDark />
         <div className="flex items-center gap-3">
           <Link
             href="/login"
@@ -109,22 +111,28 @@ export default function LandingPage() {
           <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.08] blur-[80px]" />
         </div>
 
-        <h1 className="text-4xl sm:text-5xl md:text-[64px] font-black tracking-[-0.02em] max-w-3xl mx-auto leading-[1.08] mb-6">
-          Land interviews faster with{' '}
-          <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-300 bg-clip-text text-transparent">
-            AI-powered resume + job matching
+        <h1 className="text-4xl sm:text-5xl md:text-[64px] font-extrabold tracking-[-0.02em] max-w-3xl mx-auto leading-[1.1] mb-6">
+          <span className="text-white">Stop applying blindly.</span>
+          <br />
+          <span style={{
+            backgroundImage: 'linear-gradient(90deg, #4F9CF9 0%, #38BDF8 40%, #22D3EE 70%, #60A5FA 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+          }}>
+            Start getting interview-ready.
           </span>
         </h1>
 
-        <p className="text-[17px] text-slate-400 max-w-xl mx-auto leading-relaxed mb-10">
-          Upload your resume once. Get matched with the right jobs, customize your
-          resume for each role, and track everything in one place.
+        <p className="text-[17px] max-w-xl mx-auto leading-relaxed mb-10" style={{ color: '#94A3B8' }}>
+          Upload your resume, get matched with the right jobs, optimize your resume, and practice real interviews — all in one place.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center mb-5">
           <Link href="/signup">
             <button className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold px-7 py-3.5 rounded-xl hover:scale-[1.02] active:scale-100 transition-all shadow-2xl shadow-blue-500/25 text-[15px]">
-              Get Started Free <ArrowRight className="w-4 h-4" />
+              Start Getting Interview-Ready <ArrowRight className="w-4 h-4" />
             </button>
           </Link>
           <Link href="/signup">
@@ -218,7 +226,7 @@ export default function LandingPage() {
             Simple pricing. Real results.
           </h2>
           <p className="text-slate-400 text-[15px]">
-            Start free. Upgrade when you want better outcomes.
+            Start free. Upgrade to practice interviews and get hired faster.
           </p>
         </div>
 
@@ -261,6 +269,7 @@ export default function LandingPage() {
                 <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
               </div>
               <p className="text-[13px] text-slate-400 mt-1">Get more interviews with AI-powered applications</p>
+              <p className="text-[11px] text-blue-400/70 mt-0.5">Includes full mock interview access</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
               {proFeatures.map((f) => (
@@ -333,7 +342,7 @@ export default function LandingPage() {
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer className="border-t border-white/[0.05] px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-6xl mx-auto text-[13px] text-slate-600">
         <div className="flex items-center gap-2">
-          <LogoMark href="/" size="sm" />
+          <LogoMark href="/" size="sm" onDark />
         </div>
         <span>© {new Date().getFullYear()} Find All Job · Powered by <a href="https://bestin-e.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">bestin-e.com</a></span>
         <div className="flex gap-4">

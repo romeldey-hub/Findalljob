@@ -8,9 +8,10 @@ interface LogoMarkProps {
   iconOnly?: boolean
   size?: 'sm' | 'md'
   className?: string
+  onDark?: boolean
 }
 
-export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', className }: LogoMarkProps) {
+export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', className, onDark = false }: LogoMarkProps) {
   const isSmall = size === 'sm'
   const px = isSmall ? 32 : 36
 
@@ -32,8 +33,8 @@ export function LogoMark({ href = '/matches', iconOnly = false, size = 'md', cla
             isSmall ? 'text-[15px]' : 'text-[17px]',
           )}
         >
-          <span className="text-[#1a2742] dark:text-white">FindAll</span>
-          <span className="text-blue-600 dark:text-blue-400">Job</span>
+          <span className={onDark ? 'text-white' : 'text-[#1a2742] dark:text-white'}>FindAll</span>
+          <span className={onDark ? 'text-blue-400' : 'text-blue-600 dark:text-blue-400'}>Job</span>
         </span>
       )}
     </div>

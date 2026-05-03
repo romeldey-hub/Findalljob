@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   Mail, Phone, MapPin, Briefcase, GraduationCap,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, FileText,
 } from 'lucide-react'
 import type { ParsedResume, Resume, ResumeExperience } from '@/types'
 
@@ -14,6 +14,18 @@ interface VisualResumeCardProps {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isStructuredSection(title: string): boolean {
+  const normalized = title.trim().toLowerCase()
+  const structured = [
+    'summary', 'professional summary', 'profile', 'objective', 'about',
+    'experience', 'work experience', 'employment', 'career history',
+    'skills', 'core competencies', 'key skills', 'technical skills',
+    'education', 'academic', 'qualifications',
+    'certifications', 'certificates', 'credentials', 'licenses',
+  ]
+  return structured.includes(normalized)
+}
 
 function computeDuration(start: string, end: string | null): string {
   const yearOf = (s: string) => {
@@ -132,6 +144,8 @@ export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResume
   const { name, email, phone, location, summary, skills, experience, education, certifications } = parsedData
 
   const [showAllSkills, setShowAllSkills] = useState(false)
+
+  const additionalSections = (parsedData.sections ?? []).filter(s => !isStructuredSection(s.title))
 
   const initials = (name ?? '')
     .split(' ').filter(Boolean).slice(0, 2)
@@ -291,6 +305,17 @@ export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResume
               </div>
             </ContentSection>
           )}
+
+          {/* Additional (non-structured) sections */}
+          {additionalSections.length > 0 && additionalSections.map((section, i) => (
+            <ContentSection
+              key={i}
+              title={section.title}
+              icon={<FileText className="w-4 h-4 text-[#2563EB]" />}
+            >
+              <p className="text-[14px] text-gray-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">{section.content}</p>
+            </ContentSection>
+          ))}
 
         </div>
       </div>

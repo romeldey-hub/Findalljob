@@ -5,6 +5,42 @@ import { inngest } from '@/inngest/client'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
+function detectSectionsFromText(text: string): Array<{ title: string; content: string }> {
+  if (!text || text.length < 50) return []
+
+  const lines = text.split('\n')
+  const HEADING_PATTERN = /^([A-Z][A-Za-z\s&\/]{2,40})$/
+
+  const sections: Array<{ title: string; content: string }> = []
+  let currentTitle = ''
+  let currentLines: string[] = []
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    // A heading: short ALL-CAPS or Title Case line with no punctuation at end
+    const isHeading = (HEADING_PATTERN.test(line) || /^[A-Z\s]{4,30}$/.test(line)) &&
+                      !line.endsWith('.') && !line.endsWith(',') && line.split(' ').length <= 5
+
+    if (isHeading) {
+      if (currentTitle && currentLines.length > 0) {
+        sections.push({ title: currentTitle, content: currentLines.join('\n').trim() })
+      }
+      currentTitle = line
+      currentLines = []
+    } else if (currentTitle) {
+      currentLines.push(line)
+    }
+  }
+
+  if (currentTitle && currentLines.length > 0) {
+    sections.push({ title: currentTitle, content: currentLines.join('\n').trim() })
+  }
+
+  return sections
+}
+
 const ACCEPTED_EXTENSIONS = ['.pdf', '.doc', '.docx']
 const ACCEPTED_MIME: Record<string, string> = {
   '.pdf':  'application/pdf',
@@ -58,6 +94,8 @@ export async function POST(request: NextRequest) {
       rawText = ''
     }
 
+    const detectedSections = detectSectionsFromText(rawText)
+
     // Ensure the resumes bucket exists
     const { data: buckets, error: bucketsError } = await admin.storage.listBuckets()
     if (bucketsError) {
@@ -110,7 +148,7 @@ export async function POST(request: NextRequest) {
         user_id:     user.id,
         file_url:    publicUrl,
         raw_text:    rawText,
-        parsed_data: {},
+        parsed_data: detectedSections.length > 0 ? { sections: detectedSections } : {},
         version:     nextVersion,
         is_active:   true,
         resume_hash: resumeHash,

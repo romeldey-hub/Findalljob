@@ -243,8 +243,8 @@ function NotificationsPopup({ onClose }: { onClose: () => void }) {
 
 const BASE_NAV = [
   { href: '/resume',    label: 'My Resume',   icon: FileText },
-  { href: '/matches',   label: 'Job Matches', icon: Briefcase },
-  { href: '/optimizer', label: 'Optimizer',   icon: Wand2 },
+  { href: '/matches',   label: 'Matched Jobs', icon: Briefcase },
+  { href: '/optimizer', label: 'Optimized',   icon: Wand2 },
   { href: '/tracker',   label: 'Tracker',     icon: Kanban },
   { href: '/settings',  label: 'Settings',    icon: Settings },
 ]
