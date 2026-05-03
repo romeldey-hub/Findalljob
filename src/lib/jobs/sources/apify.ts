@@ -21,7 +21,7 @@ const APIFY_BASE = 'https://api.apify.com/v2'
 interface ApifyConfig {
   source:  JobSource
   taskId?: string
-  actorId?: string      // fallback actor (Indeed only)
+  actorId?: string      // fallback public actor (used when taskId is absent)
   buildInput: (params: JobSearchParams) => Record<string, unknown>
 }
 
@@ -47,12 +47,14 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
     }),
   },
   {
-    source: 'apify_naukri',
-    taskId: process.env.APIFY_NAUKRI_TASK_ID,
+    source:  'apify_naukri',
+    taskId:  process.env.APIFY_NAUKRI_TASK_ID,
+    actorId: 'muhammetakkurtt~naukri-job-scraper',  // public fallback — no task setup needed
     buildInput: (p) => ({
-      keyword:  p.title,
-      location: p.location,
-      maxItems: p.limit ?? 20,
+      keyword:   p.title,
+      maxJobs:   50,       // actor minimum is 50; reranker filters down
+      freshness: '30',     // jobs posted in last 30 days
+      sortBy:    'date',
     }),
   },
   {
@@ -162,8 +164,9 @@ export class ApifyAdapter implements JobSourceAdapter {
     return items
       .map((job, i): NormalizedJob => {
         // Listing page (for viewing the job detail)
+        // jdURL = Naukri job detail URL
         const listingUrl = String(
-          job.url ?? job.link ?? job.jobUrl ?? ''
+          job.url ?? job.link ?? job.jobUrl ?? job.jdURL ?? ''
         ).trim()
 
         // Direct apply URL — ATS endpoint preferred over aggregator listing
@@ -177,14 +180,18 @@ export class ApifyAdapter implements JobSourceAdapter {
         ).trim()
 
         return {
+          // jobId = Naukri's field; jobkey/job_id/id for other sources
           externalId: String(
-            job.jobkey ?? job.job_id ?? job.id ?? `${source}-${Date.now()}-${i}`
+            job.jobkey ?? job.job_id ?? job.jobId ?? job.id ?? `${source}-${Date.now()}-${i}`
           ),
           source,
-          title:       String(job.positionName ?? job.title ?? job.job_title ?? '').trim(),
-          company:     String(job.company ?? job.employer_name ?? job.companyName ?? 'Unknown').trim(),
+          // jobTitle = Naukri field; positionName = Indeed; title = generic
+          title:       String(job.positionName ?? job.jobTitle ?? job.title ?? job.job_title ?? '').trim(),
+          // companyName = Naukri field; company/employer_name = other sources
+          company:     String(job.company ?? job.companyName ?? job.employer_name ?? 'Unknown').trim(),
           location:    String(job.location ?? job.job_city ?? job.job_location ?? params.location).trim(),
-          description: String(job.description ?? job.snippet ?? job.job_description ?? '').trim(),
+          // jobDescription = Naukri field; description/snippet = other sources
+          description: String(job.description ?? job.jobDescription ?? job.snippet ?? job.job_description ?? '').trim(),
           // Prefer listing URL for url; use direct ATS link for applyUrl
           url:      listingUrl || directApplyUrl,
           applyUrl: directApplyUrl || listingUrl,
