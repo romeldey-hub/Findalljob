@@ -31,6 +31,10 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
   async function run() {
     setStep(1); setError(null); setResult(null)
 
+    // Abort the request if it takes longer than 150 s (3 Claude calls × ~45 s each)
+    const controller = new AbortController()
+    const abortTimer = setTimeout(() => controller.abort(), 150_000)
+
     try {
       await new Promise(r => setTimeout(r, 800))
       setStep(2)
@@ -43,12 +47,14 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
+      clearTimeout(abortTimer)
 
       let optData: Record<string, unknown> = {}
       try { optData = await optRes.json() } catch {
-        // Non-JSON body (e.g. Vercel 504 timeout HTML) — treat as timeout
-        setError('Optimization timed out. Please try again — it usually completes within 90 seconds.')
+        // Non-JSON body (e.g. Vercel 504 HTML)
+        setError('Optimization timed out. Please click Retry — it usually succeeds on the second attempt.')
         return
       }
 
@@ -62,8 +68,14 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
       await new Promise(r => setTimeout(r, 600))
 
       setResult(optData.optimizedData)
-    } catch {
-      setError('Something went wrong. Please try again.')
+    } catch (err) {
+      clearTimeout(abortTimer)
+      const isTimeout = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+      setError(
+        isTimeout
+          ? 'Optimization took too long (>2 min). Please click Retry — it usually succeeds on the second attempt.'
+          : 'Connection failed. Please check your internet and try again.'
+      )
     }
   }
 
