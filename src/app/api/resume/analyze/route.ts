@@ -143,8 +143,11 @@ export async function POST() {
 
   // India profiles: Apify (Naukri/LinkedIn) has far better coverage for senior India roles
   // than Adzuna/JSearch — flip the priority so Apify runs first.
-  const isIndiaProfile = /india|new delhi|delhi ncr|ncr|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|noida|gurgaon|gurugram/i
+  const isIndiaProfile = /india|new delhi|delhi ncr|ncr|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|ahmedabad|jaipur|surat|lucknow|nagpur|indore|bhopal|patna|visakhapatnam|noida|gurgaon|gurugram/i
     .test(profileLocation)
+  // Derive country code once — passed to all searches so Adzuna doesn't default to 'us'
+  // when location is empty (no-location fallback).
+  const countryCode: string | undefined = isIndiaProfile ? 'in' : undefined
   const mainStage    = isIndiaProfile ? 'fallback' : 'primary'
   const reserveStage = isIndiaProfile ? 'primary'  : 'fallback'
   console.log('[analyze] profile location:', profileLocation, '| India profile:', isIndiaProfile, '| main stage:', mainStage)
@@ -170,7 +173,7 @@ export async function POST() {
     if (jobs.length >= 15) break
     console.log('[analyze] strategy query:', query, '| stage:', mainStage)
     try {
-      const r = await router.search({ title: query, location: profileLocation, limit: 25 }, mainStage)
+      const r = await router.search({ title: query, location: profileLocation, countryCode, limit: 25 }, mainStage)
       addUnique(r.jobs)
       console.log('[analyze] query "' + query + '" → ' + r.jobs.length + ' raw (total unique: ' + jobs.length + ')')
     } catch (err) {
@@ -184,7 +187,7 @@ export async function POST() {
     for (const query of cleanedQueries.slice(0, 2)) {
       if (jobs.length >= 5) break
       try {
-        const r = await router.search({ title: query, location: '', limit: 25 }, mainStage)
+        const r = await router.search({ title: query, location: '', countryCode, limit: 25 }, mainStage)
         addUnique(r.jobs)
         console.log('[analyze] no-location "' + query + '", total now', jobs.length, 'jobs')
       } catch (err) {
@@ -199,7 +202,7 @@ export async function POST() {
     for (const query of cleanedQueries.slice(0, 2)) {
       if (jobs.length >= 5) break
       try {
-        const r = await router.search({ title: query, location: profileLocation, limit: 25 }, reserveStage)
+        const r = await router.search({ title: query, location: profileLocation, countryCode, limit: 25 }, reserveStage)
         addUnique(r.jobs)
         console.log('[analyze] reserve "' + query + '", total now', jobs.length, 'jobs')
       } catch (err) {
@@ -208,7 +211,7 @@ export async function POST() {
     }
     if (jobs.length < 5) {
       try {
-        const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, reserveStage)
+        const r = await router.search({ title: primaryQuery, location: '', countryCode, limit: 25 }, reserveStage)
         addUnique(r.jobs)
         console.log('[analyze] reserve no-location, total now', jobs.length, 'jobs')
       } catch (err) {
