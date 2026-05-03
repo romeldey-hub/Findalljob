@@ -1,6 +1,14 @@
 import type { JobSourceAdapter, JobSearchParams } from '../types'
 import type { NormalizedJob } from '@/types'
 
+// Country names — passing these as Adzuna `where` returns no results
+// because `where` expects a city, and the country is already encoded in the URL path.
+const COUNTRY_ONLY_NAMES = new Set([
+  'india', 'usa', 'us', 'united states', 'uk', 'united kingdom', 'canada',
+  'australia', 'germany', 'france', 'netherlands', 'singapore', 'new zealand',
+  'south africa', 'uae', 'united arab emirates', 'pakistan', 'bangladesh',
+])
+
 /** Infer Adzuna country code from a free-text location string. */
 function detectCountryCode(location: string): string {
   const l = location.toLowerCase()
@@ -18,11 +26,14 @@ function detectCountryCode(location: string): string {
 }
 
 /**
- * Strip country suffix from "City, Country" → "City".
- * Adzuna's `where` param works best with just the city name.
+ * Extract just the city from "City, Country".
+ * Returns empty string if the location is a country-only name (no city),
+ * so the Adzuna `where` param is omitted — country is already in the URL path.
  */
 function extractCity(location: string): string {
-  return location.split(',')[0].trim()
+  const city = location.split(',')[0].trim()
+  // If the "city" is just a country name, omit it to avoid zero-result searches
+  return COUNTRY_ONLY_NAMES.has(city.toLowerCase()) ? '' : city
 }
 
 export class AdzunaAdapter implements JobSourceAdapter {

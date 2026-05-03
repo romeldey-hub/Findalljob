@@ -118,8 +118,18 @@ export async function POST() {
   const recentTitle     = parsedResume.experience?.[0]?.title?.trim() ?? ''
   const profileLocation = parsedResume.location?.trim() || 'India'
   const primaryQuery    = recentTitle || parsedResume.skills?.[0] || 'software engineer'
-  // Broad fallback: first word of the title (e.g. "Sales" from "Senior Sales Manager")
-  const broadQuery      = recentTitle.split(/\s+/).slice(-2).join(' ') || primaryQuery
+
+  // Broad fallback query when primary returns too few results.
+  // For 3+ word titles: last 2 words ("Senior Software Engineer" → "Software Engineer")
+  // For 2-word titles: first word ("Operations Executive" → "Operations")
+  //   — slice(-2) would equal primary, so we use the first word to actually broaden.
+  // For 1-word or no title: fall back to primary (no-op; cascade skipped via !== check)
+  const titleWords  = recentTitle.trim().split(/\s+/).filter(Boolean)
+  const broadQuery  = titleWords.length >= 3
+    ? titleWords.slice(-2).join(' ')
+    : titleWords.length === 2
+      ? titleWords[0]
+      : primaryQuery
 
   console.log('[analyze] primaryQuery:', primaryQuery, '| location:', profileLocation)
 
@@ -150,7 +160,21 @@ export async function POST() {
     }
   }
 
-  // 4c. Apify fallback if primary sources insufficient
+  // 4c. Drop location constraint if still too few (catches country-only locations)
+  if (jobs.length < 5) {
+    console.log('[analyze] trying without location restriction for broader results')
+    try {
+      const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, 'primary')
+      if (r.jobs.length > jobs.length) {
+        jobs = r.jobs
+        console.log('[analyze] no-location search returned', jobs.length, 'jobs')
+      }
+    } catch (err) {
+      console.error('[analyze] no-location search error:', apiErrMsg(err))
+    }
+  }
+
+  // 4d. Apify fallback if primary sources still insufficient
   if (jobs.length < 5) {
     console.log('[analyze] primary sources insufficient — trying Apify fallback')
     try {
