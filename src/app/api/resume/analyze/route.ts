@@ -4,6 +4,7 @@ import { parseResume, parseResumeFromPDF, generateHeadline } from '@/lib/ai/pars
 import { rerankJobs } from '@/lib/ai/reranker'
 import { generateCvSuggestions } from '@/lib/ai/suggestions'
 import { JobSourceRouter } from '@/lib/jobs/router'
+import { generateSearchStrategy } from '@/lib/jobs/strategy'
 import { createNotification } from '@/lib/notifications'
 import type { ParsedResume, NormalizedJob } from '@/types'
 
@@ -113,76 +114,71 @@ export async function POST() {
     console.error('[analyze] headline generation failed (non-fatal):', err)
   }
 
-  // ── 3. Build search query ────────────────────────────────────────────────────
-  // Use job title only — adding skills to the query hurts recall on Adzuna/JSearch
-  const recentTitle     = parsedResume.experience?.[0]?.title?.trim() ?? ''
+  // ── 3. Generate AI search strategy ──────────────────────────────────────────
   const profileLocation = parsedResume.location?.trim() || 'India'
-  const primaryQuery    = recentTitle || parsedResume.skills?.[0] || 'software engineer'
 
-  // Broad fallback query when primary returns too few results.
-  // For 3+ word titles: last 2 words ("Senior Software Engineer" → "Software Engineer")
-  // For 2-word titles: first word ("Operations Executive" → "Operations")
-  //   — slice(-2) would equal primary, so we use the first word to actually broaden.
-  // For 1-word or no title: fall back to primary (no-op; cascade skipped via !== check)
-  const titleWords  = recentTitle.trim().split(/\s+/).filter(Boolean)
-  const broadQuery  = titleWords.length >= 3
-    ? titleWords.slice(-2).join(' ')
-    : titleWords.length === 2
-      ? titleWords[0]
-      : primaryQuery
+  let strategy
+  try {
+    strategy = await generateSearchStrategy(
+      (resume.raw_text && resume.raw_text.length >= 100) ? resume.raw_text : '',
+      parsedResume,
+    )
+    console.log('[analyze] AI strategy queries:', strategy.search_queries)
+  } catch (err) {
+    console.error('[analyze] strategy generation failed, using fallback:', apiErrMsg(err))
+    const recentTitle = parsedResume.experience?.[0]?.title?.trim() ?? ''
+    strategy = { search_queries: [recentTitle || parsedResume.skills?.[0] || 'software engineer'] }
+  }
 
-  console.log('[analyze] primaryQuery:', primaryQuery, '| location:', profileLocation)
+  const primaryQuery = strategy.search_queries[0]
 
   // ── 4. Fetch jobs via multi-source router (Adzuna → JSearch → Apify) ────────
   const router = new JobSourceRouter()
   let jobs: NormalizedJob[] = []
+  const seenKeys = new Set<string>()
 
-  // 4a. Primary sources: Adzuna + JSearch in waterfall
-  try {
-    const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, 'primary')
-    jobs = r.jobs
-    console.log('[analyze] primary sources returned', jobs.length, 'jobs from', r.sourcesUsed.join(', ') || 'none')
-  } catch (err) {
-    console.error('[analyze] primary router error:', apiErrMsg(err))
-  }
-
-  // 4b. Broaden title if primary returned too few (e.g. very specific title like "MEP Sales Head")
-  if (jobs.length < 5 && broadQuery !== primaryQuery) {
-    console.log('[analyze] broadening query to:', broadQuery)
-    try {
-      const r = await router.search({ title: broadQuery, location: profileLocation, limit: 25 }, 'primary')
-      if (r.jobs.length > jobs.length) {
-        jobs = r.jobs
-        console.log('[analyze] broad query returned', jobs.length, 'jobs')
+  function addUnique(incoming: NormalizedJob[]) {
+    for (const job of incoming) {
+      const key = `${job.source}:${job.externalId}`
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key)
+        jobs.push(job)
       }
-    } catch (err) {
-      console.error('[analyze] broad query error:', apiErrMsg(err))
     }
   }
 
-  // 4c. Drop location constraint if still too few (catches country-only locations)
+  // 4a. Run up to 3 AI strategy queries (stop early when ≥ 15 jobs)
+  for (const query of strategy.search_queries.slice(0, 3)) {
+    if (jobs.length >= 15) break
+    console.log('[analyze] strategy query:', query, '| location:', profileLocation)
+    try {
+      const r = await router.search({ title: query, location: profileLocation, limit: 25 }, 'primary')
+      addUnique(r.jobs)
+      console.log('[analyze] query "' + query + '" returned', r.jobs.length, 'raw jobs (total unique:', jobs.length, ')')
+    } catch (err) {
+      console.error('[analyze] query "' + query + '" error:', apiErrMsg(err))
+    }
+  }
+
+  // 4b. Drop location constraint if still too few (catches country-only locations)
   if (jobs.length < 5) {
     console.log('[analyze] trying without location restriction for broader results')
     try {
       const r = await router.search({ title: primaryQuery, location: '', limit: 25 }, 'primary')
-      if (r.jobs.length > jobs.length) {
-        jobs = r.jobs
-        console.log('[analyze] no-location search returned', jobs.length, 'jobs')
-      }
+      addUnique(r.jobs)
+      console.log('[analyze] no-location search, total now', jobs.length, 'jobs')
     } catch (err) {
       console.error('[analyze] no-location search error:', apiErrMsg(err))
     }
   }
 
-  // 4d. Apify fallback if primary sources still insufficient
+  // 4c. Apify fallback if primary sources still insufficient
   if (jobs.length < 5) {
     console.log('[analyze] primary sources insufficient — trying Apify fallback')
     try {
       const r = await router.search({ title: primaryQuery, location: profileLocation, limit: 25 }, 'fallback')
-      if (r.jobs.length > 0) {
-        jobs = [...jobs, ...r.jobs]
-        console.log('[analyze] Apify added', r.jobs.length, 'jobs, total now', jobs.length)
-      }
+      addUnique(r.jobs)
+      console.log('[analyze] Apify fallback, total now', jobs.length, 'jobs')
     } catch (err) {
       console.error('[analyze] Apify fallback error:', apiErrMsg(err))
     }
@@ -194,7 +190,7 @@ export async function POST() {
     return NextResponse.json({
       matchCount: 0,
       cvSuggestions: [],
-      message: `No jobs found for "${primaryQuery}". Try the search form above with a specific job title and location.`,
+      message: `No jobs found for "${strategy.search_queries.slice(0, 2).join('" or "')}". Try the search form above with a specific job title and location.`,
     })
   }
 
