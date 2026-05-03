@@ -731,11 +731,16 @@ export default function MatchesPage() {
   }
   const isLoading                     = analyzing || searching
 
-  // Auto-trigger on first load when user has a resume but no AI matches yet
+  // Auto-trigger on first load when user has a resume but no AI matches yet.
+  // Skip if an analysis was completed in the last 10 minutes (localStorage guard)
+  // to prevent double-analyze when navigating here right after the resume page runs one.
   useEffect(() => {
     if (!data || autoTriggered.current || analyzing) return
     const hasAiMatches = savedAiJobs.length > 0 || aiJobs !== null
     if (!hasAiMatches && hasResume) {
+      const lastAnalyzed = Number(localStorage.getItem('lastAnalyzedAt') ?? 0)
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000
+      if (lastAnalyzed > tenMinutesAgo) return   // recently analyzed — skip auto-trigger
       autoTriggered.current = true
       triggerAnalyze(false)
     }
@@ -756,6 +761,7 @@ export default function MatchesPage() {
       const result = await res.json()
       if (!res.ok) { setAnalyzeError(result.error ?? 'Analysis failed.'); toast.error(result.error ?? 'Analysis failed'); return }
       if (result.matchCount === 0) { setAnalyzeError(result.message ?? 'No jobs found. Try the search form.'); return }
+      localStorage.setItem('lastAnalyzedAt', String(Date.now()))
       toast.success(`Found ${result.matchCount} AI-ranked matches!`)
       // Backend already cleared stale rows — fetch is guaranteed to be fresh
       const fresh = await mutate()
