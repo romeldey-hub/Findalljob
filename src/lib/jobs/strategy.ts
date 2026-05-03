@@ -17,39 +17,35 @@ const MIN_RESUME_LEN = 100             // skip Claude if resume text is too shor
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
-const SYSTEM = `You are an AI recruiter, executive career strategist, and job-hunting engine. Respond ONLY with valid JSON. No markdown, no explanation.`
+const SYSTEM = `You are a job search expert. Respond ONLY with valid JSON. No markdown, no explanation.`
 
 function buildPrompt(resumeText: string): string {
-  return `Act as an AI recruiter, executive career strategist, and job-hunting engine. Study this resume and generate search queries + target companies that surface the BEST-FITTING job postings for this candidate.
+  return `Study this resume and generate job search queries that will find real, relevant job listings on Naukri and LinkedIn India.
 
-CRITICAL RULE — IGNORE THE OFFICIAL JOB TITLE. Focus on what the candidate ACTUALLY DOES:
-- A "Field Application Engineer" who manages enterprise accounts, government tenders, GeM procurement, and OEM partnerships → is an Enterprise Sales / Business Development leader. Search for THOSE roles.
-- A "Software Engineer" who leads ML pipelines and sprint planning → is a ML Engineer / Tech Lead. Search for THOSE roles.
-- The right query finds the job they QUALIFY FOR, not the title on their current business card.
+Look at what the candidate actually does day-to-day, not just their official title. Generate queries that reflect their real function:
+- Focus on their core domain (e.g. enterprise sales, government procurement, software engineering)
+- Include role titles that employers actually post on Naukri/LinkedIn
+- Mix specific role titles with domain+function compound queries
 
-Generate:
-- Queries 1-2: DESTINATION job titles — senior role titles this candidate should be applying for next, based on their actual responsibilities and seniority (NOT their current official title)
-- Queries 3-5: DOMAIN-COMPOUND queries — key expertise area + industry + function, e.g. "enterprise sales IT hardware India", "government business development semiconductor", "GeM procurement technology manager"
-- Query 6: BROAD fallback — most general form of their highest-value transferable role
+Generate 6 queries:
+- 1-2: Role titles matching the candidate's actual work (may differ from their official title)
+- 3-4: Domain+function compound queries, e.g. "enterprise sales IT hardware", "government business development"
+- 5: A senior/next-level version of their primary role
+- 6: Broadest fallback role title
 
-ALSO generate exactly 5 target companies:
-- Companies in the same industry ecosystem that actively hire this type of profile
-- Think: competitors of their current employer, major customers, channel partners, adjacent sector leaders in India
-- Example for a semiconductor FAE in Delhi NCR: Intel India, Qualcomm India, NXP Semiconductors India, Rashi Peripherals, Ingram Micro India
-- Example for an IT hardware enterprise sales leader: companies selling IT infrastructure/hardware to government/enterprise in the candidate's geography
-- Use real, specific company names — no generic descriptions
+Also generate 5 target companies in the same industry that actively hire this profile (competitors, partners, channel leaders in the candidate's region).
 
-Hard rules for queries:
-- No special characters: no / \\ | & () punctuation
-- Spell out abbreviations: FAE → Field Application Engineer, BD → Business Development, GeM → Government eMarketplace
-- 2-5 words per query, no location, no soft skills, no generic words like "professional" or "expert"
+Hard rules:
+- 2-5 words per query, no special characters
+- Use terms employers actually use in Indian job postings
+- No location, no soft skills, no words like "expert" or "professional"
 
-Resume (first 2500 chars):
+Resume:
 ${resumeText.slice(0, 2500)}
 
 Return ONLY this JSON:
 {
-  "search_queries": ["Destination Title 1", "Destination Title 2", "Domain compound 3", "Domain compound 4", "Domain compound 5", "Broad fallback 6"],
+  "search_queries": ["query1", "query2", "query3", "query4", "query5", "query6"],
   "target_companies": ["Company A", "Company B", "Company C", "Company D", "Company E"]
 }`
 }
