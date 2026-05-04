@@ -1,8 +1,9 @@
 import { callClaudeJSON } from './claude'
-import type { NormalizedJob, ParsedResume } from '@/types'
+import type { JobSource, NormalizedJob, ParsedResume } from '@/types'
 
 export interface RankedJob {
   externalId: string
+  source: JobSource
   score: number
   reasoning: string
   bridge_advice: string
@@ -27,6 +28,16 @@ Never inflate scores. A score of 70 is a good match.`
 
 const BATCH_SIZE = 10   // jobs per Claude call
 const MAX_TOKENS = 6000 // per batch call — increased for larger job descriptions
+const RETRY_DELAYS_MS = [2500, 7000, 15000]
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRateLimitError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /rate limit|429|too many requests/i.test(message)
+}
 
 function buildPrompt(candidateSummary: string, batch: NormalizedJob[], offset: number): string {
   const jobsList = batch
@@ -96,34 +107,47 @@ Education: ${eduLine || 'Not specified'}`
     batches.push(jobs.slice(i, i + BATCH_SIZE))
   }
 
-  const batchResults = await Promise.all(
-    batches.map((batch, batchIdx) => {
-      const offset = batchIdx * BATCH_SIZE
-      return callClaudeJSON<ClaudeRankedItem[]>(
-        buildPrompt(candidateSummary, batch, offset),
-        RERANK_SYSTEM_PROMPT,
-        MAX_TOKENS
-      )
-        .then((items): RankedJob[] => {
-          const valid = items.filter(
-            (r) => typeof r.index === 'number' && r.index >= 0 && r.index < jobs.length
-          )
-          console.log(`[reranker] batch ${batchIdx}: Claude returned ${items.length} items, ${valid.length} valid`)
-          return valid.map((r) => ({
-            externalId:     jobs[r.index].externalId,   // safe — index comes from AI, mapped here
-            score:          Math.min(100, Math.max(0, Number(r.score) || 0)),
-            reasoning:      r.reasoning ?? '',
-            bridge_advice:  r.bridge_advice ?? '',
-            matched_skills: Array.isArray(r.matched_skills) ? r.matched_skills : [],
-            missing_skills: Array.isArray(r.missing_skills) ? r.missing_skills : [],
-          }))
-        })
-        .catch((err) => {
-          console.error(`[reranker] batch ${batchIdx} failed:`, err instanceof Error ? err.message : err)
-          return [] as RankedJob[]
-        })
-    })
-  )
+  const batchResults: RankedJob[][] = []
+
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const batch = batches[batchIdx]
+    const offset = batchIdx * BATCH_SIZE
+
+    let rankedBatch: RankedJob[] = []
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        const items = await callClaudeJSON<ClaudeRankedItem[]>(
+          buildPrompt(candidateSummary, batch, offset),
+          RERANK_SYSTEM_PROMPT,
+          MAX_TOKENS
+        )
+        const valid = items.filter(
+          (r) => typeof r.index === 'number' && r.index >= 0 && r.index < jobs.length
+        )
+        console.log(`[reranker] batch ${batchIdx}: Claude returned ${items.length} items, ${valid.length} valid`)
+        rankedBatch = valid.map((r) => ({
+          externalId:     jobs[r.index].externalId,   // safe — index comes from AI, mapped here
+          source:         jobs[r.index].source,
+          score:          Math.min(100, Math.max(0, Number(r.score) || 0)),
+          reasoning:      r.reasoning ?? '',
+          bridge_advice:  r.bridge_advice ?? '',
+          matched_skills: Array.isArray(r.matched_skills) ? r.matched_skills : [],
+          missing_skills: Array.isArray(r.missing_skills) ? r.missing_skills : [],
+        }))
+        break
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        const delay = RETRY_DELAYS_MS[attempt]
+        if (!delay || !isRateLimitError(err)) {
+          console.error(`[reranker] batch ${batchIdx} failed:`, message)
+          break
+        }
+        console.warn(`[reranker] batch ${batchIdx} rate-limited; retrying in ${delay}ms`)
+        await sleep(delay)
+      }
+    }
+    batchResults.push(rankedBatch)
+  }
 
   const allRanked = batchResults.flat()
   console.log(`[reranker] total ranked: ${allRanked.length} of ${jobs.length} input jobs`)

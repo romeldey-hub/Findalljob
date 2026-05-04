@@ -37,6 +37,9 @@ export function sourceLabel(source?: string): string | null {
     apify_indeed: 'Indeed', apify_linkedin: 'LinkedIn',
     apify_naukri: 'Naukri', apify_apna: 'Apna',
     apify: 'Indeed', adzuna: 'Adzuna', jsearch: 'JSearch',
+    himalayas: 'Himalayas', jobicy: 'Jobicy',
+    remoteok: 'RemoteOK', arbeitnow: 'Arbeitnow',
+    jobspy: 'JobSpy',
   }
   return map[source] ?? null
 }

@@ -187,7 +187,10 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
   }
 
   useEffect(() => {
-    if (!avatarUrl) { setAvatarDataUri(null); return }
+    if (!avatarUrl) {
+      const t = setTimeout(() => setAvatarDataUri(null), 0)
+      return () => clearTimeout(t)
+    }
     toDataUri(avatarUrl).then(setAvatarDataUri).catch(() => setAvatarDataUri(null))
   }, [avatarUrl])
 

@@ -15,7 +15,10 @@ export function AppearanceCard() {
   const [mounted, setMounted] = useState(false)
 
   // Avoid hydration mismatch — only render selected state client-side
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 0)
+    return () => clearTimeout(t)
+  }, [])
 
   return (
     <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6">

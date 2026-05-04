@@ -52,6 +52,7 @@ export type JobSource =
   | 'apify_indeed' | 'apify_linkedin'             // Tier 2
   | 'apify_naukri' | 'apify_apna' | 'apify_upwork' | 'apify'  // Tier 2 (apify = legacy)
   | 'adzuna' | 'jsearch'                          // Tier 3
+  | 'jobicy' | 'himalayas' | 'remoteok' | 'arbeitnow' | 'jobspy'
   | 'manual'
 
 export type ApplyStatus = 'active' | 'broken' | 'unverified'
@@ -69,6 +70,7 @@ export const SOURCE_TIER: Record<JobSource, 1 | 2 | 3> = {
   greenhouse: 1, lever: 1, workable: 1,
   apify_indeed: 2, apify_linkedin: 2, apify_naukri: 2, apify_apna: 2, apify_upwork: 2, apify: 2,
   adzuna: 3, jsearch: 3,
+  jobicy: 3, himalayas: 3, remoteok: 3, arbeitnow: 3, jobspy: 3,
   manual: 1, // manual always surfaces first
 }
 

@@ -19,8 +19,23 @@ import { PaywallModal } from '@/components/PaywallModal'
 import { InterviewModal } from '@/components/InterviewModal'
 import { ApplyButton, sourceLabel, VerifiedBadge } from '@/components/jobs/ApplyButton'
 import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
+import { ProgressiveActivity } from '@/components/ProgressiveActivity'
+import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
+
+function userFacingError(message: unknown): string {
+  const text = typeof message === 'string' ? message : 'Analysis failed.'
+  const lower = text.toLowerCase()
+
+  if (lower.includes('credit balance') || lower.includes('plans & billing') || lower.includes('purchase credits')) {
+    return 'AI processing is temporarily unavailable because the AI account has no available credits. Please add credits in billing, then try again.'
+  }
+  if (lower.includes('rate limit') || lower.includes('429')) {
+    return 'AI processing is busy right now. Please wait a moment and try again.'
+  }
+  return text.replace(/\s+/g, ' ').slice(0, 220)
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -215,8 +230,11 @@ function JobCard({
   const [applicationId, setApplicationId] = useState<string | undefined>(initialApplicationId)
 
   useEffect(() => {
-    setSaved(initialSaved)
-    setApplicationId(initialApplicationId)
+    const t = setTimeout(() => {
+      setSaved(initialSaved)
+      setApplicationId(initialApplicationId)
+    }, 0)
+    return () => clearTimeout(t)
   }, [initialSaved, initialApplicationId])
 
   async function handleApplyCallback() {
@@ -642,6 +660,27 @@ function CvSuggestions({ suggestions }: { suggestions: string[] }) {
   )
 }
 
+// ── Analyze progress configuration (defined outside component — never recreated) ──
+
+const REANALYZE_STEP_DEFS: StepDefinition[] = [
+  { label: 'Reading your latest resume...',   defaultDescription: 'Checking the resume saved to your profile.' },
+  { label: 'Rebuilding search strategy...',   defaultDescription: 'Building focused queries for your background.' },
+  { label: 'Searching job sources...',        defaultDescription: 'Searching multiple job sources for matches.' },
+  { label: 'Reviewing matched listings...',   defaultDescription: 'Filtering the most relevant opportunities.' },
+  { label: 'Scoring with AI...',              defaultDescription: 'AI is ranking jobs against your profile.' },
+  { label: 'Preparing your results...',       defaultDescription: 'Saving and organising your top matches.' },
+]
+
+const REANALYZE_STEP_MAP: Record<string, number> = {
+  resume_loaded:  0,
+  profile_parsed: 0,
+  strategy_ready: 1,
+  jobs_fetching:  2,
+  pool_selected:  3,
+  ai_ranking:     4,
+  matches_saved:  5,
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MatchesPage() {
@@ -664,13 +703,16 @@ export default function MatchesPage() {
   const [manualJobs, setManualJobs]     = useState<MatchRecord[]>([])
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
   const [suggestions, setSuggestions]   = useState<string[]>([])
-  const [analyzing, setAnalyzing]           = useState(false)
-  const [analyzeError, setAnalyzeError]     = useState('')
-  const [searchMessage, setSearchMessage]   = useState('')
+  const [analyzing, setAnalyzing]       = useState(false)
+  const [analyzeError, setAnalyzeError] = useState('')
+  const [searchMessage, setSearchMessage] = useState('')
   const [searchHadError, setSearchHadError] = useState(false)
   const [searchStage, setSearchStage]       = useState<'primary' | 'fallback' | null>(null)
   const autoTriggered = useRef(false)
   const aiSectionRef  = useRef<HTMLDivElement>(null)
+
+  const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
+    useAnalyzeProgress({ stepDefs: REANALYZE_STEP_DEFS, stepMap: REANALYZE_STEP_MAP })
 
   const { data, error: swrError, mutate } = useSWR('/api/jobs/match', fetcher)
   const { data: appsData }                = useSWR('/api/applications', fetcher)
@@ -749,30 +791,100 @@ export default function MatchesPage() {
 
   async function triggerAnalyze(reanalyze: boolean) {
     track.aiAnalyzeClick()
-    // Hard-reset before fetching — never show stale results during loading
     setMode('ai')
     setAiJobs([])
     setSuggestions([])
     setAnalyzing(true)
     setAnalyzeError('')
     setTierFilter('all')
+    resetProgress()
+
+    let matchCount    = 0
+    let cvSuggestions: string[] = []
+    let hadError      = false
+    let errorMessage  = ''
+    let noJobsMessage = ''
+
     try {
       const res = await fetch('/api/resume/analyze', { method: 'POST' })
-      const result = await res.json()
-      if (!res.ok) { setAnalyzeError(result.error ?? 'Analysis failed.'); toast.error(result.error ?? 'Analysis failed'); return }
-      if (result.matchCount === 0) { setAnalyzeError(result.message ?? 'No jobs found. Try the search form.'); return }
+
+      // Early JSON errors (401, 404, 500 before the stream starts)
+      if (!res.ok) {
+        const data    = await res.json().catch(() => ({}))
+        const message = userFacingError(data.error ?? 'Analysis failed.')
+        localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        setAnalyzeError(message)
+        toast.error(message)
+        stopProgress()
+        return
+      }
+
+      if (!res.body) throw new Error('No response stream')
+
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer    = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() ?? ''
+
+          for (const part of parts) {
+            for (const line of part.split('\n')) {
+              if (!line.startsWith('data: ')) continue
+              try {
+                const event = JSON.parse(line.slice(6)) as Record<string, unknown>
+                onSSEEvent(event)
+
+                if (event.done) {
+                  matchCount    = (event.matchCount as number)  ?? 0
+                  cvSuggestions = (event.cvSuggestions as string[]) ?? []
+                  if (event.message) noJobsMessage = event.message as string
+                }
+                if (event.error) {
+                  hadError     = true
+                  errorMessage = userFacingError(event.error as string)
+                }
+              } catch { /* malformed SSE line — skip */ }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+
+      if (hadError) {
+        localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        setAnalyzeError(errorMessage)
+        toast.error(errorMessage)
+        return
+      }
+
+      if (matchCount === 0) {
+        setAnalyzeError(noJobsMessage || 'No jobs found. Try the search form.')
+        return
+      }
+
       localStorage.setItem('lastAnalyzedAt', String(Date.now()))
-      toast.success(`Found ${result.matchCount} AI-ranked matches!`)
-      // Backend already cleared stale rows — fetch is guaranteed to be fresh
-      const fresh = await mutate()
+      toast.success(`Found ${matchCount} AI-ranked matches!`)
+      const fresh    = await mutate()
       const allFresh: MatchRecord[] = fresh?.matches ?? []
-      // For re-analyze, only show jobs that scored well enough to be actionable
-      const newAi = allFresh
+      const newAi    = allFresh
         .filter((m) => m.job?.source !== 'manual')
         .filter((m) => !reanalyze || (m.ai_score >= 40 && m.ai_score <= 100))
       setAiJobs(newAi)
-    } catch { setAnalyzeError('Analysis failed. Check the terminal for errors.') }
-    finally { setAnalyzing(false) }
+      if (cvSuggestions.length > 0) setSuggestions(cvSuggestions)
+    } catch {
+      setAnalyzeError('Analysis failed. Check the terminal for errors.')
+      stopProgress()
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   async function handleSearch(e: React.FormEvent) {
@@ -852,6 +964,8 @@ export default function MatchesPage() {
   function handleInterview(match: MatchRecord) {
     setInterviewMatch(match)
   }
+
+  // activitySteps comes from useAnalyzeProgress — driven by real SSE events + time gating
 
   return (
     <div className="space-y-5">
@@ -1034,23 +1148,23 @@ export default function MatchesPage() {
             </div>
           )}
 
-          {/* Progress banner */}
-          {(searching || analyzing) && (
+          {/* Activity view */}
+          {analyzing && (
+            <ProgressiveActivity title="Updating your matches" steps={activitySteps} />
+          )}
+
+          {searching && (
             <div className="flex items-start gap-2.5 px-4 py-3 bg-blue-50 dark:bg-[#1E3A5F]/60 border border-blue-100 dark:border-[#2563EB]/25 rounded-xl">
               <Loader2 className="w-3.5 h-3.5 text-[#2563EB] animate-spin flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-[12px] font-semibold text-[#2563EB] dark:text-blue-300">
-                  {analyzing
-                    ? 'Re-evaluating jobs based on your resume…'
-                    : searchStage === 'fallback'
+                  {searchStage === 'fallback'
                     ? 'Expanding search to more sources…'
                     : 'Fetching jobs from primary sources · Running AI scoring…'}
                 </p>
-                {(analyzing || searchStage === 'fallback') && (
+                {searchStage === 'fallback' && (
                   <p className="text-[11px] text-blue-400 dark:text-blue-400/80 mt-0.5">
-                    {analyzing
-                      ? 'Parsing · Matching jobs · Scoring · This takes 2–3 minutes'
-                      : 'Trying additional job sources · This may take up to 2–3 mins'}
+                    Trying additional job sources · This may take up to 2–3 mins
                   </p>
                 )}
               </div>

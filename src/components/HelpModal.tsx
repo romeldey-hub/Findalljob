@@ -229,12 +229,15 @@ export function HelpModal({ onClose }: HelpModalProps) {
 
   // Auto-open all matches when searching; close all when cleared
   useEffect(() => {
-    if (!query) { setOpenKeys(new Set()); return }
-    const keys = new Set<string>()
-    filteredSections.forEach((section) => {
-      section.items.forEach((item, i) => keys.add(`${section.title}-${i}`))
-    })
-    setOpenKeys(keys)
+    const t = setTimeout(() => {
+      if (!query) { setOpenKeys(new Set()); return }
+      const keys = new Set<string>()
+      filteredSections.forEach((section) => {
+        section.items.forEach((item, i) => keys.add(`${section.title}-${i}`))
+      })
+      setOpenKeys(keys)
+    }, 0)
+    return () => clearTimeout(t)
   }, [query, filteredSections])
 
   function toggleItem(key: string) {

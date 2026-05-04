@@ -97,7 +97,25 @@ export const parseResumeJob = inngest.createFunction(
       const embedding = await generateEmbedding(embText)
 
       const supabase = createAdminClient()
-      await supabase.from('resumes').update({ parsed_data: parsedData }).eq('id', resumeId)
+      const { data: existingResume } = await supabase
+        .from('resumes')
+        .select('parsed_data')
+        .eq('id', resumeId)
+        .single()
+
+      const existingParsed = existingResume?.parsed_data as Record<string, unknown> | null
+      const cvSuggestions = Array.isArray(existingParsed?.cv_suggestions)
+        ? existingParsed.cv_suggestions
+        : undefined
+
+      await supabase
+        .from('resumes')
+        .update({
+          parsed_data: cvSuggestions
+            ? { ...parsedData, cv_suggestions: cvSuggestions }
+            : parsedData,
+        })
+        .eq('id', resumeId)
       await supabase
         .from('profiles')
         .update({

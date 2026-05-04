@@ -191,8 +191,6 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
     return () => { document.body.style.overflow = '' }
   }, [])
 
-  useEffect(() => { startInterview() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
@@ -233,6 +231,11 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
       setPhase('asking')
     }
   }
+
+  useEffect(() => {
+    const t = setTimeout(() => { void startInterview() }, 0)
+    return () => clearTimeout(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit() {
     if (!answer.trim() || phase !== 'asking') return
@@ -475,7 +478,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
                       Continue Your Interview
                     </h3>
                     <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed">
-                      You've completed 1 of 5 questions. Upgrade to unlock the full mock interview and improve your chances.
+                      You&apos;ve completed 1 of 5 questions. Upgrade to unlock the full mock interview and improve your chances.
                     </p>
                   </div>
 

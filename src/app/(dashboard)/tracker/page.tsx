@@ -164,7 +164,14 @@ function TrackerCard({
 
       {/* CTA */}
       <button
-        onClick={(e) => { e.stopPropagation(); app.job.url ? window.open(app.job.url, '_blank') : toast.error('No job URL') }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (app.job.url) {
+            window.open(app.job.url, '_blank')
+          } else {
+            toast.error('No job URL')
+          }
+        }}
         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500 transition-colors"
       >
         <ExternalLink className="w-3.5 h-3.5" />

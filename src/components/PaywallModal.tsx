@@ -67,9 +67,9 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
           >
             Maybe Later
           </button>
-          <Link href="/settings" className="flex-1">
-            <button className="w-full py-2.5 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[13px] font-bold transition-all flex items-center justify-center gap-1.5">
-              <Crown className="w-3.5 h-3.5 text-amber-400" />Start Getting Interview-Ready
+          <Link href="/settings" className="flex-[1.25]">
+            <button className="w-full py-2.5 px-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[13px] font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap">
+              <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />Start Getting Interview-Ready
             </button>
           </Link>
         </div>

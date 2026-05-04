@@ -65,9 +65,12 @@ export default async function ResumePage() {
             <Loader2 className="w-5 h-5 text-[#2563EB] animate-spin" />
           </div>
           <div>
-            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Analyzing your profile…</p>
-            <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">
-              Parsing · Matching jobs · Scoring &nbsp;·&nbsp; This takes 2–3 minutes
+            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Finding the best opportunities for you...</p>
+            <p className="text-[13px] font-medium text-gray-500 dark:text-slate-400 mt-1">
+              ⏳ This usually takes 3–5 minutes
+            </p>
+            <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">
+              We’re scanning multiple job sources to find the most relevant matches.
             </p>
           </div>
         </div>

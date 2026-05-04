@@ -7,8 +7,8 @@ export function useCountUp(target: number, duration = 900, delay = 0): number {
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setValue(target)
-      return
+      const t = setTimeout(() => setValue(target), 0)
+      return () => clearTimeout(t)
     }
 
     let raf: number
@@ -35,8 +35,8 @@ export function useAnimate(delay = 80): boolean {
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setReady(true)
-      return
+      const t = setTimeout(() => setReady(true), 0)
+      return () => clearTimeout(t)
     }
     const t = setTimeout(() => setReady(true), delay)
     return () => clearTimeout(t)

@@ -24,7 +24,10 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
   const [isSaving, setIsSaving] = useState(false)
   const [mounted, setMounted]   = useState(false)
 
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 0)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => { void run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,7 +104,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
       // Clear the guard so the matches page auto-triggers a fresh analysis with the updated resume
       if (typeof window !== 'undefined') localStorage.removeItem('lastAnalyzedAt')
       onClose()
-      router.push('/matches')
+      router.push(redirectTo ?? '/matches')
     } catch {
       toast.error('Something went wrong. Please try again.')
     } finally {

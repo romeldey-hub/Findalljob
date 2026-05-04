@@ -3,8 +3,9 @@ import { inngest }           from '@/inngest/client'
 import { parseResumeJob }    from '@/inngest/parse-resume'
 import { matchJobsJob }      from '@/inngest/match-jobs'
 import { validateJobsJob }   from '@/inngest/validate-jobs'
+import { expandMatchesJob }  from '@/inngest/expand-matches'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [parseResumeJob, matchJobsJob, validateJobsJob],
+  functions: [parseResumeJob, matchJobsJob, validateJobsJob, expandMatchesJob],
 })

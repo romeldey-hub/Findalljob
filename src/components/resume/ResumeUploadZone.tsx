@@ -6,9 +6,36 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
-  RefreshCw, Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle,
+  Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle,
 } from 'lucide-react'
 import { track } from '@/lib/analytics'
+import { ProgressiveActivity } from '@/components/ProgressiveActivity'
+import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
+
+// ── Progress configuration (outside component — never recreated) ──────────────
+
+const UPLOAD_STEP_DEFS: StepDefinition[] = [
+  { label: 'Reading your resume...',       defaultDescription: 'Opening the file and checking the content.' },
+  { label: 'Understanding your profile...', defaultDescription: 'Extracting your skills, roles, and career path.' },
+  { label: 'Creating search strategy...',  defaultDescription: 'Building focused queries for your background.' },
+  { label: 'Searching job sources...',     defaultDescription: 'Searching multiple job sources for matches.' },
+  { label: 'Checking job relevance...',    defaultDescription: 'Filtering the most relevant opportunities.' },
+  { label: 'Scoring matches...',           defaultDescription: 'AI is scoring jobs against your profile.' },
+  { label: 'Preparing matched jobs...',    defaultDescription: 'Saving and organising your best matches.' },
+]
+
+// Step 0 (reading/upload) is handled before analyze starts; SSE drives steps 1–6
+const UPLOAD_STEP_MAP: Record<string, number> = {
+  resume_loaded:  1,
+  profile_parsed: 1,
+  strategy_ready: 2,
+  jobs_fetching:  3,
+  pool_selected:  4,
+  ai_ranking:     5,
+  matches_saved:  6,
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 interface ResumeUploadZoneProps {
   hasExistingResume: boolean
@@ -23,7 +50,11 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
   const [menuOpen, setMenuOpen]         = useState(false)
   const [showConfirm, setShowConfirm]   = useState(false)
   const [deleting, setDeleting]         = useState(false)
-  const menuRef                         = useRef<HTMLDivElement>(null)
+  const [activityFailed, setActivityFailed] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
+    useAnalyzeProgress({ stepDefs: UPLOAD_STEP_DEFS, stepMap: UPLOAD_STEP_MAP })
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -42,6 +73,8 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
     if (!file) return
 
     setUploadState('uploading')
+    setActivityFailed(false)
+    resetProgress(0)  // Step 0: "Reading your resume…" active during upload
     const formData = new FormData()
     formData.append('file', file)
 
@@ -53,43 +86,95 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
       if (!uploadRes.ok) {
         toast.error(uploadData.error ?? 'Upload failed')
         setUploadState('idle')
+        stopProgress()
+        return
+      }
+      if (!uploadData.canAnalyze) {
+        setUploadState('no-text')
+        toast.warning((uploadData.error as string) ?? 'Could not extract readable text from this file.')
+        stopProgress()
         return
       }
       if (!uploadData.hasText) {
-        setUploadState('no-text')
-        toast.warning('Could not extract text — file may be image-based. Please paste your resume text.')
-        return
+        toast.info('Text extraction was limited — using AI document parsing for this PDF.')
       }
     } catch {
       toast.error('Upload failed. Please check your connection and try again.')
       setUploadState('idle')
+      stopProgress()
       return
     }
 
     // ── Step 2: Analyze (non-fatal — always redirect to Matched Jobs) ───────
+    // Upload (step 0) is done — reset at step 1 "Understanding your profile"
     setUploadState('analyzing')
+    resetProgress(1)
     toast.info('Analyzing your profile and matching jobs…')
+
+    let analyzeFailed = false
+    let matchCount    = 0
 
     try {
       const analyzeRes = await fetch('/api/resume/analyze', { method: 'POST' })
-      let analyzeData: Record<string, unknown> = {}
-      try { analyzeData = await analyzeRes.json() } catch { /* non-JSON response (e.g. 504 timeout page) */ }
 
-      if (analyzeRes.ok) {
-        track.resumeUpload()
-        toast.success(`Found ${analyzeData.matchCount ?? 0} job matches! Redirecting…`)
-      } else {
-        toast.warning(
-          (analyzeData.error as string) ?? 'Analysis took too long. Your resume is saved — search for jobs on the Matches page.'
-        )
+      if (!analyzeRes.ok) {
+        let errMsg = 'Analysis took too long. Your resume is saved — search for jobs on the Matches page.'
+        try { const d = await analyzeRes.json(); if (d.error) errMsg = d.error } catch { /* non-JSON */ }
+        analyzeFailed = true
+        setActivityFailed(true)
+        stopProgress()
+        if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        toast.warning(errMsg)
+      } else if (analyzeRes.body) {
+        const reader  = analyzeRes.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer    = ''
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const parts = buffer.split('\n\n')
+            buffer = parts.pop() ?? ''
+
+            for (const part of parts) {
+              for (const line of part.split('\n')) {
+                if (!line.startsWith('data: ')) continue
+                try {
+                  const event = JSON.parse(line.slice(6)) as Record<string, unknown>
+                  onSSEEvent(event)
+                  if (event.done) matchCount = (event.matchCount as number) ?? 0
+                  if (event.error) { analyzeFailed = true; setActivityFailed(true) }
+                } catch { /* malformed SSE line */ }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+
+        if (!analyzeFailed) {
+          track.resumeUpload()
+          if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+          toast.success(`Found ${matchCount} job matches! Redirecting…`)
+        } else {
+          if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+          toast.warning('Analysis encountered an issue. Your resume is saved — search for jobs on the Matches page.')
+        }
       }
     } catch {
+      analyzeFailed = true
+      setActivityFailed(true)
+      stopProgress()
+      if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
       toast.warning('Job analysis timed out. Your resume is saved — you can search for jobs on the Matches page.')
     }
 
-    setUploadState('success')
+    if (!analyzeFailed) setUploadState('success')
     setTimeout(() => router.push('/matches'), 2000)
-  }, [router])
+  }, [router, resetProgress, stopProgress, onSSEEvent])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -129,6 +214,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
   const uploadDate = resumeInfo?.created_at
     ? new Date(resumeInfo.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null
+  // activitySteps from useAnalyzeProgress — driven by real SSE events + time gating
 
   return (
     <>
@@ -159,9 +245,9 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
           {uploadState === 'analyzing' && (
             <>
               <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Analyzing your profile…</p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">Parsing · Matching jobs · Scoring</p>
-              <p className="text-[11px] text-gray-300 dark:text-slate-600 mt-1.5">This takes 30–60 seconds</p>
+              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Finding the best opportunities for you...</p>
+              <p className="text-[13px] font-medium text-gray-500 dark:text-slate-400 mt-1">⏳ This usually takes 3–5 minutes</p>
+              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">We’re scanning multiple job sources to find the most relevant matches.</p>
             </>
           )}
 
@@ -285,13 +371,35 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
                 <p className="text-[12px] text-gray-600 dark:text-slate-400 leading-snug">{step}</p>
               </div>
             ))}
-            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 flex items-center gap-1">
-              <RefreshCw className="w-3 h-3" />Processing takes approximately 30–60 seconds
+            <p className="text-[12px] font-medium text-gray-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+              ⏳ Processing usually takes 3–5 minutes
             </p>
           </div>
         )}
       </div>
     </div>
+
+    {busy || uploadState === 'success' ? (
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
+        <ProgressiveActivity
+          title={activityFailed ? 'We saved your resume' : 'Matching your resume'}
+          steps={activitySteps}
+        />
+        <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
+          <div className="aspect-video w-full">
+            <iframe
+              className="h-full w-full"
+              src="https://www.youtube.com/embed/6HPs3i2Nth0?si=l8ARqLm0UI9RKA9L"
+              title="YouTube video player"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      </div>
+    ) : null}
 
     {/* ── Delete confirmation modal ─────────────────────────────────────── */}
     {showConfirm && (

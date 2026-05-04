@@ -87,7 +87,7 @@ export class ApifyAdapter implements JobSourceAdapter {
 
     const settled = await Promise.allSettled(
       activePlatforms.map(async (cfg) => {
-        const timeout = cfg.timeoutMs ?? 45_000
+        const timeout = cfg.timeoutMs ?? 90_000
         const items = cfg.taskId
           ? await this.runTask(cfg.taskId, cfg.buildInput(params), timeout)
           : await this.runActor(cfg.actorId!, cfg.buildInput(params), timeout)
@@ -98,9 +98,17 @@ export class ApifyAdapter implements JobSourceAdapter {
     )
 
     const results: NormalizedJob[] = []
+    const failures: string[] = []
     for (const r of settled) {
       if (r.status === 'fulfilled') results.push(...r.value)
-      else console.error(`[apify] platform failed:`, r.reason instanceof Error ? r.reason.message : r.reason)
+      else {
+        const message = r.reason instanceof Error ? r.reason.message : String(r.reason)
+        failures.push(message)
+        console.error(`[apify] platform failed:`, message)
+      }
+    }
+    if (results.length === 0 && failures.length > 0) {
+      throw new Error(`All Apify platforms failed: ${failures.join('; ')}`)
     }
     return results
   }
@@ -123,7 +131,10 @@ export class ApifyAdapter implements JobSourceAdapter {
     })
 
     console.log(`[apify] task ${taskId} → status=${res.status}`)
-    if (!res.ok) throw new Error(`Apify task ${taskId} failed: ${res.status}`)
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Apify task ${taskId} failed: ${res.status} ${text.slice(0, 300)}`)
+    }
 
     const data = await res.json()
     const items: Record<string, unknown>[] = Array.isArray(data) ? data : (data?.items ?? [])
@@ -149,7 +160,10 @@ export class ApifyAdapter implements JobSourceAdapter {
     })
 
     console.log(`[apify] actor ${actorId} → status=${res.status}`)
-    if (!res.ok) throw new Error(`Apify actor ${actorId} failed: ${res.status}`)
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Apify actor ${actorId} failed: ${res.status} ${text.slice(0, 300)}`)
+    }
 
     const data  = await res.json()
     const items: Record<string, unknown>[] = Array.isArray(data) ? data : []

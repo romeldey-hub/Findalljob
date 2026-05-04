@@ -94,6 +94,20 @@ export async function POST(request: NextRequest) {
       rawText = ''
     }
 
+    const hasExtractedText = rawText.length >= 50
+    const canAnalyze = hasExtractedText || ext === '.pdf'
+
+    // Word files depend on extracted text. If extraction fails, do not replace
+    // the active resume with a file the matching pipeline cannot read.
+    if (!canAnalyze) {
+      return NextResponse.json({
+        hasText: false,
+        canAnalyze: false,
+        parsing: false,
+        error: 'Could not extract readable text from this file. Please upload a text-based PDF/DOCX.',
+      })
+    }
+
     const detectedSections = detectSectionsFromText(rawText)
 
     // Ensure the resumes bucket exists
@@ -182,7 +196,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       resumeId: resume.id,
-      hasText: true,
+      hasText: hasExtractedText,
+      canAnalyze,
       parsing: true,
     })
   } catch (err) {

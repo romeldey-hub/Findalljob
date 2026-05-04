@@ -6,9 +6,51 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { track } from '@/lib/analytics'
 
+interface RazorpayPaymentResponse {
+  razorpay_order_id: string
+  razorpay_payment_id: string
+  razorpay_signature: string
+}
+
+interface RazorpayFailureResponse {
+  error?: {
+    description?: string
+  }
+}
+
+interface RazorpayCheckoutOptions {
+  key: string
+  amount: number
+  currency: string
+  order_id: string
+  name: string
+  description: string
+  image: string
+  handler: (response: RazorpayPaymentResponse) => void | Promise<void>
+  modal: {
+    ondismiss: () => void
+  }
+  prefill: {
+    email?: string
+    name?: string
+  }
+  theme: {
+    color: string
+  }
+}
+
+interface RazorpayInstance {
+  on(event: 'payment.failed', handler: (response: RazorpayFailureResponse) => void): void
+  open(): void
+}
+
+interface RazorpayConstructor {
+  new(options: RazorpayCheckoutOptions): RazorpayInstance
+}
+
 declare global {
   interface Window {
-    Razorpay: any
+    Razorpay?: RazorpayConstructor
   }
 }
 
@@ -36,7 +78,14 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
 
       // Step 2: Open checkout (load script only if not already present)
       const openCheckout = () => {
-        const options = {
+        const Razorpay = window.Razorpay
+        if (!Razorpay) {
+          toast.error('Could not load payment gateway. Check your connection and try again.')
+          setLoading(false)
+          return
+        }
+
+        const options: RazorpayCheckoutOptions = {
           key: orderData.keyId,
           amount: orderData.amount,
           currency: orderData.currency,
@@ -44,7 +93,7 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
           name: 'FindAllJob Pro',
           description: 'Pro Plan Subscription',
           image: '/logo-icon.svg',
-          handler: async (response: any) => {
+          handler: async (response) => {
             try {
               // Step 3: Verify payment
               const verifyResponse = await fetch('/api/razorpay/verify-payment', {
@@ -80,8 +129,8 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
           theme: { color: '#3B82F6' },
         }
 
-        const rzp1 = new window.Razorpay(options)
-        rzp1.on('payment.failed', (response: any) => {
+        const rzp1 = new Razorpay(options)
+        rzp1.on('payment.failed', (response) => {
           console.error('Payment failed:', response.error)
           toast.error(response.error?.description ?? 'Payment failed. Please try again.')
           setLoading(false)

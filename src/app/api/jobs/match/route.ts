@@ -47,7 +47,7 @@ export async function GET() {
       `)
       .eq('user_id', user.id)
       .order('ai_score', { ascending: false })
-      .limit(50),
+      .limit(20),
     supabase
       .from('resumes')
       .select('id, raw_text, parsed_data')
@@ -85,7 +85,7 @@ export async function GET() {
         `)
         .eq('user_id', user.id)
         .order('ai_score', { ascending: false })
-        .limit(50)
+        .limit(20)
 
       if (fallback.error) {
         console.error('[jobs/match] fallback select failed:', fallback.error.message)
