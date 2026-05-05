@@ -124,14 +124,6 @@ function buildBroadJobBoardQueries(parsedResume: ParsedResume, searchQueries: st
     .filter((title): title is string => Boolean(title))
 
   return uniqueNonEmpty([
-    'field application engineer',
-    'application engineer',
-    'pre sales',
-    'presales',
-    'technical sales',
-    'sales engineer',
-    'technical sales manager',
-    'business development manager',
     ...titles,
     ...searchQueries.map((query) =>
       query
@@ -506,23 +498,26 @@ export async function POST() {
           }
         }
 
-        // Apify last-resort pass
-        if (nonApifyJobCount(jobs) < 60 || nonApifySourceCount(jobs) < 2) {
-          console.log('[analyze] Apify last-resource pass enabled | nonApifyJobs:', nonApifyJobCount(jobs), '| nonApifySources:', nonApifySourceCount(jobs))
+        // Apify pass — always run for India profiles (Naukri/LinkedIn cover India far better than
+        // Adzuna/JSearch); run for other profiles only if standard sources produced too few results.
+        const apifyNaukri = sourceCount(jobs, 'apify_linkedin') + sourceCount(jobs, 'apify_naukri') + sourceCount(jobs, 'apify_apna')
+        const shouldRunApify = isIndiaProfile || nonApifyJobCount(jobs) < 60 || nonApifySourceCount(jobs) < 2
+        if (shouldRunApify) {
+          console.log('[analyze] Apify pass enabled | isIndia:', isIndiaProfile, '| nonApifyJobs:', nonApifyJobCount(jobs), '| nonApifySources:', nonApifySourceCount(jobs), '| apifyJobs:', apifyNaukri)
           for (const query of searchQueries.slice(0, 2)) {
             try {
               const result = await router.searchSource({ title: query, location: profileLocation, countryCode, limit: 20 }, 'apify')
               addUnique(result.jobs)
               sourceErrors.push(...result.errors)
               console.log(`[analyze] Apify last-resource "${query}" → ${result.jobs.length} jobs (total: ${jobs.length}) sources: ${sourceSummary(result.jobs)}`)
-              if (jobs.length >= 80 && sourceCount(jobs, 'apify_linkedin') + sourceCount(jobs, 'apify_naukri') + sourceCount(jobs, 'apify_apna') >= 10) break
+              if (jobs.length >= 80 && apifyNaukri >= 10) break
             } catch (err) {
               console.error(`[analyze] Apify last-resource "${query}" error:`, apiErrMsg(err))
             }
             emit({ step: 'jobs_fetching', count: jobs.length, sources: currentSourceNames(jobs) })
           }
         } else {
-          console.log('[analyze] Apify skipped — standard sources produced enough candidates')
+          console.log('[analyze] Apify skipped — standard sources produced enough candidates and not an India profile')
         }
 
         console.log('[analyze] total jobs fetched:', jobs.length, '| by source:', sourceSummary(jobs))
