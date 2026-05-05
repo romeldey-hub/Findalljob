@@ -2,7 +2,8 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { ResumeUploadZone } from '@/components/resume/ResumeUploadZone'
 import { VisualResumeCard } from '@/components/resume/VisualResumeCard'
 import { InsightsPanel } from '@/components/resume/InsightsPanel'
-import { Loader2, FileText, Sparkles } from 'lucide-react'
+import { ReanalyzeButton } from '@/components/resume/ReanalyzeButton'
+import { FileText, Sparkles, RefreshCw } from 'lucide-react'
 import type { ParsedResume, Resume } from '@/types'
 import { resolveAvatar } from '@/lib/avatar'
 
@@ -29,7 +30,15 @@ export default async function ResumePage() {
   ])
 
   const hasResume = Boolean(resume)
-  const isParsed  = resume && Object.keys(resume.parsed_data ?? {}).length > 0
+  // Only consider parsed when AI has produced structured data.
+  // An upload-only record stores { sections: [...] } with no structured fields — that is NOT parsed.
+  // We check name OR skills OR experience — any of these confirms the AI parser ran successfully.
+  const pd = resume?.parsed_data
+  const isParsed = Boolean(
+    pd?.name ||
+    (Array.isArray(pd?.skills)      && pd.skills.length      > 0) ||
+    (Array.isArray(pd?.experience)  && pd.experience.length  > 0)
+  )
   const avatarUrl = resolveAvatar(avatarRow, user)
 
   return (
@@ -58,20 +67,18 @@ export default async function ResumePage() {
         } : null}
       />
 
-      {/* ── Parsing in progress ─────────────────────────────────── */}
+      {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}
       {hasResume && !isParsed && (
-        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center flex-shrink-0">
-            <Loader2 className="w-5 h-5 text-[#2563EB] animate-spin" />
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6 flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <RefreshCw className="w-5 h-5 text-amber-500" />
           </div>
           <div>
-            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Finding the best opportunities for you...</p>
-            <p className="text-[13px] font-medium text-gray-500 dark:text-slate-400 mt-1">
-              ⏳ This usually takes 3–5 minutes
+            <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Resume received — analysis didn't complete</p>
+            <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">
+              Your file is saved but AI parsing didn't finish. Click below to retry analysis without re-uploading.
             </p>
-            <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">
-              We’re scanning multiple job sources to find the most relevant matches.
-            </p>
+            <ReanalyzeButton />
           </div>
         </div>
       )}

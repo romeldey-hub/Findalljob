@@ -65,10 +65,11 @@ const COUNTRY_LOCATION_RE: Partial<Record<string, RegExp>> = {
   ae: /\b(uae|dubai|abu dhabi|sharjah|united arab emirates)\b/i,
 }
 
-// Sources that are inherently country-neutral (remote-only boards) — never filtered out
-const REMOTE_SOURCES = new Set(['himalayas', 'jobicy', 'remoteok', 'arbeitnow'])
+// Sources that are India-specific by nature — their jobs are always India even with no location field.
+// Naukri and Apna only operate in India, so country filtering is not needed for them.
+const INDIA_ONLY_SOURCES = new Set(['apify_naukri', 'apify_apna'])
 
-// Patterns in job location that indicate a remote/worldwide role — always kept
+// Patterns in job location that indicate a remote/worldwide role — always kept regardless of country
 const REMOTE_RE = /\b(remote|worldwide|global|anywhere|work.?from.?home|wfh)\b/i
 
 export interface DetectedLocation {
@@ -97,15 +98,24 @@ export function detectLocation(rawLocation: string): DetectedLocation {
  *
  * Jobs always pass if:
  * - No country code was detected (no filter applied)
- * - The job is from a remote-only source (Himalayas, Jobicy, etc.)
- * - The job location contains "remote", "worldwide", "global", etc.
- * - We have no location pattern rule for the target country
+ * - The job location says "remote", "worldwide", "global", etc.
+ * - The job is from an India-only board (Naukri, Apna) and countryCode is "in"
+ *
+ * Jobs are excluded if:
+ * - Location is missing/empty (unknown origin)
+ * - Location matches a different country's pattern
  */
 export function isJobFromCountry(job: NormalizedJob, countryCode: string): boolean {
   if (!countryCode) return true
-  if (REMOTE_SOURCES.has(job.source)) return true
-  if (!job.location) return true
-  if (REMOTE_RE.test(job.location)) return true
+
+  // Remote/worldwide roles pass for any candidate country
+  if (REMOTE_RE.test(job.location || '')) return true
+
+  // India-specific boards (Naukri, Apna) only list India jobs — no location check needed
+  if (countryCode === 'in' && INDIA_ONLY_SOURCES.has(job.source)) return true
+
+  // No location field = unknown origin → exclude when a country filter is active
+  if (!job.location) return false
 
   const re = COUNTRY_LOCATION_RE[countryCode]
   if (!re) return true  // no filter rule for this country

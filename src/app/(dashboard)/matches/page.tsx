@@ -742,6 +742,9 @@ export default function MatchesPage() {
   const [detectedCountry, setDetectedCountry] = useState<string>(() =>
     typeof window !== 'undefined' ? (localStorage.getItem('detectedCountry') ?? '') : ''
   )
+  const [detectedCity, setDetectedCity] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('detectedCity') ?? '') : ''
+  )
   const [analyzing, setAnalyzing]       = useState(false)
   const [analyzeError, setAnalyzeError] = useState('')
   const [searchMessage, setSearchMessage] = useState('')
@@ -888,6 +891,11 @@ export default function MatchesPage() {
                     const country = event.detectedCountry as string
                     setDetectedCountry(country)
                     localStorage.setItem('detectedCountry', country)
+                  }
+                  if (event.detectedCity) {
+                    const city = event.detectedCity as string
+                    setDetectedCity(city)
+                    localStorage.setItem('detectedCity', city)
                   }
                 }
                 if (event.error) {
@@ -1167,7 +1175,10 @@ export default function MatchesPage() {
           {mode === 'ai' && detectedCountry && sortedJobs.length > 0 && !analyzing && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 text-[12px] text-blue-700 dark:text-blue-400 font-medium">
               <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-              Showing jobs in <span className="font-bold">{detectedCountry}</span> based on your resume location
+              Showing jobs in <span className="font-bold">{detectedCountry}</span>
+              {detectedCity
+                ? <> · Resume location: <span className="font-semibold">{detectedCity}</span></>
+                : ' · based on your resume location'}
             </div>
           )}
 

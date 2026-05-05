@@ -259,7 +259,7 @@ export type AnalyzeProgressEvent =
   | { step: 'pool_selected'; count: number }
   | { step: 'ai_ranking' }
   | { step: 'matches_saved' }
-  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string; detectedCountry?: string }
+  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string; detectedCountry?: string; detectedCity?: string }
   | { error: string }
 
 export async function POST() {
@@ -323,7 +323,7 @@ export async function POST() {
             } else {
               throw new Error('No resume text or file found. Please upload your resume again.')
             }
-            await Promise.all([
+            const [resumeUpdate] = await Promise.all([
               admin.from('resumes').update({ parsed_data: parsedResume }).eq('id', resume.id),
               admin.from('profiles').update({
                 full_name: parsedResume.name || undefined,
@@ -333,6 +333,9 @@ export async function POST() {
                 skills: parsedResume.skills || [],
               }).eq('user_id', user.id),
             ])
+            if (resumeUpdate.error) {
+              throw new Error(`Failed to save parsed resume data: ${resumeUpdate.error.message}`)
+            }
           } catch (err) {
             const msg = apiErrMsg(err)
             console.error('[analyze] parse failed:', msg)
@@ -655,10 +658,13 @@ export async function POST() {
         }
 
         if (cvSuggestions.length > 0) {
-          await admin
+          const { error: cvUpdateErr } = await admin
             .from('resumes')
             .update({ parsed_data: { ...parsedResume, cv_suggestions: cvSuggestions } })
             .eq('id', resume.id)
+          if (cvUpdateErr) {
+            console.error('[analyze] cv_suggestions update failed (non-fatal):', cvUpdateErr.message)
+          }
         }
 
         console.log(`[analyze] done — resume_id=${resume.id} saved=${matchRows.length} matches`)
@@ -679,6 +685,7 @@ export async function POST() {
           matchCount: matchRows.length,
           cvSuggestions,
           detectedCountry: detectedLocation.countryName || undefined,
+          detectedCity:    detectedLocation.city        || undefined,
         })
 
       } catch (err) {

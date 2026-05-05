@@ -3,6 +3,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { JobSourceRouter }                 from '@/lib/jobs/router'
 import { rerankJobs }                      from '@/lib/ai/reranker'
 import { generateCvSuggestions }           from '@/lib/ai/suggestions'
+import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
 import { computeVerifiedLabel }            from '@/types'
 import type { ParsedResume, NormalizedJob } from '@/types'
 
@@ -68,6 +69,22 @@ export async function POST(request: NextRequest) {
   const stage = fallback ? 'fallback' : 'primary'
   console.log(`[search:${stage}] user=${user.id} title="${title}" location="${location}"`)
 
+  // ── Detect country from the user's active resume location ─────────────────
+  // Fetch just the location field — cheap query, needed for country-filtering below.
+  const { data: profileRow } = await supabase
+    .from('resumes')
+    .select('parsed_data')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const resumeLocation   = (profileRow?.parsed_data as { location?: string } | null)?.location ?? ''
+  const detectedLoc      = detectLocation(resumeLocation || location)
+  const countryCode      = detectedLoc.countryCode || undefined
+  console.log(`[search:${stage}] resume location="${resumeLocation}" → countryCode=${countryCode ?? 'none'}`)
+
   // ── 1. Fetch jobs (with Apify DB-cache short-circuit for fallback stage) ────
   let jobs:        NormalizedJob[] = []
   let sourcesUsed: string[]        = []
@@ -87,12 +104,21 @@ export async function POST(request: NextRequest) {
 
   if (!fromCache) {
     const result = await new JobSourceRouter().search(
-      { title, location, limit: limit ?? 25 },
+      { title, location, countryCode, limit: limit ?? 25 },
       stage
     )
     jobs        = result.jobs
     sourcesUsed = result.sourcesUsed
     errors      = result.errors
+  }
+
+  // ── Apply country filter post-fetch ──────────────────────────────────────
+  if (countryCode && jobs.length > 0) {
+    const { kept, removed } = filterJobsByCountry(jobs, countryCode)
+    if (removed > 0) {
+      console.log(`[search:${stage}] country filter (${countryCode}): removed ${removed} non-matching jobs, kept ${kept.length}`)
+      jobs = kept
+    }
   }
 
   console.log(`[search] ${jobs.length} jobs, sources=[${sourcesUsed.join(', ')}], errors=${errors.length}`)

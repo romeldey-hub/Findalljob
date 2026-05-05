@@ -151,7 +151,13 @@ Return ONLY the headline text. No quotes, no explanation.`
 
 export async function parseResume(rawText: string): Promise<ParsedResume> {
   const prompt = `${PARSE_SCHEMA_PROMPT}\n\nRESUME TEXT:\n${rawText}`
-  const result = await callClaudeJSON<ParsedResume>(prompt, PARSE_SYSTEM_PROMPT, 4096)
+  const result = await callClaudeJSON<ParsedResume>(prompt, PARSE_SYSTEM_PROMPT, 8096)
+
+  // salvageJsonArray can return an array of sub-objects if the response was truncated.
+  // That array would be wrongly typed as ParsedResume — detect and reject it.
+  if (Array.isArray(result) || typeof result !== 'object' || result === null) {
+    throw new Error('Resume parsing failed: response was truncated or returned an unexpected format. Please try again.')
+  }
 
   // Validation: if critical sections detected in raw text are missing, log warning
   const { valid, missingSections, coveragePercent } = validateParsed(rawText, result)
@@ -165,7 +171,11 @@ CRITICAL — previous parse missed these sections: ${missingSections.join(', ')}
 You MUST include ALL of them in the "sections" array.
 
 RESUME TEXT:\n${rawText}`
-      return callClaudeJSON<ParsedResume>(retryPrompt, PARSE_SYSTEM_PROMPT, 4096)
+      const retryResult = await callClaudeJSON<ParsedResume>(retryPrompt, PARSE_SYSTEM_PROMPT, 8096)
+      if (Array.isArray(retryResult) || typeof retryResult !== 'object' || retryResult === null) {
+        throw new Error('Resume parsing failed on retry: response was truncated. Please try again.')
+      }
+      return retryResult
     }
   }
 
@@ -177,7 +187,7 @@ export async function parseResumeFromPDF(pdfBuffer: Buffer): Promise<ParsedResum
 
   const response = await getClient().messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 8096,
     system: fullSystem,
     messages: [{
       role: 'user',

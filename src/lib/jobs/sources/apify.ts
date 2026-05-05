@@ -33,10 +33,14 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
     actorId: 'curious_coder~linkedin-jobs-scraper',  // public fallback — no task setup needed
     // Actor requires pre-built LinkedIn search URLs, not separate keyword/location fields
     buildInput: (p) => {
-      const kw  = encodeURIComponent(p.title)
-      const loc = encodeURIComponent(p.location || 'India')
+      const kw = encodeURIComponent(p.title)
+      // LinkedIn works best with just the primary city — strip state/country suffixes
+      const city = (p.location || 'India').split(/[,/]/)[0].trim()
+      const loc  = encodeURIComponent(city)
+      // LinkedIn GeoID for India (102713980) restricts results to India regardless of location text
+      const geoFilter = p.countryCode === 'in' ? '&geoId=102713980' : ''
       return {
-        urls:          [`https://www.linkedin.com/jobs/search/?keywords=${kw}&location=${loc}&f_TPR=r2592000`],
+        urls:          [`https://www.linkedin.com/jobs/search/?keywords=${kw}&location=${loc}${geoFilter}&f_TPR=r2592000`],
         count:         25,
         scrapeCompany: false,   // skip company detail pages — faster, stays within 50 s timeout
       }
@@ -48,6 +52,7 @@ const PLATFORM_CONFIGS: ApifyConfig[] = [
     actorId: 'muhammetakkurtt~naukri-job-scraper',  // public fallback — no task setup needed
     buildInput: (p) => ({
       keyword:   p.title,
+      location:  p.location ? p.location.split(/[,/]/)[0].trim() : 'India',
       maxJobs:   50,       // actor minimum is 50; reranker filters down
       freshness: '30',     // jobs posted in last 30 days
       sortBy:    'date',
