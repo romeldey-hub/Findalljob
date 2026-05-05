@@ -264,11 +264,11 @@ function OptimizedJobCard({
           <div className="grid w-full grid-cols-3 gap-2 sm:hidden">
             <button
               onClick={() => setConfirmDelete(true)}
-              className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-500 dark:text-slate-400 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="justify-self-start p-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
               title="Delete optimized resume"
+              aria-label="Delete optimized resume"
             >
-              <Trash2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Delete</span>
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
             <button onClick={onViewResume} className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
               <Eye className="w-3.5 h-3.5 shrink-0" /><span className="truncate">View Resume</span>

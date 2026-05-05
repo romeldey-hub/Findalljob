@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Toaster } from '@/components/ui/sonner'
+import { LogoMark } from '@/components/LogoMark'
 import { isAdminUser, isProUser } from '@/lib/admin'
 import { resolveAvatar } from '@/lib/avatar'
 import { resolveProUntil } from '@/lib/billing'
@@ -58,6 +59,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         avatarUrl={avatarUrl}
       />
       <main className="flex-1 min-w-0 overflow-y-auto bg-[#F8FAFC] dark:bg-[#0B1120]">
+        <div className="lg:hidden sticky top-0 z-30 border-b border-gray-100 dark:border-[#1E293B] bg-white/95 dark:bg-[#0F1B2D]/95 backdrop-blur-xl px-4 py-3">
+          <LogoMark size="sm" />
+        </div>
         <div className="p-4 sm:p-6 pb-24 lg:pb-6 max-w-7xl mx-auto">
           {children}
         </div>
