@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import useSWR, { mutate as globalMutate } from 'swr'
 import {
-  Wand2, Download, Loader2, Building2, ExternalLink, Sparkles,
+  Wand2, Download, Loader2, Building2, Sparkles,
   MapPin, Clock, Briefcase, Eye, Mic,
   Calendar, Plus, Check, Trash2,
   Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import { InterviewModal } from '@/components/InterviewModal'
 import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
+import { ApplyButton } from '@/components/jobs/ApplyButton'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { resolveAvatar } from '@/lib/avatar'
@@ -126,7 +127,37 @@ function OptimizedJobCard({
   })
 
   return (
-    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm hover:shadow-md transition-all duration-200 p-6">
+    <div className="relative bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm hover:shadow-md transition-all duration-200 p-4 sm:p-6">
+
+      {/* Mobile: score and improvement first */}
+      <div className="sm:hidden mb-5 pt-1">
+        {onToggleSave && (
+          <button
+            onClick={onToggleSave}
+            disabled={saving}
+            title={saved ? 'Remove from tracker' : 'Save to tracker'}
+            className="absolute right-4 top-4 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : saved
+              ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400 transition-colors" />
+              : <Bookmark className="w-4 h-4" />}
+          </button>
+        )}
+        <div className="flex w-full flex-col items-center gap-2">
+          <ATSScoreRing score={d.ats_score} />
+          {d.original_score != null && d.original_score < d.ats_score && (
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[10px] font-semibold text-green-500 dark:text-green-400">Improved from previous score</span>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className="text-gray-400 dark:text-slate-500">Previous: <span className="font-bold">{d.original_score}</span></span>
+                <span className="text-green-500 font-black">→ {d.ats_score}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Top row: meta + score ring + bookmark */}
       <div className="flex gap-6">
@@ -151,7 +182,7 @@ function OptimizedJobCard({
             </p>
           )}
         </div>
-        <div className="flex-shrink-0 flex flex-col items-center gap-2 pt-1">
+        <div className="hidden sm:flex flex-shrink-0 flex-col items-center gap-2 pt-1">
           {onToggleSave && (
             <button
               onClick={onToggleSave}
@@ -211,23 +242,61 @@ function OptimizedJobCard({
         </div>
 
         {confirmDelete ? (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <span className="text-[12px] text-red-500 dark:text-red-400">Delete this resume?</span>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => { setConfirmDelete(false); onDelete() }}
-              className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[12px] font-bold transition-colors"
-            >
-              Yes, delete
-            </button>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setConfirmDelete(false); onDelete() }}
+                className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[12px] font-bold transition-colors"
+              >
+                Yes, delete
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <>
+          <div className="grid w-full grid-cols-3 gap-2 sm:hidden">
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-500 dark:text-slate-400 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              title="Delete optimized resume"
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Delete</span>
+            </button>
+            <button onClick={onViewResume} className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
+              <Eye className="w-3.5 h-3.5 shrink-0" /><span className="truncate">View Resume</span>
+            </button>
+            <button onClick={onDownload} className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
+              <Download className="w-3.5 h-3.5 shrink-0" /><span className="truncate">Download</span>
+            </button>
+          </div>
+
+          <div className="grid w-full grid-cols-2 gap-2 sm:hidden">
+            {onInterview ? (
+              <button onClick={onInterview} className="flex min-w-0 items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[11px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all active:scale-100">
+                <Mic className="w-3.5 h-3.5 shrink-0" /><span className="truncate">Mock Interview</span>
+              </button>
+            ) : <div />}
+            {applyUrl && (
+              <ApplyButton
+                job={{
+                  id: resume.jobId || resume.id,
+                  title: jobTitle,
+                  company,
+                  url: applyUrl,
+                }}
+              />
+            )}
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2">
             <button
               onClick={() => setConfirmDelete(true)}
               className="p-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -247,16 +316,19 @@ function OptimizedJobCard({
               </button>
             )}
             {applyUrl && (
-              <a
-                href={applyUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 text-[12px] font-medium hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.01]"
-              >
-                Apply Now <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              <div className="w-[110px]">
+                <ApplyButton
+                  job={{
+                    id: resume.jobId || resume.id,
+                    title: jobTitle,
+                    company,
+                    url: applyUrl,
+                  }}
+                />
+              </div>
             )}
           </div>
+          </>
         )}
       </div>
     </div>
