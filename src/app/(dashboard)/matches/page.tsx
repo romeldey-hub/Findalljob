@@ -1171,18 +1171,7 @@ export default function MatchesPage() {
                 </>}
           </p>
 
-          {/* Country banner — shown when we know which country the jobs are from */}
-          {mode === 'ai' && detectedCountry && sortedJobs.length > 0 && !analyzing && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 text-[12px] text-blue-700 dark:text-blue-400 font-medium">
-              <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-              Showing jobs in <span className="font-bold">{detectedCountry}</span>
-              {detectedCity
-                ? <> · Resume location: <span className="font-semibold">{detectedCity}</span></>
-                : ' · based on your resume location'}
-            </div>
-          )}
-
-          {/* Tier tabs — visible when there are jobs to show */}
+          {/* Tier tabs + inline location context — visible when there are jobs to show */}
           {sortedJobs.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
               {([
@@ -1207,6 +1196,20 @@ export default function MatchesPage() {
                   }`}>{tab.count}</span>
                 </button>
               ))}
+
+              {/* Location context — right-aligned on desktop, wraps below filters on mobile */}
+              {detectedCountry && (
+                <span className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 font-medium">
+                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                  Showing jobs in{' '}
+                  <span className="font-semibold text-gray-500 dark:text-slate-400">{detectedCountry}</span>
+                  {detectedCity && (
+                    <> · Resume location:{' '}
+                      <span className="font-semibold text-gray-500 dark:text-slate-400">{detectedCity}</span>
+                    </>
+                  )}
+                </span>
+              )}
             </div>
           )}
 
