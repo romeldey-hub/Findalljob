@@ -114,11 +114,18 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
     let analyzeFailed = false
     let matchCount    = 0
 
+    // Abort the stream after 10 minutes to prevent infinite hangs
+    const abortController = new AbortController()
+    const abortTimer = setTimeout(() => abortController.abort(), 10 * 60 * 1000)
+
     try {
-      const analyzeRes = await fetch('/api/resume/analyze', { method: 'POST' })
+      const analyzeRes = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        signal: abortController.signal,
+      })
 
       if (!analyzeRes.ok) {
-        let errMsg = 'Analysis took too long. Your resume is saved — search for jobs on the Matches page.'
+        let errMsg = 'Analysis failed. Your resume is saved — try searching on the Matches page.'
         try { const d = await analyzeRes.json(); if (d.error) errMsg = d.error } catch { /* non-JSON */ }
         analyzeFailed = true
         setActivityFailed(true)
@@ -146,7 +153,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
                   const event = JSON.parse(line.slice(6)) as Record<string, unknown>
                   onSSEEvent(event)
                   if (event.done) matchCount = (event.matchCount as number) ?? 0
-                  if (event.error) { analyzeFailed = true; setActivityFailed(true) }
+                  if (event.error) { analyzeFailed = true; setActivityFailed(true); stopProgress() }
                 } catch { /* malformed SSE line */ }
               }
             }
@@ -164,15 +171,29 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
           toast.warning('Analysis encountered an issue. Your resume is saved — search for jobs on the Matches page.')
         }
       }
-    } catch {
+    } catch (err) {
       analyzeFailed = true
       setActivityFailed(true)
       stopProgress()
       if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
-      toast.warning('Job analysis timed out. Your resume is saved — you can search for jobs on the Matches page.')
+      const isTimeout = err instanceof Error && err.name === 'AbortError'
+      toast.warning(
+        isTimeout
+          ? 'Analysis timed out after 10 minutes. Your resume is saved — search for jobs on the Matches page.'
+          : 'Job matching failed. Your resume is saved — you can search for jobs on the Matches page.'
+      )
+    } finally {
+      clearTimeout(abortTimer)
     }
 
-    if (!analyzeFailed) setUploadState('success')
+    if (analyzeFailed) {
+      // Reset to idle so user can see the upload zone and try again
+      setUploadState('idle')
+      resetProgress()
+      return
+    }
+
+    setUploadState('success')
     setTimeout(() => router.push('/matches'), 2000)
   }, [router, resetProgress, stopProgress, onSSEEvent])
 
