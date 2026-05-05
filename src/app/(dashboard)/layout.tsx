@@ -57,8 +57,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         role={isAdminUser(user.email, roleRow?.role) ? 'admin' : 'user'}
         avatarUrl={avatarUrl}
       />
-      <main className="flex-1 overflow-y-auto bg-[#F8FAFC] dark:bg-[#0B1120]">
-        <div className="p-6 max-w-7xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto bg-[#F8FAFC] dark:bg-[#0B1120]">
+        <div className="p-4 sm:p-6 pb-24 lg:pb-6 max-w-7xl mx-auto">
           {children}
         </div>
       </main>

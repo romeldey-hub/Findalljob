@@ -197,7 +197,7 @@ function TrackerColumn({
   onViewDetail: (app: Application) => void
 }) {
   return (
-    <div className="w-[280px] flex-shrink-0 flex flex-col gap-2.5">
+    <div className="w-[calc(100vw-2rem)] sm:w-[280px] flex-shrink-0 flex flex-col gap-2.5 snap-start">
 
       {/* Column header */}
       <div className="flex items-center gap-2 px-1">
@@ -462,7 +462,7 @@ export default function TrackerPage() {
       </div>
 
       {/* Kanban board */}
-      <div className="overflow-x-auto pb-2">
+      <div className="overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex gap-4" style={{ minWidth: 'max-content' }}>
           {COLUMNS.map(col => (
             <TrackerColumn

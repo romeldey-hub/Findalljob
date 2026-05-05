@@ -324,7 +324,7 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
 
   return (
     <>
-    <aside className="flex flex-col w-64 border-r border-gray-100 dark:border-[#1E293B] bg-white dark:bg-[#0F1B2D] h-full">
+    <aside className="hidden lg:flex flex-col w-64 border-r border-gray-100 dark:border-[#1E293B] bg-white dark:bg-[#0F1B2D] h-full">
 
       {/* ── Logo ─────────────────────────────────────────────────── */}
       <div className="px-5 py-[18px] border-b border-gray-100 dark:border-[#1E293B]">
@@ -446,6 +446,29 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
         </Link>
       </div>
     </aside>
+
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 dark:border-[#1E293B] bg-white/95 dark:bg-[#0F1B2D]/95 backdrop-blur-xl px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+      <div className="flex items-center justify-around gap-1 overflow-x-auto">
+        {navItems.map(({ href, label, icon: Icon }) => {
+          const active = pathname.startsWith(href)
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'min-w-[58px] flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition-colors',
+                active
+                  ? 'bg-[#1a2742] dark:bg-[#2563EB] text-white'
+                  : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-[#1E293B]'
+              )}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              <span className="whitespace-nowrap">{label.replace('Matched Jobs', 'Jobs').replace('My Resume', 'Resume')}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </nav>
 
     {showHelp    && <HelpModal    onClose={() => setShowHelp(false)} />}
     {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}

@@ -290,14 +290,14 @@ function JobCard({
 
   return (
     <div
-      className={`animate-fade-in-up group bg-white dark:bg-[#1E293B] rounded-2xl border shadow-sm hover:-translate-y-[2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] transition-all duration-200 ease-out p-6 ${
+      className={`animate-fade-in-up group bg-white dark:bg-[#1E293B] rounded-2xl border shadow-sm hover:-translate-y-[2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] transition-all duration-200 ease-out p-4 sm:p-6 ${
         isNew
           ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15 dark:ring-[#2563EB]/20'
           : 'border-[#E5E7EB] dark:border-[#334155]'
       }`}
       style={{ animationDelay: `${animIndex * 60}ms` }}
     >
-      <div className="flex gap-6">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
 
         {/* ── LEFT + MIDDLE ──────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
@@ -310,8 +310,8 @@ function JobCard({
           )}
 
           {/* Title + source badge + verified badge */}
-          <div className="flex items-start justify-between gap-2 mb-1.5">
-            <h3 className="font-bold text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] pr-2">
+          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 mb-1.5">
+            <h3 className="font-bold text-[16px] sm:text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] pr-2">
               {job.title}
             </h3>
             <div className="flex flex-col items-end gap-1 flex-shrink-0">
@@ -430,14 +430,14 @@ function JobCard({
         </div>
 
         {/* ── RIGHT: bookmark + score + apply ───────────────────── */}
-        <div className="flex flex-col items-center gap-3 min-w-[110px] w-[110px] flex-shrink-0">
+        <div className="flex flex-col items-stretch sm:items-center sm:justify-start gap-3 w-full sm:min-w-[110px] sm:w-[110px] sm:flex-shrink-0 border-t sm:border-t-0 border-[#F1F5F9] dark:border-[#334155] pt-4 sm:pt-0">
 
           {/* Bookmark */}
           <button
             onClick={handleSave}
             disabled={saving}
             title={saved ? 'Remove bookmark' : 'Save job'}
-            className="self-end text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
+            className="order-3 sm:order-none sm:self-end text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
           >
             {saving
               ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -524,17 +524,19 @@ function FilterPanel({
   filters,
   onChange,
   onClear,
+  className = '',
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
   onClear: () => void
+  className?: string
 }) {
   const EXP_OPTIONS = ['Any', '0–5 years', '5–10 years', '10+ years']
   const JOB_TYPES   = ['Any', 'Full-time', 'Contract', 'Remote', 'Hybrid']
 
   return (
-    <aside className="w-60 flex-shrink-0">
-      <div className="sticky top-6 bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5 space-y-6">
+    <aside className={className || 'w-60 flex-shrink-0'}>
+      <div className="xl:sticky xl:top-6 bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5 space-y-6">
         <h3 className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] tracking-tight">Refine Results</h3>
 
         {/* Experience */}
@@ -984,7 +986,7 @@ export default function MatchesPage() {
         onSubmit={handleSearch}
         className="flex flex-wrap gap-3 p-4 bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm"
       >
-        <div className="flex-1 min-w-48">
+        <div className="w-full sm:flex-1 sm:min-w-48">
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Job Title / Keyword</p>
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -996,7 +998,7 @@ export default function MatchesPage() {
             />
           </div>
         </div>
-        <div className="flex-1 min-w-48">
+        <div className="w-full sm:flex-1 sm:min-w-48">
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Location</p>
           <div className="relative">
             <MapPin className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1008,11 +1010,11 @@ export default function MatchesPage() {
             />
           </div>
         </div>
-        <div className="flex items-end gap-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 w-full lg:w-auto">
           <button
             type="submit"
             disabled={searching || !title.trim() || !location.trim()}
-            className="flex items-center gap-2 px-5 h-10 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
+            className="flex items-center justify-center gap-2 px-5 h-10 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
           >
             {searching ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Searching…</> : <><Search className="w-3.5 h-3.5" />Find &amp; Match Jobs</>}
           </button>
@@ -1040,10 +1042,25 @@ export default function MatchesPage() {
       )}
 
       {/* ── Main: job list + filter panel ────────────────────────── */}
-      <div className="flex gap-5 items-start">
+      <div className="flex flex-col xl:flex-row gap-5 items-start">
 
         {/* ── Single results section — renders AI or Manual, never both ── */}
         <div className="flex-1 min-w-0 space-y-4" ref={aiSectionRef}>
+
+          <details className="xl:hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">
+              Refine Results
+              <SlidersHorizontal className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+            </summary>
+            <div className="border-t border-[#F1F5F9] dark:border-[#334155]">
+              <FilterPanel
+                filters={filters}
+                onChange={setFilters}
+                onClear={() => setFilters(DEFAULT_FILTERS)}
+                className="w-full"
+              />
+            </div>
+          </details>
 
           {/* Section header */}
           <div className="flex items-center justify-between">
@@ -1263,6 +1280,7 @@ export default function MatchesPage() {
           filters={filters}
           onChange={setFilters}
           onClear={() => setFilters(DEFAULT_FILTERS)}
+          className="hidden xl:block w-60 flex-shrink-0"
         />
       </div>
 
