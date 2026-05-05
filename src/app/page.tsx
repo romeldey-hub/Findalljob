@@ -84,9 +84,13 @@ const proFeatures = [
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function LandingPage() {
-  const hdrs        = await headers()
-  const countryCode = (hdrs.get('x-vercel-ip-country') ?? '').toLowerCase()
-  const pricing     = getPricingByCountry(countryCode)
+  const hdrs    = await headers()
+  const host    = (hdrs.get('host') ?? '').split(':')[0]
+  const isLocal = host === 'localhost' || host === '127.0.0.1'
+  const countryCode = isLocal
+    ? 'in'
+    : (hdrs.get('x-vercel-ip-country') ?? '').toLowerCase()
+  const pricing = getPricingByCountry(countryCode)
   return (
     <div className="min-h-screen bg-[#040D21] text-white overflow-x-hidden">
 
@@ -243,9 +247,10 @@ export default async function LandingPage() {
             <div className="mb-6">
               <p className="text-[12px] font-bold uppercase tracking-widest text-slate-500 mb-2">Free</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-5xl font-black">$0</span>
+                <span className="text-5xl font-black">{pricing.displayFree}</span>
               </div>
               <p className="text-[13px] text-slate-500 mt-1">Everything you need to get started</p>
+              <p className="text-[11px] text-slate-600 mt-0.5">Pricing adjusted for your location</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
               {freeFeatures.map((f) => (
