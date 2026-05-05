@@ -738,7 +738,10 @@ export default function MatchesPage() {
   const [aiJobs, setAiJobs]             = useState<MatchRecord[] | null>(null)
   const [manualJobs, setManualJobs]     = useState<MatchRecord[]>([])
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
-  const [suggestions, setSuggestions]   = useState<string[]>([])
+  const [suggestions, setSuggestions]       = useState<string[]>([])
+  const [detectedCountry, setDetectedCountry] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('detectedCountry') ?? '') : ''
+  )
   const [analyzing, setAnalyzing]       = useState(false)
   const [analyzeError, setAnalyzeError] = useState('')
   const [searchMessage, setSearchMessage] = useState('')
@@ -881,6 +884,11 @@ export default function MatchesPage() {
                   matchCount    = (event.matchCount as number)  ?? 0
                   cvSuggestions = (event.cvSuggestions as string[]) ?? []
                   if (event.message) noJobsMessage = event.message as string
+                  if (event.detectedCountry) {
+                    const country = event.detectedCountry as string
+                    setDetectedCountry(country)
+                    localStorage.setItem('detectedCountry', country)
+                  }
                 }
                 if (event.error) {
                   hadError     = true
@@ -1154,6 +1162,14 @@ export default function MatchesPage() {
                   )}
                 </>}
           </p>
+
+          {/* Country banner — shown when we know which country the jobs are from */}
+          {mode === 'ai' && detectedCountry && sortedJobs.length > 0 && !analyzing && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 text-[12px] text-blue-700 dark:text-blue-400 font-medium">
+              <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+              Showing jobs in <span className="font-bold">{detectedCountry}</span> based on your resume location
+            </div>
+          )}
 
           {/* Tier tabs — visible when there are jobs to show */}
           {sortedJobs.length > 0 && (

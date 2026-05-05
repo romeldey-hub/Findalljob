@@ -6,6 +6,7 @@ import { generateCvSuggestions } from '@/lib/ai/suggestions'
 import { JobSourceRouter } from '@/lib/jobs/router'
 import { generateSearchStrategy } from '@/lib/jobs/strategy'
 import { createNotification } from '@/lib/notifications'
+import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
 import type { ParsedResume, NormalizedJob } from '@/types'
 import type { RankedJob } from '@/lib/ai/reranker'
 
@@ -258,7 +259,7 @@ export type AnalyzeProgressEvent =
   | { step: 'pool_selected'; count: number }
   | { step: 'ai_ranking' }
   | { step: 'matches_saved' }
-  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string }
+  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string; detectedCountry?: string }
   | { error: string }
 
 export async function POST() {
@@ -397,10 +398,10 @@ export async function POST() {
 
         const primaryQuery = cleanedQueries[0] ?? (parsedResume.experience?.[0]?.title?.trim().replace(/[/\\|&"'()]/g, ' ').trim() || 'software engineer')
 
-        const isIndiaProfile = /india|new delhi|delhi ncr|ncr|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|ahmedabad|jaipur|surat|lucknow|nagpur|indore|bhopal|patna|visakhapatnam|noida|gurgaon|gurugram/i
-          .test(profileLocation)
-        const countryCode: string | undefined = isIndiaProfile ? 'in' : undefined
-        console.log('[analyze] profile location:', profileLocation, '| India profile:', isIndiaProfile, '| source mode: all-sources-top20')
+        const detectedLocation = detectLocation(profileLocation)
+        const countryCode: string | undefined = detectedLocation.countryCode || undefined
+        const isIndiaProfile = detectedLocation.countryCode === 'in'
+        console.log('[analyze] profile location:', profileLocation, '| detected country:', detectedLocation.countryName, '(', countryCode ?? 'unknown', ') | source mode: all-sources-top20')
         console.log('[analyze] cleaned queries:', cleanedQueries)
 
         emit({ step: 'strategy_ready' })
@@ -523,6 +524,14 @@ export async function POST() {
         console.log('[analyze] total jobs fetched:', jobs.length, '| by source:', sourceSummary(jobs))
         if (sourceErrors.length) {
           console.warn('[analyze] source errors:', sourceErrors)
+        }
+
+        if (countryCode) {
+          const { kept, removed } = filterJobsByCountry(jobs, countryCode)
+          if (removed > 0) {
+            console.log(`[analyze] country filter (${countryCode}): removed ${removed} wrong-country jobs, kept ${kept.length}`)
+            jobs.splice(0, jobs.length, ...kept)
+          }
         }
 
         if (!jobs.length) {
@@ -669,6 +678,7 @@ export async function POST() {
           done: true,
           matchCount: matchRows.length,
           cvSuggestions,
+          detectedCountry: detectedLocation.countryName || undefined,
         })
 
       } catch (err) {
