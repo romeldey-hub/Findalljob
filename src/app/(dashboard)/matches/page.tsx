@@ -724,6 +724,7 @@ export default function MatchesPage() {
 
   const [title, setTitle]             = useState('')
   const [location, setLocation]       = useState('')
+  const [searchOpen, setSearchOpen]   = useState(false)
   const [searching, setSearching]     = useState(false)
   const [filters, setFilters]         = useState<FilterState>(DEFAULT_FILTERS)
   const [showPaywall, setShowPaywall] = useState(false)
@@ -981,6 +982,7 @@ export default function MatchesPage() {
       setSearchHadError((result.errors ?? []).length > 0 && matches.length === 0)
       setSearchMessage(result.message ?? '')
       setMode('manual')
+      setSearchOpen(false)
       aiSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
       if (matches.length === 0) {
@@ -1031,46 +1033,71 @@ export default function MatchesPage() {
         <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-0.5">AI-ranked jobs based on your resume.</p>
       </div>
 
-      {/* ── Search bar ──────────────────────────────────────────── */}
-      <form
-        onSubmit={handleSearch}
-        className="flex flex-wrap gap-3 p-4 bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm"
-      >
-        <div className="w-full sm:flex-1 sm:min-w-48">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Job Title / Keyword</p>
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              placeholder="e.g. Senior Software Engineer"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="pl-8 h-10 rounded-xl border-[#E5E7EB] text-[13px] focus-visible:ring-[#2563EB]/20"
-            />
+      {/* ── Search bar (collapsible) ─────────────────────────────── */}
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+
+        {/* Toggle header — always visible */}
+        <button
+          type="button"
+          onClick={() => setSearchOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />
+            <span className="text-[13px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] truncate">
+              {title.trim() || location.trim()
+                ? [title.trim(), location.trim()].filter(Boolean).join(' · ')
+                : 'Search & filter jobs'}
+            </span>
           </div>
-        </div>
-        <div className="w-full sm:flex-1 sm:min-w-48">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Location</p>
-          <div className="relative">
-            <MapPin className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              placeholder="e.g. Bangalore, India"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="pl-8 h-10 rounded-xl border-[#E5E7EB] text-[13px] focus-visible:ring-[#2563EB]/20"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 w-full lg:w-auto">
-          <button
-            type="submit"
-            disabled={searching || !title.trim() || !location.trim()}
-            className="flex items-center justify-center gap-2 px-5 h-10 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
+          <ChevronDown
+            className={`w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0 ml-2 transition-transform duration-200 ${searchOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {/* Expandable form */}
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${searchOpen ? 'max-h-[350px]' : 'max-h-0'}`}>
+          <form
+            onSubmit={handleSearch}
+            className="flex flex-wrap gap-3 p-4 border-t border-[#E5E7EB] dark:border-[#334155]"
           >
-            {searching ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Searching…</> : <><Search className="w-3.5 h-3.5" />Find &amp; Match Jobs</>}
-          </button>
-          <PasteJobDialog onJobAdded={handleManualJobAdded} />
+            <div className="w-full sm:flex-1 sm:min-w-48">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Job Title / Keyword</p>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  placeholder="e.g. Senior Software Engineer"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="pl-8 h-10 rounded-xl border-[#E5E7EB] text-[13px] focus-visible:ring-[#2563EB]/20"
+                />
+              </div>
+            </div>
+            <div className="w-full sm:flex-1 sm:min-w-48">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-1.5">Location</p>
+              <div className="relative">
+                <MapPin className="w-3.5 h-3.5 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  placeholder="e.g. Bangalore, India"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="pl-8 h-10 rounded-xl border-[#E5E7EB] text-[13px] focus-visible:ring-[#2563EB]/20"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 w-full lg:w-auto">
+              <button
+                type="submit"
+                disabled={searching || !title.trim() || !location.trim()}
+                className="flex items-center justify-center gap-2 px-5 h-10 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
+              >
+                {searching ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Searching…</> : <><Search className="w-3.5 h-3.5" />Find &amp; Match Jobs</>}
+              </button>
+              <PasteJobDialog onJobAdded={handleManualJobAdded} />
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
 
       {/* ── Error state ──────────────────────────────────────────── */}
       {analyzeError && !analyzing && (
