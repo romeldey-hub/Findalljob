@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Crown, CheckCircle2, Zap } from 'lucide-react'
 import { RazorpayPaymentWidget } from '@/components/RazorpayPaymentWidget'
 import { BillingModal } from '@/components/settings/BillingModal'
+import { usePricing } from '@/hooks/usePricing'
 
 interface SubscriptionCardProps {
   isPro: boolean
@@ -20,6 +21,7 @@ const FREE_FEATURES = [
 
 export function SubscriptionCard({ isPro, proUntil, cancelAtPeriodEnd = false }: SubscriptionCardProps) {
   const [showBilling, setShowBilling] = useState(false)
+  const pricing = usePricing()
 
   return (
     <>
@@ -75,9 +77,9 @@ export function SubscriptionCard({ isPro, proUntil, cancelAtPeriodEnd = false }:
             </div>
             <div>
               <p className="text-[22px] font-bold text-white leading-none">
-                $5<span className="text-[13px] font-normal text-gray-400">/month</span>
+                {pricing.displayPrice}<span className="text-[13px] font-normal text-gray-400">/month</span>
               </p>
-              <p className="text-[11px] text-gray-400 mt-0.5">One step closer to your next job</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Pricing adjusted for your location</p>
             </div>
             <ul className="space-y-1.5">
               {[

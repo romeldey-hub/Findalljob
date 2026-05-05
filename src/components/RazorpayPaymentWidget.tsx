@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { track } from '@/lib/analytics'
+import { usePricing } from '@/hooks/usePricing'
 
 interface RazorpayPaymentResponse {
   razorpay_order_id: string
@@ -61,7 +62,8 @@ interface RazorpayPaymentProps {
 
 export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to Pro' }: RazorpayPaymentProps) {
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
+  const router  = useRouter()
+  const pricing = usePricing()
 
   const handleUpgrade = async () => {
     track.upgradeClick('payment_widget')
@@ -69,7 +71,11 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
       setLoading(true)
 
       // Step 1: Create Razorpay order
-      const orderResponse = await fetch('/api/razorpay/checkout', { method: 'POST' })
+      const orderResponse = await fetch('/api/razorpay/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countryCode: pricing.countryCode }),
+      })
       if (!orderResponse.ok) {
         const errData = await orderResponse.json().catch(() => ({}))
         throw new Error(errData?.error ?? 'Failed to create order')

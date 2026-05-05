@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { X, Crown, Zap } from 'lucide-react'
 import { RazorpayPaymentWidget } from '@/components/RazorpayPaymentWidget'
+import { usePricing } from '@/hooks/usePricing'
 
 interface UpgradeModalProps {
   onClose: () => void
@@ -16,6 +17,8 @@ const PRO_BULLETS = [
 ]
 
 export function UpgradeModal({ onClose }: UpgradeModalProps) {
+  const pricing = usePricing()
+
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -46,9 +49,9 @@ export function UpgradeModal({ onClose }: UpgradeModalProps) {
 
         <div>
           <p className="text-[22px] font-bold text-white leading-none">
-            $5<span className="text-[13px] font-normal text-gray-400">/month</span>
+            {pricing.displayPrice}<span className="text-[13px] font-normal text-gray-400">/month</span>
           </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">One step closer to your next job</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Pricing adjusted for your location</p>
         </div>
 
         <ul className="space-y-1.5">

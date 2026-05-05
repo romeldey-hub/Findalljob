@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server'
-import Razorpay from 'razorpay'
+import { NextRequest, NextResponse }        from 'next/server'
+import Razorpay                             from 'razorpay'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { getPricingByCountry }             from '@/lib/pricing'
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -19,8 +20,12 @@ export async function POST() {
     )
   }
 
+  // Dynamic pricing based on user's country
+  const body        = await request.json().catch(() => ({})) as { countryCode?: string }
+  const pricing     = getPricingByCountry(body.countryCode)
+
   const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret })
-  const admin = createAdminClient()
+  const admin    = createAdminClient()
 
   const { data: profile } = await admin
     .from('profiles')
@@ -30,12 +35,12 @@ export async function POST() {
 
   try {
     const order = await razorpay.orders.create({
-      amount: Number(process.env.RAZORPAY_PLAN_AMOUNT!), // already in paise (e.g. 47500 = ₹475)
-      currency: 'INR',
-      receipt: `ord_${user.id.slice(0, 8)}_${Date.now().toString().slice(-8)}`,
+      amount:   pricing.amount,
+      currency: pricing.currency,
+      receipt:  `ord_${user.id.slice(0, 8)}_${Date.now().toString().slice(-8)}`,
       notes: {
         supabase_user_id: user.id,
-        email: user.email ?? '',
+        email:            user.email ?? '',
       },
     })
 
@@ -47,12 +52,12 @@ export async function POST() {
     if (saveErr) console.warn('[checkout] could not save razorpay_order_id:', saveErr.message)
 
     return NextResponse.json({
-      orderId: order.id,
-      keyId: process.env.RAZORPAY_KEY_ID,
-      amount: order.amount,
+      orderId:  order.id,
+      keyId:    process.env.RAZORPAY_KEY_ID,
+      amount:   order.amount,
       currency: order.currency,
-      email: user.email ?? '',
-      name: profile?.full_name || 'User',
+      email:    user.email ?? '',
+      name:     profile?.full_name || 'User',
     })
   } catch (error: unknown) {
     const rzpErr = error as { error?: { description?: string }; message?: string }

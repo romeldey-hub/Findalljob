@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Crown, Zap, ShieldCheck } from 'lucide-react'
+import { usePricing } from '@/hooks/usePricing'
 
 interface BillingModalProps {
   onClose: () => void
@@ -23,6 +24,7 @@ function formatDate(iso: string | null | undefined): string {
 export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd: initialCancelAtPeriodEnd = false }: BillingModalProps) {
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(initialCancelAtPeriodEnd)
   const [loading, setLoading] = useState(false)
+  const pricing = usePricing()
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -76,7 +78,7 @@ export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd: initialCanc
                 </div>
                 <div>
                   <p className="font-bold text-[15px] text-white leading-tight">Pro Plan</p>
-                  <p className="text-[13px] text-slate-400">$5 / month</p>
+                  <p className="text-[13px] text-slate-400">{pricing.displayFull}</p>
                 </div>
               </div>
               <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] font-bold whitespace-nowrap">

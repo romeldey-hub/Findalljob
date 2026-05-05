@@ -1,9 +1,11 @@
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import {
   FileText, Briefcase, Wand2, Kanban, Bookmark, Mic,
   Check, X, Zap, ArrowRight, Clock, TrendingUp, Sparkles,
 } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
+import { getPricingByCountry } from '@/lib/pricing'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -81,7 +83,10 @@ const proFeatures = [
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const hdrs        = await headers()
+  const countryCode = (hdrs.get('x-vercel-ip-country') ?? '').toLowerCase()
+  const pricing     = getPricingByCountry(countryCode)
   return (
     <div className="min-h-screen bg-[#040D21] text-white overflow-x-hidden">
 
@@ -265,11 +270,11 @@ export default function LandingPage() {
             <div className="mb-6">
               <p className="text-[12px] font-bold uppercase tracking-widest text-blue-400 mb-2">Pro</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-5xl font-black">$5</span>
+                <span className="text-5xl font-black">{pricing.displayPrice}</span>
                 <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
               </div>
               <p className="text-[13px] text-slate-400 mt-1">Get more interviews with AI-powered applications</p>
-              <p className="text-[11px] text-blue-400/70 mt-0.5">Includes full mock interview access</p>
+              <p className="text-[11px] text-blue-400/70 mt-0.5">Pricing adjusted for your location</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
               {proFeatures.map((f) => (
