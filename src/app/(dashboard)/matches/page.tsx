@@ -309,8 +309,40 @@ function JobCard({
             </span>
           )}
 
-          {/* Title + source badge + verified badge */}
-          <div className="flex flex-col sm:flex-row items-start justify-between gap-2 mb-1.5">
+          {/* Mobile: centered score first, bookmark pinned top-right */}
+          <div className="sm:hidden relative mb-4 pt-1">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              title={saved ? 'Remove bookmark' : 'Save job'}
+              className="absolute right-0 top-0 text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
+            >
+              {saving
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : saved
+                ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400" />
+                : <Bookmark className="w-4 h-4" />}
+            </button>
+
+            <div className="flex w-full justify-center pb-4">
+              <ScoreRing score={match.ai_score} />
+            </div>
+
+            <h3 className="font-bold text-[16px] leading-snug text-[#0F172A] dark:text-[#F1F5F9]">
+              {job.title}
+            </h3>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {sourceLabel(job.source) && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-500 dark:text-slate-400 border border-[#E5E7EB] dark:border-[#334155]">
+                  {sourceLabel(job.source)}
+                </span>
+              )}
+              <VerifiedBadge label={job.verified_label} />
+            </div>
+          </div>
+
+          {/* Desktop: title + source badge + verified badge */}
+          <div className="hidden sm:flex items-start justify-between gap-2 mb-1.5">
             <h3 className="font-bold text-[16px] sm:text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] pr-2">
               {job.title}
             </h3>
@@ -437,7 +469,7 @@ function JobCard({
             onClick={handleSave}
             disabled={saving}
             title={saved ? 'Remove bookmark' : 'Save job'}
-            className="order-3 sm:order-none sm:self-end text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
+            className="hidden sm:block sm:self-end text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
           >
             {saving
               ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -447,7 +479,9 @@ function JobCard({
           </button>
 
           {/* Score ring */}
-          <ScoreRing score={match.ai_score} />
+          <div className="hidden sm:block">
+            <ScoreRing score={match.ai_score} />
+          </div>
 
           {/* Apply Now — with loading state + fallback */}
           <ApplyButton job={job} onApply={handleApplyCallback} />

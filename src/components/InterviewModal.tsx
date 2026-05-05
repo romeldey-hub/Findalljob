@@ -115,10 +115,121 @@ interface LeftPanelProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>
 }
 
+type SpeechRecognitionInstance = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start: () => void
+  stop: () => void
+  abort: () => void
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null
+  onerror: (() => void) | null
+  onend: (() => void) | null
+}
+
+type SpeechRecognitionResultEventLike = {
+  resultIndex: number
+  results: {
+    length: number
+    [index: number]: {
+      isFinal: boolean
+      [index: number]: {
+        transcript: string
+      }
+    }
+  }
+}
+
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: new () => SpeechRecognitionInstance
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance
+}
+
+function appendTranscript(existing: string, transcript: string) {
+  const clean = transcript.trim()
+  if (!clean) return existing
+  if (!existing.trim()) return clean
+  return `${existing.trimEnd()} ${clean}`
+}
+
 function LeftPanel({
   locked, questionNumber, currentQuestion,
   answer, onAnswerChange, error, phase, onSubmit, textareaRef,
 }: LeftPanelProps) {
+  const [listening, setListening] = useState(false)
+  const [voiceMessage, setVoiceMessage] = useState('')
+  const [interimTranscript, setInterimTranscript] = useState('')
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
+  const answerRef = useRef(answer)
+
+  useEffect(() => {
+    answerRef.current = answer
+  }, [answer])
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort()
+    }
+  }, [])
+
+  function toggleVoiceInput() {
+    if (listening) {
+      recognitionRef.current?.stop()
+      setListening(false)
+      setInterimTranscript('')
+      return
+    }
+
+    const SpeechRecognition =
+      (window as SpeechRecognitionWindow).SpeechRecognition ||
+      (window as SpeechRecognitionWindow).webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      setVoiceMessage('Voice input is supported best in Chrome.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-IN'
+
+    recognition.onresult = (event) => {
+      let finalText = ''
+      let interimText = ''
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcript = event.results[i]?.[0]?.transcript ?? ''
+        if (event.results[i]?.isFinal) finalText += transcript
+        else interimText += transcript
+      }
+
+      if (finalText.trim()) {
+        const nextAnswer = appendTranscript(answerRef.current, finalText)
+        answerRef.current = nextAnswer
+        onAnswerChange(nextAnswer)
+      }
+      setInterimTranscript(interimText.trim())
+    }
+
+    recognition.onerror = () => {
+      setListening(false)
+      setInterimTranscript('')
+      setVoiceMessage('Voice input is supported best in Chrome.')
+    }
+
+    recognition.onend = () => {
+      setListening(false)
+      setInterimTranscript('')
+    }
+
+    recognitionRef.current = recognition
+    setVoiceMessage('')
+    setInterimTranscript('')
+    setListening(true)
+    recognition.start()
+  }
+
   return (
     <div className={`flex-1 md:w-[60%] overflow-y-auto p-5 md:p-8 space-y-5 md:border-r border-[#E5E7EB] dark:border-[#334155] flex-shrink-0 ${locked ? 'opacity-60 pointer-events-none select-none' : ''}`}>
       {/* Question card */}
@@ -147,6 +258,27 @@ function LeftPanel({
           className="w-full resize-none rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1A2540] text-[14px] text-[#0F172A] dark:text-[#F1F5F9] placeholder:text-gray-300 dark:placeholder:text-slate-600 p-4 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] disabled:cursor-default transition-all"
           style={{ minHeight: 120, maxHeight: 300 }}
         />
+        {!locked && phase === 'asking' && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                listening
+                  ? 'border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300'
+                  : 'border-[#E5E7EB] text-gray-500 hover:bg-[#F8FAFC] dark:border-[#334155] dark:text-slate-400 dark:hover:bg-[#263549]'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              {listening ? 'Listening...' : 'Voice input'}
+            </button>
+            {(voiceMessage || interimTranscript) && (
+              <p className="min-w-0 flex-1 text-right text-[11px] text-gray-400 dark:text-slate-500">
+                {interimTranscript || voiceMessage}
+              </p>
+            )}
+          </div>
+        )}
         {!locked && (
           <p className="text-[11px] text-gray-400 dark:text-slate-500">
             Take your time. Aim for a clear, structured answer.
