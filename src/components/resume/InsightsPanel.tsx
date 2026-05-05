@@ -208,12 +208,28 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
         import('html-to-image'),
         import('jspdf'),
       ])
-      const dataUrl = await toPng(printRef.current, {
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-        skipFonts: true,
-        cacheBust: true,
-      })
+
+      // Clone to document.body so html-to-image measures the element's full
+      // natural height without any sticky-aside or layout constraints
+      const clone = printRef.current.cloneNode(true) as HTMLElement
+      clone.style.position = 'fixed'
+      clone.style.left = '-9999px'
+      clone.style.top = '0'
+      clone.style.zIndex = '-1'
+      document.body.appendChild(clone)
+
+      let dataUrl: string
+      try {
+        dataUrl = await toPng(clone, {
+          pixelRatio: 2,
+          backgroundColor: '#ffffff',
+          skipFonts: true,
+          cacheBust: true,
+        })
+      } finally {
+        document.body.removeChild(clone)
+      }
+
       const naturalSize = await new Promise<{ w: number; h: number }>((resolve, reject) => {
         const img = new Image()
         img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
