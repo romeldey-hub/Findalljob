@@ -214,8 +214,22 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
         skipFonts: true,
         cacheBust: true,
       })
+      const naturalSize = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+        const img = new Image()
+        img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => reject(new Error('Failed to load captured image'))
+        img.src = dataUrl
+      })
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      pdf.addImage(dataUrl, 'PNG', 0, 0, 210, 297)
+      const pdfW = pdf.internal.pageSize.getWidth()
+      const pdfH = pdf.internal.pageSize.getHeight()
+      const imgH = (naturalSize.h * pdfW) / naturalSize.w
+      let yPos = 0
+      while (yPos < imgH) {
+        pdf.addImage(dataUrl, 'PNG', 0, -yPos, pdfW, imgH)
+        yPos += pdfH
+        if (yPos < imgH) pdf.addPage()
+      }
       pdf.save(`${parsedData.name ?? 'resume'}.pdf`)
     } catch (err) {
       console.error('PDF generation failed', err)

@@ -227,7 +227,7 @@ export function ApplyButton({ job, onApply }: ApplyButtonProps) {
         >
           {state === 'opening'
             ? <><Loader2 className="w-3 h-3 animate-spin" />Opening…</>
-            : <>Apply Now <ExternalLink className="w-3 h-3" /></>
+            : <>Open Job <ExternalLink className="w-3 h-3" /></>
           }
         </button>
 
@@ -236,7 +236,7 @@ export function ApplyButton({ job, onApply }: ApplyButtonProps) {
           onClick={() => setShowFallback(true)}
           className="text-[10px] text-gray-400 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
         >
-          Having trouble?
+          Opens in new tab
         </button>
 
       </div>

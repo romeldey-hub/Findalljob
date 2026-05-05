@@ -82,10 +82,9 @@ export function ResumePrintView({
       display: 'flex',
       flexDirection: 'row',
       width: 794,
-      height: 1123,
+      minHeight: 1123,
       fontFamily: 'Helvetica, Arial, sans-serif',
       backgroundColor: C.white,
-      overflow: 'hidden',
       boxSizing: 'border-box',
     }}>
 
@@ -169,7 +168,6 @@ export function ResumePrintView({
         flex: 1,
         backgroundColor: C.white,
         padding: '18pt 20pt',
-        overflow: 'hidden',
         boxSizing: 'border-box',
       }}>
 
