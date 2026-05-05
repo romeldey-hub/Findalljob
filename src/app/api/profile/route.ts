@@ -24,6 +24,13 @@ export async function GET() {
     .eq('user_id', user.id)
     .single()
 
+  // Usage tracking columns from migration 016
+  const { data: usage } = await adminClient
+    .from('profiles')
+    .select('resume_upload_count, ai_reanalyze_count')
+    .eq('user_id', user.id)
+    .single()
+
   // Billing lifecycle columns from migration 012
   const { data: billing } = await adminClient
     .from('profiles')
@@ -54,5 +61,7 @@ export async function GET() {
     subscription_status: base?.subscription_status ?? 'free',
     pro_until: effectiveProUntil,
     cancel_at_period_end: billing?.cancel_at_period_end ?? false,
+    resume_upload_count: usage?.resume_upload_count ?? 0,
+    ai_reanalyze_count:  usage?.ai_reanalyze_count  ?? 0,
   })
 }

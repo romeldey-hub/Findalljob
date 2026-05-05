@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { isProUser } from '@/lib/admin'
+import { FREE_LIMITS } from '@/lib/limits'
 import { parseResume, parseResumeFromPDF, generateHeadline } from '@/lib/ai/parser'
 import { rerankJobs } from '@/lib/ai/reranker'
 import { generateCvSuggestions } from '@/lib/ai/suggestions'
@@ -275,6 +277,23 @@ export async function POST() {
   const admin = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // ── Free-plan re-analyze limit (checked before stream starts) ─────────────
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, ai_reanalyze_count')
+    .eq('user_id', user.id)
+    .single()
+
+  const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, profileRow?.pro_until)
+  const currentReanalyzeCount = profileRow?.ai_reanalyze_count ?? 0
+
+  if (!isPro && currentReanalyzeCount >= FREE_LIMITS.aiReanalyze) {
+    return NextResponse.json({
+      error: `You've used all ${FREE_LIMITS.aiReanalyze} free AI re-analyses. Upgrade to Pro to continue.`,
+      limitReached: true,
+    }, { status: 403 })
+  }
 
   // ── 1. Fetch active resume (early exit before stream starts) ───────────────
   const { data: resume, error: resumeError } = await supabase
@@ -687,6 +706,13 @@ export async function POST() {
           detectedCountry: detectedLocation.countryName || undefined,
           detectedCity:    detectedLocation.city        || undefined,
         })
+
+        // Increment re-analyze count for free users (non-fatal)
+        if (!isPro) {
+          void admin.from('profiles')
+            .update({ ai_reanalyze_count: currentReanalyzeCount + 1 })
+            .eq('user_id', user.id)
+        }
 
       } catch (err) {
         const msg = apiErrMsg(err)

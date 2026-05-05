@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
-  Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle,
+  Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle, Lock,
 } from 'lucide-react'
 import { track } from '@/lib/analytics'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
@@ -40,11 +40,15 @@ const UPLOAD_STEP_MAP: Record<string, number> = {
 interface ResumeUploadZoneProps {
   hasExistingResume: boolean
   resumeInfo?: { file_url: string; created_at: string; version: number } | null
+  isPro?: boolean
+  uploadCount?: number
+  uploadLimit?: number
 }
 
 type UploadState = 'idle' | 'uploading' | 'analyzing' | 'success' | 'no-text'
 
-export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUploadZoneProps) {
+export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3 }: ResumeUploadZoneProps) {
+  const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
   const [menuOpen, setMenuOpen]         = useState(false)
@@ -205,7 +209,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxFiles: 1,
-    disabled: uploadState !== 'idle',
+    disabled: uploadState !== 'idle' || uploadLimitReached,
   })
 
   async function handleDelete() {
@@ -287,7 +291,26 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
             </>
           )}
 
-          {uploadState === 'idle' && (
+          {uploadState === 'idle' && uploadLimitReached && (
+            <>
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center mb-4">
+                <Lock className="w-7 h-7 text-amber-500" />
+              </div>
+              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Upload limit reached</p>
+              <p className="text-[12px] text-gray-500 dark:text-slate-400 mt-1.5 max-w-[220px]">
+                You&apos;ve used all {uploadLimit} free resume uploads.
+              </p>
+              <a
+                href="/settings"
+                className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[13px] font-semibold transition-all shadow-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Upgrade to Pro
+              </a>
+            </>
+          )}
+
+          {uploadState === 'idle' && !uploadLimitReached && (
             <>
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 transition-colors ${
                 isDragActive ? 'bg-[#2563EB]/10' : 'bg-[#F8FAFC] dark:bg-[#263549]'
@@ -305,6 +328,11 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo }: ResumeUpload
                 <UploadCloud className="w-3.5 h-3.5" />
                 {hasExistingResume ? 'Replace Resume' : 'Upload Resume'}
               </button>
+              {!isPro && (
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
+                  {uploadLimit - uploadCount} of {uploadLimit} free uploads remaining
+                </p>
+              )}
             </>
           )}
         </div>

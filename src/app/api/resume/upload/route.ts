@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
+import { isAdminUser, isProUser } from '@/lib/admin'
+import { FREE_LIMITS } from '@/lib/limits'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
@@ -58,6 +60,23 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // ── Free-plan upload limit ─────────────────────────────────────────────────
+    const { data: profileRow } = await admin
+      .from('profiles')
+      .select('role, subscription_status, pro_until, resume_upload_count')
+      .eq('user_id', user.id)
+      .single()
+
+    const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, profileRow?.pro_until)
+    const currentUploadCount = profileRow?.resume_upload_count ?? 0
+
+    if (!isPro && currentUploadCount >= FREE_LIMITS.resumeUploads) {
+      return NextResponse.json({
+        error: `You've used all ${FREE_LIMITS.resumeUploads} free resume uploads. Upgrade to Pro to continue.`,
+        limitReached: true,
+      }, { status: 403 })
+    }
 
     const formData = await request.formData()
     const file = formData.get('file') as File | null
@@ -182,6 +201,13 @@ export async function POST(request: NextRequest) {
     if (dbError) {
       console.error('[resume/upload] db insert error:', dbError.message, dbError.details)
       return NextResponse.json({ error: 'Failed to save resume record', detail: dbError.message }, { status: 500 })
+    }
+
+    // Increment upload count for free users (non-fatal)
+    if (!isPro) {
+      void admin.from('profiles')
+        .update({ resume_upload_count: currentUploadCount + 1 })
+        .eq('user_id', user.id)
     }
 
     // Trigger async Claude parsing (non-fatal — Inngest may not be configured in local dev)

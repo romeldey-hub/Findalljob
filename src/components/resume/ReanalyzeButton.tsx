@@ -2,14 +2,23 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Zap } from 'lucide-react'
+import { Loader2, Zap, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 
-export function ReanalyzeButton() {
+interface ReanalyzeButtonProps {
+  isPro?: boolean
+  reanalyzeCount?: number
+  reanalyzeLimit?: number
+}
+
+export function ReanalyzeButton({ isPro = true, reanalyzeCount = 0, reanalyzeLimit = 3 }: ReanalyzeButtonProps) {
   const router = useRouter()
   const [running, setRunning] = useState(false)
 
+  const limitReached = !isPro && reanalyzeCount >= reanalyzeLimit
+
   async function handleClick() {
+    if (limitReached) return
     setRunning(true)
     toast.info('Analyzing your resume — this takes 3–5 minutes…')
 
@@ -75,15 +84,39 @@ export function ReanalyzeButton() {
     }
   }
 
+  if (limitReached) {
+    return (
+      <div className="mt-3 space-y-1.5">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 text-[13px] font-semibold cursor-not-allowed">
+          <Lock className="w-3.5 h-3.5" />
+          Re-analyze Now
+        </div>
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          You&apos;ve used all {reanalyzeLimit} free re-analyses.{' '}
+          <a href="/settings" className="underline font-semibold hover:text-amber-700 dark:hover:text-amber-300">
+            Upgrade to continue
+          </a>
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <button
-      onClick={handleClick}
-      disabled={running}
-      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-[13px] font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed mt-3"
-    >
-      {running
-        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing…</>
-        : <><Zap className="w-3.5 h-3.5" />Re-analyze Now</>}
-    </button>
+    <div className="mt-3 space-y-1">
+      <button
+        onClick={handleClick}
+        disabled={running}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-[13px] font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        {running
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing…</>
+          : <><Zap className="w-3.5 h-3.5" />Re-analyze Now</>}
+      </button>
+      {!isPro && (
+        <p className="text-[11px] text-gray-400 dark:text-slate-500">
+          {reanalyzeLimit - reanalyzeCount} of {reanalyzeLimit} free re-analyses remaining
+        </p>
+      )}
+    </div>
   )
 }

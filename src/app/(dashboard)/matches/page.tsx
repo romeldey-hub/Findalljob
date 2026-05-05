@@ -21,6 +21,7 @@ import { ApplyButton, sourceLabel, VerifiedBadge } from '@/components/jobs/Apply
 import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
+import { FREE_LIMITS } from '@/lib/limits'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -833,6 +834,13 @@ export default function MatchesPage() {
   }, [data])
 
   async function triggerAnalyze(reanalyze: boolean) {
+    // Block free users who have exhausted their re-analyze quota
+    const isPro = profileData?.plan === 'pro'
+    if (!isPro && (profileData?.ai_reanalyze_count ?? 0) >= FREE_LIMITS.aiReanalyze) {
+      setShowPaywall(true)
+      return
+    }
+
     track.aiAnalyzeClick()
     setMode('ai')
     setAiJobs([])
@@ -932,6 +940,8 @@ export default function MatchesPage() {
         .filter((m) => !reanalyze || (m.ai_score >= 40 && m.ai_score <= 100))
       setAiJobs(newAi)
       if (cvSuggestions.length > 0) setSuggestions(cvSuggestions)
+      // Refresh profile so ai_reanalyze_count reflects the increment from the server
+      void globalMutate('/api/profile')
     } catch {
       setAnalyzeError('Analysis failed. Check the terminal for errors.')
       stopProgress()
@@ -1165,21 +1175,44 @@ export default function MatchesPage() {
             </div>
 
             {/* Re-analyze button — available in both modes */}
-            {displayAiJobs.length > 0 && (
-              <button
-                onClick={() => { autoTriggered.current = false; triggerAnalyze(true) }}
-                disabled={analyzing || searching}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-all ${
-                  analyzing || searching
-                    ? 'border-[#E5E7EB] dark:border-[#334155] text-gray-300 dark:text-slate-600 cursor-not-allowed'
-                    : 'border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500'
-                }`}
-              >
-                {analyzing
-                  ? <><Loader2 className="w-3 h-3 animate-spin" />Re-analyzing…</>
-                  : <><RefreshCw className="w-3 h-3" />Re-analyze by AI</>}
-              </button>
-            )}
+            {displayAiJobs.length > 0 && (() => {
+              const isPro              = profileData?.plan === 'pro'
+              const reanalyzeUsed      = profileData?.ai_reanalyze_count ?? 0
+              const reanalyzeLimitHit  = !isPro && reanalyzeUsed >= FREE_LIMITS.aiReanalyze
+              const disabled           = analyzing || searching || reanalyzeLimitHit
+
+              return (
+                <div className="flex flex-col items-end gap-0.5">
+                  <button
+                    onClick={() => { autoTriggered.current = false; triggerAnalyze(true) }}
+                    disabled={disabled}
+                    title={reanalyzeLimitHit ? `You've used all ${FREE_LIMITS.aiReanalyze} free re-analyses` : undefined}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-all ${
+                      disabled
+                        ? 'border-[#E5E7EB] dark:border-[#334155] text-gray-300 dark:text-slate-600 cursor-not-allowed'
+                        : 'border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500'
+                    }`}
+                  >
+                    {analyzing
+                      ? <><Loader2 className="w-3 h-3 animate-spin" />Re-analyzing…</>
+                      : <><RefreshCw className="w-3 h-3" />Re-analyze by AI</>}
+                  </button>
+                  {!isPro && !reanalyzeLimitHit && (
+                    <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                      {FREE_LIMITS.aiReanalyze - reanalyzeUsed}/{FREE_LIMITS.aiReanalyze} left
+                    </span>
+                  )}
+                  {reanalyzeLimitHit && (
+                    <button
+                      onClick={() => setShowPaywall(true)}
+                      className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline"
+                    >
+                      Limit reached · Upgrade
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Mode label — source attribution */}

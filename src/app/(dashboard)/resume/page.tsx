@@ -6,6 +6,9 @@ import { ReanalyzeButton } from '@/components/resume/ReanalyzeButton'
 import { FileText, Sparkles, RefreshCw } from 'lucide-react'
 import type { ParsedResume, Resume } from '@/types'
 import { resolveAvatar } from '@/lib/avatar'
+import { isAdminUser, isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { FREE_LIMITS } from '@/lib/limits'
 
 export default async function ResumePage() {
   const supabase = await createClient()
@@ -13,7 +16,7 @@ export default async function ResumePage() {
 
   const admin = createAdminClient()
 
-  const [{ data: resume }, { data: avatarRow }] = await Promise.all([
+  const [{ data: resume }, { data: profileRow }] = await Promise.all([
     supabase
       .from('resumes')
       .select('*')
@@ -24,10 +27,18 @@ export default async function ResumePage() {
       .maybeSingle(),
     admin
       .from('profiles')
-      .select('avatar_url')
+      .select('avatar_url, role, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count')
       .eq('user_id', user!.id)
       .single(),
   ])
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user!.id, profileRow?.subscription_status, profileRow?.pro_until
+  )
+  const isPro = isProUser(user!.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const uploadCount    = profileRow?.resume_upload_count ?? 0
+  const reanalyzeCount = profileRow?.ai_reanalyze_count  ?? 0
+  const avatarRow = { avatar_url: profileRow?.avatar_url }
 
   const hasResume = Boolean(resume)
   // Only consider parsed when AI has produced structured data.
@@ -65,6 +76,9 @@ export default async function ResumePage() {
           created_at: resume.created_at,
           version:    resume.version,
         } : null}
+        isPro={isPro}
+        uploadCount={uploadCount}
+        uploadLimit={FREE_LIMITS.resumeUploads}
       />
 
       {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}
@@ -78,7 +92,11 @@ export default async function ResumePage() {
             <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">
               Your file is saved but AI parsing didn't finish. Click below to retry analysis without re-uploading.
             </p>
-            <ReanalyzeButton />
+            <ReanalyzeButton
+              isPro={isPro}
+              reanalyzeCount={reanalyzeCount}
+              reanalyzeLimit={FREE_LIMITS.aiReanalyze}
+            />
           </div>
         </div>
       )}
