@@ -160,6 +160,12 @@ function candidateTerms(parsedResume: ParsedResume, searchQueries: string[]): Se
   return new Set(tokenize(text))
 }
 
+// A job is relevant if at least one title word overlaps with the candidate's terms.
+// This removes clearly off-topic listings (e.g. "Truck Driver" returned for "Software Engineer").
+function titleIsRelevant(job: NormalizedJob, terms: Set<string>): boolean {
+  return tokenize(job.title).some((tok) => terms.has(tok))
+}
+
 function heuristicFit(job: NormalizedJob, terms: Set<string>): number {
   const titleTokens = tokenize(job.title)
   const bodyTokens = tokenize(`${job.company} ${job.location} ${job.description}`)
@@ -425,6 +431,7 @@ export async function POST() {
         const isIndiaProfile = detectedLocation.countryCode === 'in'
         console.log('[analyze] profile location:', profileLocation, '| detected country:', detectedLocation.countryName, '(', countryCode ?? 'unknown', ') | source mode: all-sources-top20')
         console.log('[analyze] cleaned queries:', cleanedQueries)
+        console.log(`[PIPELINE] Resume country: ${detectedLocation.countryName || 'Unknown'} (${countryCode ?? 'none'})`)
 
         emit({ step: 'strategy_ready' })
 
@@ -452,6 +459,16 @@ export async function POST() {
           ...experienceQueries,
           primaryQuery,
         ]).slice(0, 12)
+
+        // Build competitor list early — needed for both search targeting and post-filter logging
+        const allCompetitors = [
+          ...(strategy.competitors?.direct   ?? []),
+          ...(strategy.competitors?.adjacent ?? []),
+        ]
+        const competitorSet = new Set(allCompetitors.map((c) => c.toLowerCase()))
+
+        console.log(`[PIPELINE] Queries generated: [${searchQueries.map((q) => `"${q}"`).join(', ')}]`)
+        console.log(`[PIPELINE] Competitor companies: direct=[${strategy.competitors?.direct?.join(', ') ?? ''}] adjacent=[${strategy.competitors?.adjacent?.join(', ') ?? ''}]`)
 
         // Emit initial jobs_fetching to signal search has started
         emit({ step: 'jobs_fetching', count: 0, sources: [] })
@@ -572,13 +589,34 @@ export async function POST() {
           console.warn('[analyze] source errors:', sourceErrors)
         }
 
+        console.log(`[PIPELINE] Total fetched: ${jobs.length}`)
+
+        // ── MANDATORY country filter — runs before scoring, cannot be bypassed ─
+        // Competitor bonus in the reranker only applies AFTER this filter passes.
         if (countryCode) {
           const { kept, removed } = filterJobsByCountry(jobs, countryCode)
-          if (removed > 0) {
-            console.log(`[analyze] country filter (${countryCode}): removed ${removed} wrong-country jobs, kept ${kept.length}`)
-            jobs.splice(0, jobs.length, ...kept)
-          }
+          jobs.splice(0, jobs.length, ...kept)
+          console.log(`[PIPELINE] Removed by country filter: ${removed} → ${jobs.length} remaining (filter: ${countryCode})`)
+        } else {
+          console.log(`[PIPELINE] Removed by country filter: 0 (no country detected — filter skipped)`)
         }
+
+        // ── Relevance filter — removes clearly off-topic titles by token overlap ─
+        const candidateTermSet = candidateTerms(parsedResume, searchQueries)
+        const beforeRelevance  = jobs.length
+        const relevanceKept    = jobs.filter((j) => titleIsRelevant(j, candidateTermSet))
+        const removedByRelevance = beforeRelevance - relevanceKept.length
+        jobs.splice(0, jobs.length, ...relevanceKept)
+        console.log(`[PIPELINE] Removed by relevance filter: ${removedByRelevance} → ${jobs.length} remaining`)
+
+        // ── Competitor job count (informational — does NOT affect filtering) ────
+        const competitorJobsFound = jobs.filter((j) => competitorSet.has(j.company.toLowerCase()))
+        const competitorBreakdown: Record<string, number> = {}
+        for (const j of competitorJobsFound) {
+          competitorBreakdown[j.company] = (competitorBreakdown[j.company] ?? 0) + 1
+        }
+        const competitorBreakdownStr = Object.entries(competitorBreakdown).map(([co, n]) => `${co}: ${n}`).join(', ')
+        console.log(`[PIPELINE] Competitor jobs found: ${competitorJobsFound.length}${competitorBreakdownStr ? ` (${competitorBreakdownStr})` : ''}`)
 
         if (!jobs.length) {
           emit({
@@ -634,17 +672,12 @@ export async function POST() {
         // ── 6. Select scoring pool ────────────────────────────────────────────
         const jobsForScoring = selectScoringPool(jobs, parsedResume, searchQueries, 60)
         console.log('[analyze] scoring candidate pool:', jobsForScoring.length, 'of', jobs.length, 'stored jobs | by source:', sourceSummary(jobsForScoring))
+        console.log(`[PIPELINE] Jobs sent to reranker: ${jobsForScoring.length} (competitor boost active for ${allCompetitors.length} companies)`)
 
         emit({ step: 'pool_selected', count: jobsForScoring.length })
 
         // ── 7. AI batch reranking ─────────────────────────────────────────────
         emit({ step: 'ai_ranking' })
-
-        const allCompetitors = [
-          ...(strategy.competitors?.direct   ?? []),
-          ...(strategy.competitors?.adjacent ?? []),
-        ]
-        console.log(`[analyze] passing ${allCompetitors.length} competitor companies to reranker for scoring boost`)
 
         let ranked
         try {
@@ -686,6 +719,7 @@ export async function POST() {
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
 
+        console.log(`[PIPELINE] Final saved jobs: ${matchRows.length}`)
         console.log(`[analyze] inserting ${matchRows.length} fresh match rows (score >= filter applied client-side)`)
 
         const [matchResult, cvSuggestions] = await Promise.all([
