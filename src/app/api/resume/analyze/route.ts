@@ -694,6 +694,14 @@ export async function POST() {
 
         console.log(`[analyze] resume_id=${resume.id} jobs_fetched=${jobs.length} jobs_scored=${jobsForScoring.length} jobs_ranked=${ranked.length} unified_top20_scores=${top20.map((r) => r.score).join(',')} unified_top20_sources=${sourceSummary(top20)}`)
 
+        const scores = top20.map((r) => r.score)
+        const scoreDist = `90+=${scores.filter((s) => s >= 90).length}, 80-89=${scores.filter((s) => s >= 80 && s < 90).length}, 70-79=${scores.filter((s) => s >= 70 && s < 80).length}, <70=${scores.filter((s) => s < 70).length}`
+        const topCompanies = top20.map((r) => jobMap.get(`${r.source}:${r.externalId}`)?.company).filter(Boolean).slice(0, 5).join(', ')
+        const lowestScore  = scores.length ? Math.min(...scores) : 0
+        console.log(`[PIPELINE] Score distribution: ${scoreDist}`)
+        console.log(`[PIPELINE] Top saved companies: ${topCompanies || 'none'}`)
+        console.log(`[PIPELINE] Lowest saved score: ${lowestScore}`)
+
         // ── 8. Hard-delete ALL previous matches for this user ─────────────────
         const { error: deleteError } = await admin
           .from('job_matches')
