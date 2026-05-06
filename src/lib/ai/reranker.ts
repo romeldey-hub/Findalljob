@@ -24,10 +24,11 @@ interface ClaudeRankedItem {
 const RERANK_SYSTEM_PROMPT = `You are an AI recruiter, executive career strategist, and job-hunting engine. Your job is to match candidates to roles where they will genuinely thrive and advance their career.
 Score each job 0-100 based on genuine fit. Be realistic — 85+ means excellent match, 60-84 means good fit with minor gaps, 40-59 means partial fit, below 40 means significant mismatch.
 Think like a headhunter placing a senior executive: look past the job title and assess whether the candidate's actual experience, domain expertise, and career trajectory make them the right person for this role.
-Never inflate scores. A score of 70 is a good match.`
+When competitor companies are listed, treat them as high-value targets — these employers immediately recognise the candidate's domain expertise and are actively poaching from rivals.
+Never inflate scores beyond what the evidence supports. A score of 70 is a good match.`
 
-const BATCH_SIZE = 10   // jobs per Claude call
-const MAX_TOKENS = 6000 // per batch call — increased for larger job descriptions
+const BATCH_SIZE      = 10
+const MAX_TOKENS      = 6000
 const RETRY_DELAYS_MS = [2500, 7000, 15000]
 
 function sleep(ms: number): Promise<void> {
@@ -39,7 +40,12 @@ function isRateLimitError(err: unknown): boolean {
   return /rate limit|429|too many requests/i.test(message)
 }
 
-function buildPrompt(candidateSummary: string, batch: NormalizedJob[], offset: number): string {
+function buildPrompt(
+  candidateSummary: string,
+  batch: NormalizedJob[],
+  offset: number,
+  competitorCompanies?: string[],
+): string {
   const jobsList = batch
     .map(
       (j, i) =>
@@ -48,11 +54,16 @@ Description: ${(j.description ?? '').slice(0, 1200)}`
     )
     .join('\n\n')
 
+  const competitorContext = competitorCompanies?.length
+    ? `\nCOMPETITOR COMPANIES — apply a 5–10 point bonus to any job at these companies if the base fit is already solid (≥50 before bonus). These employers recognise the candidate's domain expertise and are likely poaching talent:
+${competitorCompanies.slice(0, 15).join(', ')}\n`
+    : ''
+
   return `Match this candidate to each job below. For each job return index, score, 2-3 sentence reasoning with specific evidence, a bridge tip, and skill lists.
 
 CANDIDATE:
 ${candidateSummary}
-
+${competitorContext}
 JOBS:
 ${jobsList}
 
@@ -74,7 +85,8 @@ Return all ${batch.length} jobs. Use the exact integer shown in [brackets] as "i
 export async function rerankJobs(
   resume: ParsedResume,
   jobs: NormalizedJob[],
-  rawText?: string   // full resume text — gives Claude the same context as reading the original
+  rawText?: string,
+  competitorCompanies?: string[],  // direct + adjacent competitors — used for scoring boost
 ): Promise<RankedJob[]> {
   const skills     = Array.isArray(resume.skills)     ? resume.skills     : []
   const experience = Array.isArray(resume.experience) ? resume.experience : []
@@ -110,14 +122,14 @@ Education: ${eduLine || 'Not specified'}`
   const batchResults: RankedJob[][] = []
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-    const batch = batches[batchIdx]
+    const batch  = batches[batchIdx]
     const offset = batchIdx * BATCH_SIZE
 
     let rankedBatch: RankedJob[] = []
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
         const items = await callClaudeJSON<ClaudeRankedItem[]>(
-          buildPrompt(candidateSummary, batch, offset),
+          buildPrompt(candidateSummary, batch, offset, competitorCompanies),
           RERANK_SYSTEM_PROMPT,
           MAX_TOKENS
         )
@@ -126,7 +138,7 @@ Education: ${eduLine || 'Not specified'}`
         )
         console.log(`[reranker] batch ${batchIdx}: Claude returned ${items.length} items, ${valid.length} valid`)
         rankedBatch = valid.map((r) => ({
-          externalId:     jobs[r.index].externalId,   // safe — index comes from AI, mapped here
+          externalId:     jobs[r.index].externalId,
           source:         jobs[r.index].source,
           score:          Math.min(100, Math.max(0, Number(r.score) || 0)),
           reasoning:      r.reasoning ?? '',

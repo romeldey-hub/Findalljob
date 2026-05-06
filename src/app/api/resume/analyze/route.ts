@@ -407,7 +407,7 @@ export async function POST() {
         } catch (err) {
           console.error('[analyze] strategy generation failed, using fallback:', apiErrMsg(err))
           const recentTitle = parsedResume.experience?.[0]?.title?.trim() ?? ''
-          strategy = { search_queries: [recentTitle || parsedResume.skills?.[0] || 'software engineer'] }
+          strategy = { search_queries: [recentTitle || parsedResume.skills?.[0] || 'software engineer'], target_companies: [], competitors: { direct: [], adjacent: [] } }
         }
 
         function sanitizeQuery(q: string): string {
@@ -451,13 +451,15 @@ export async function POST() {
           ...cleanedQueries,
           ...experienceQueries,
           primaryQuery,
-        ]).slice(0, 6)
+        ]).slice(0, 12)
 
         // Emit initial jobs_fetching to signal search has started
         emit({ step: 'jobs_fetching', count: 0, sources: [] })
 
-        // 4a. Fetch every configured source
-        for (const query of searchQueries.slice(0, 4)) {
+        console.log('[analyze] competitor intelligence — direct:', strategy.competitors?.direct ?? [], '| adjacent:', strategy.competitors?.adjacent ?? [])
+
+        // 4a. Fetch every configured source — run all strategy queries (up to 8)
+        for (const query of searchQueries.slice(0, 8)) {
           console.log('[analyze] strategy query:', query, '| source mode: standard')
           try {
             const result = await router.searchAllForScoring({ title: query, location: profileLocation, countryCode, limit: 25 })
@@ -516,6 +518,28 @@ export async function POST() {
               console.log(`[analyze] company "${company}" → ${result.jobs.length} provider-preserved jobs (total: ${jobs.length}) sources: ${sourceSummary(result.jobs)}`)
             } catch (err) {
               console.error(`[analyze] company search "${company}" error:`, apiErrMsg(err))
+            }
+            emit({ step: 'jobs_fetching', count: jobs.length, sources: currentSourceNames(jobs) })
+          }
+        }
+
+        // Competitor-targeted search — direct competitors first, then adjacent
+        const competitorTargets = [
+          ...(strategy.competitors?.direct   ?? []).slice(0, 3),
+          ...(strategy.competitors?.adjacent ?? []).slice(0, 2),
+        ]
+        if (competitorTargets.length > 0) {
+          console.log('[analyze] competitor-targeted search for:', competitorTargets)
+          for (const company of competitorTargets) {
+            if (jobs.length >= 200) break
+            const companyQuery = sanitizeQuery(`${company} ${primaryQuery}`)
+            try {
+              const result = await router.searchAllForScoring({ title: companyQuery, location: profileLocation, countryCode, limit: 15 })
+              addUnique(result.jobs)
+              sourceErrors.push(...result.errors)
+              console.log(`[analyze] competitor "${company}" → ${result.jobs.length} jobs (total: ${jobs.length}) sources: ${sourceSummary(result.jobs)}`)
+            } catch (err) {
+              console.error(`[analyze] competitor search "${company}" error:`, apiErrMsg(err))
             }
             emit({ step: 'jobs_fetching', count: jobs.length, sources: currentSourceNames(jobs) })
           }
@@ -616,9 +640,15 @@ export async function POST() {
         // ── 7. AI batch reranking ─────────────────────────────────────────────
         emit({ step: 'ai_ranking' })
 
+        const allCompetitors = [
+          ...(strategy.competitors?.direct   ?? []),
+          ...(strategy.competitors?.adjacent ?? []),
+        ]
+        console.log(`[analyze] passing ${allCompetitors.length} competitor companies to reranker for scoring boost`)
+
         let ranked
         try {
-          ranked = await rerankJobs(parsedResume, jobsForScoring, resume.raw_text ?? undefined)
+          ranked = await rerankJobs(parsedResume, jobsForScoring, resume.raw_text ?? undefined, allCompetitors)
           console.log('[analyze] rerank complete, top score:', ranked[0]?.score, '| ranked by source:', sourceSummary(ranked))
         } catch (err) {
           const msg = apiErrMsg(err)
