@@ -10,7 +10,7 @@ import {
   PlusCircle, Loader2, Briefcase, Lightbulb,
   CheckCircle2, XCircle, RefreshCw,
   Bookmark, BookmarkCheck, Clock, Sparkles,
-  SlidersHorizontal, ChevronDown, User, UserCheck, Mic,
+  SlidersHorizontal, ChevronDown, User, UserCheck, Mic, Lock,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { track } from '@/lib/analytics'
@@ -953,6 +953,14 @@ export default function MatchesPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || !location.trim()) return
+
+    // Block free users who have exhausted their search quota
+    const isPro = profileData?.plan === 'pro'
+    if (!isPro && (profileData?.job_search_count ?? 0) >= FREE_LIMITS.jobSearch) {
+      setShowPaywall(true)
+      return
+    }
+
     track.jobSearch(`${title} ${location}`.trim())
     setSearching(true)
     setSuggestions([])
@@ -1004,6 +1012,8 @@ export default function MatchesPage() {
         toast.success(`${matches.length} AI-ranked matches found${source}!`)
         setTimeout(() => mutate(), 2000)
       }
+      // Refresh profile so job_search_count reflects the increment from the server
+      void globalMutate('/api/profile')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Search failed. Please try again.')
     } finally {
@@ -1031,6 +1041,9 @@ export default function MatchesPage() {
 
   // activitySteps comes from useAnalyzeProgress — driven by real SSE events + time gating
 
+  const searchesUsed       = profileData?.job_search_count ?? 0
+  const searchLimitReached = profileData !== undefined && profileData?.plan !== 'pro' && searchesUsed >= FREE_LIMITS.jobSearch
+
   return (
     <div className="space-y-5">
 
@@ -1049,20 +1062,42 @@ export default function MatchesPage() {
         {/* Toggle header — always visible */}
         <button
           type="button"
-          onClick={() => setSearchOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors"
+          onClick={() => { if (!searchLimitReached) setSearchOpen((o) => !o) }}
+          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${searchLimitReached ? 'cursor-default' : 'hover:bg-gray-50 dark:hover:bg-[#263549]'}`}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />
+            {searchLimitReached
+              ? <Lock className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0" />
+              : <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />}
             <span className="text-[13px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] truncate">
-              {title.trim() || location.trim()
+              {searchLimitReached
+                ? 'Search limit reached'
+                : title.trim() || location.trim()
                 ? [title.trim(), location.trim()].filter(Boolean).join(' · ')
                 : 'Search & filter jobs'}
             </span>
           </div>
-          <ChevronDown
-            className={`w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0 ml-2 transition-transform duration-200 ${searchOpen ? 'rotate-180' : ''}`}
-          />
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            {!searchLimitReached && profileData?.plan !== 'pro' && profileData !== undefined && (
+              <span className="text-[10px] text-gray-400 dark:text-slate-500 whitespace-nowrap">
+                {Math.max(0, FREE_LIMITS.jobSearch - searchesUsed)}/{FREE_LIMITS.jobSearch} searches left
+              </span>
+            )}
+            {searchLimitReached && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowPaywall(true) }}
+                className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline whitespace-nowrap"
+              >
+                Upgrade to search
+              </button>
+            )}
+            {!searchLimitReached && (
+              <ChevronDown
+                className={`w-4 h-4 text-gray-400 dark:text-slate-500 transition-transform duration-200 ${searchOpen ? 'rotate-180' : ''}`}
+              />
+            )}
+          </div>
         </button>
 
         {/* Expandable form */}
@@ -1098,7 +1133,7 @@ export default function MatchesPage() {
             <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 w-full lg:w-auto">
               <button
                 type="submit"
-                disabled={searching || !title.trim() || !location.trim()}
+                disabled={searching || !title.trim() || !location.trim() || searchLimitReached}
                 className="flex items-center justify-center gap-2 px-5 h-10 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-40 shadow-sm"
               >
                 {searching ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Searching…</> : <><Search className="w-3.5 h-3.5" />Find &amp; Match Jobs</>}

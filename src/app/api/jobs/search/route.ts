@@ -6,6 +6,8 @@ import { generateCvSuggestions }           from '@/lib/ai/suggestions'
 import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
 import { computeVerifiedLabel }            from '@/types'
 import type { ParsedResume, NormalizedJob } from '@/types'
+import { isAdminUser, isProUser }          from '@/lib/admin'
+import { FREE_LIMITS }                     from '@/lib/limits'
 
 export const maxDuration = 60
 
@@ -68,6 +70,23 @@ export async function POST(request: NextRequest) {
 
   const stage = fallback ? 'fallback' : 'primary'
   console.log(`[search:${stage}] user=${user.id} title="${title}" location="${location}"`)
+
+  // ── Free-plan job search limit (primary calls only — fallback is internal) ─
+  const { data: usageRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, job_search_count')
+    .eq('user_id', user.id)
+    .single()
+
+  const isPro             = isProUser(user.email, usageRow?.role, usageRow?.subscription_status, usageRow?.pro_until)
+  const currentSearchCount = usageRow?.job_search_count ?? 0
+
+  if (!fallback && !isPro && currentSearchCount >= FREE_LIMITS.jobSearch) {
+    return NextResponse.json({
+      error: `You've used all ${FREE_LIMITS.jobSearch} free job searches. Upgrade to Pro to continue.`,
+      limitReached: true,
+    }, { status: 403 })
+  }
 
   // ── Detect country from the user's active resume location ─────────────────
   // Fetch just the location field — cheap query, needed for country-filtering below.
@@ -315,6 +334,13 @@ export async function POST(request: NextRequest) {
     cvSuggestions = (suggestions as string[]) ?? []
   } catch (err) {
     console.error('[search] post-rank step failed:', err instanceof Error ? err.message : err)
+  }
+
+  // Increment job search count for free users on primary calls (non-fatal)
+  if (!fallback && !isPro) {
+    void admin.from('profiles')
+      .update({ job_search_count: currentSearchCount + 1 })
+      .eq('user_id', user.id)
   }
 
   return NextResponse.json({ matches, cvSuggestions, jobCount: jobs.length, sourcesUsed, errors: errors.length ? errors : undefined })

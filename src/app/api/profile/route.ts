@@ -24,10 +24,10 @@ export async function GET() {
     .eq('user_id', user.id)
     .single()
 
-  // Usage tracking columns from migration 016
+  // Usage tracking columns from migrations 016 + 017
   const { data: usage } = await adminClient
     .from('profiles')
-    .select('resume_upload_count, ai_reanalyze_count')
+    .select('resume_upload_count, ai_reanalyze_count, job_search_count')
     .eq('user_id', user.id)
     .single()
 
@@ -63,5 +63,6 @@ export async function GET() {
     cancel_at_period_end: billing?.cancel_at_period_end ?? false,
     resume_upload_count: usage?.resume_upload_count ?? 0,
     ai_reanalyze_count:  usage?.ai_reanalyze_count  ?? 0,
+    job_search_count:    usage?.job_search_count    ?? 0,
   })
 }
