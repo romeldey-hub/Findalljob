@@ -278,7 +278,7 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
         <div className="space-y-2">
           <ActionCard
             icon={<Wand2 className="w-4 h-4 text-white" />}
-            label="Optimize Resume"
+            label="Fix Resume for This Job"
             subtext="Boost your chances"
             onClick={() => setShowOptimize(true)}
             primary

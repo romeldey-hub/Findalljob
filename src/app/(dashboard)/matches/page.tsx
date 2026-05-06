@@ -448,7 +448,7 @@ function JobCard({
                   onClick={() => onOptimize(job.id)}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100"
                 >
-                  <Wand2 className="w-3.5 h-3.5" />Optimize Resume
+                  <Wand2 className="w-3.5 h-3.5" />Fix Resume for This Job
                 </button>
               )}
 
@@ -1062,7 +1062,7 @@ export default function MatchesPage() {
         {/* Toggle header — always visible */}
         <button
           type="button"
-          onClick={() => { if (!searchLimitReached) setSearchOpen((o) => !o) }}
+          onClick={() => { if (searchLimitReached) { setShowPaywall(true); return } setSearchOpen((o) => !o) }}
           className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${searchLimitReached ? 'cursor-default' : 'hover:bg-gray-50 dark:hover:bg-[#263549]'}`}
         >
           <div className="flex items-center gap-2 min-w-0">
@@ -1084,13 +1084,9 @@ export default function MatchesPage() {
               </span>
             )}
             {searchLimitReached && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowPaywall(true) }}
-                className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline whitespace-nowrap"
-              >
+              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 underline whitespace-nowrap">
                 Upgrade to search
-              </button>
+              </span>
             )}
             {!searchLimitReached && (
               <ChevronDown
@@ -1250,21 +1246,20 @@ export default function MatchesPage() {
             })()}
           </div>
 
-          {/* Mode label — source attribution */}
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400 dark:text-slate-500 -mt-1">
-            {mode === 'ai'
-              ? <><Sparkles className="w-3 h-3 text-amber-400" />Showing AI-matched jobs</>
-              : <><User className="w-3 h-3" />Showing manual search results
-                  {displayAiJobs.length > 0 && (
-                    <button
-                      onClick={() => setMode('ai')}
-                      className="ml-1 text-[#2563EB] dark:text-blue-400 hover:underline font-semibold"
-                    >
-                      · Switch to AI results
-                    </button>
-                  )}
-                </>}
-          </p>
+          {/* Mode label — source attribution (manual mode only) */}
+          {mode === 'manual' && (
+            <p className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400 dark:text-slate-500 -mt-1">
+              <User className="w-3 h-3" />Showing manual search results
+              {displayAiJobs.length > 0 && (
+                <button
+                  onClick={() => setMode('ai')}
+                  className="ml-1 text-[#2563EB] dark:text-blue-400 hover:underline font-semibold"
+                >
+                  · Switch to AI results
+                </button>
+              )}
+            </p>
+          )}
 
           {/* Tier tabs + inline location context — visible when there are jobs to show */}
           {sortedJobs.length > 0 && (

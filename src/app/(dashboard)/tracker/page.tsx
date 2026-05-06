@@ -347,7 +347,7 @@ function ApplicationDetailModal({ app, onClose }: { app: Application; onClose: (
               href={`/optimizer?jobId=${app.job.id}`}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors"
             >
-              <Wand2 className="w-3.5 h-3.5" />Optimize Resume
+              <Wand2 className="w-3.5 h-3.5" />Fix Resume for This Job
             </a>
           </div>
 
