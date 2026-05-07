@@ -47,6 +47,7 @@ export function ResumePreviewModal({
   approveLabel = 'Approve & Save',
   heading = 'Preview Optimized Resume',
   previewSubtitle,
+  startInEditMode = false,
 }: {
   data: OptimizedResumeData
   onClose: () => void
@@ -57,8 +58,9 @@ export function ResumePreviewModal({
   approveLabel?: string
   heading?: string
   previewSubtitle?: string
+  startInEditMode?: boolean
 }) {
-  const [isEditing, setIsEditing]         = useState(false)
+  const [isEditing, setIsEditing]         = useState(startInEditMode)
   const [editData, setEditData]           = useState<OptimizedResumeData>(data)
   const [isDownloading, setIsDownloading] = useState(false)
   const [newSkill, setNewSkill]           = useState('')
@@ -82,6 +84,13 @@ export function ResumePreviewModal({
 
   function updateField(key: string, value: string) {
     setEditData(prev => ({ ...prev, [key]: value }))
+  }
+
+  function updateExpField(expIdx: number, key: string, value: string) {
+    setEditData(prev => ({
+      ...prev,
+      experience: prev.experience.map((exp, i) => i === expIdx ? { ...exp, [key]: value } : exp),
+    }))
   }
 
   function updateBullet(expIdx: number, bulletIdx: number, value: string) {
@@ -108,6 +117,13 @@ export function ResumePreviewModal({
       experience: prev.experience.map((exp, i) =>
         i === expIdx ? { ...exp, bullets: exp.bullets.filter((_, j) => j !== bulletIdx) } : exp
       ),
+    }))
+  }
+
+  function updateEduField(eduIdx: number, key: string, value: string) {
+    setEditData(prev => ({
+      ...prev,
+      education: prev.education.map((edu, i) => i === eduIdx ? { ...edu, [key]: value } : edu),
     }))
   }
 
@@ -263,14 +279,54 @@ export function ResumePreviewModal({
 
               {(editData.experience?.length ?? 0) > 0 && (
                 <section>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Work Experience — Bullet Points</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Work Experience</p>
                   <div className="space-y-4">
                     {editData.experience.map((exp, i) => (
                       <div key={i} className="bg-[#F8FAFC] dark:bg-[#0F172A]/60 rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-4">
-                        <div className="mb-3">
-                          <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9]">{exp.title}</p>
-                          <p className="text-[12px] text-[#2563EB] mt-0.5">{exp.company} · {exp.start_date} – {exp.end_date ?? 'Present'}</p>
+                        {/* Job title + company + dates — all editable */}
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Job Title</label>
+                            <input
+                              type="text"
+                              value={exp.title ?? ''}
+                              onChange={e => updateExpField(i, 'title', e.target.value)}
+                              placeholder="Job Title"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Company</label>
+                            <input
+                              type="text"
+                              value={exp.company ?? ''}
+                              onChange={e => updateExpField(i, 'company', e.target.value)}
+                              placeholder="Company Name"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Start Date</label>
+                            <input
+                              type="text"
+                              value={exp.start_date ?? ''}
+                              onChange={e => updateExpField(i, 'start_date', e.target.value)}
+                              placeholder="Jan 2020"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">End Date</label>
+                            <input
+                              type="text"
+                              value={exp.end_date ?? ''}
+                              onChange={e => updateExpField(i, 'end_date', e.target.value)}
+                              placeholder="Present"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
                         </div>
+                        {/* Bullet points */}
                         <div className="space-y-2">
                           {(exp.bullets ?? []).map((bullet, j) => (
                             <div key={j} className="flex gap-2">
@@ -330,6 +386,60 @@ export function ResumePreviewModal({
                   </button>
                 </div>
               </section>
+
+              {(editData.education?.length ?? 0) > 0 && (
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Education</p>
+                  <div className="space-y-3">
+                    {editData.education.map((edu, i) => (
+                      <div key={i} className="bg-[#F8FAFC] dark:bg-[#0F172A]/60 rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-4">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Degree</label>
+                            <input
+                              type="text"
+                              value={edu.degree ?? ''}
+                              onChange={e => updateEduField(i, 'degree', e.target.value)}
+                              placeholder="e.g. Bachelor of Science"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Field of Study</label>
+                            <input
+                              type="text"
+                              value={edu.field ?? ''}
+                              onChange={e => updateEduField(i, 'field', e.target.value)}
+                              placeholder="e.g. Computer Science"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">School / University</label>
+                            <input
+                              type="text"
+                              value={edu.school ?? ''}
+                              onChange={e => updateEduField(i, 'school', e.target.value)}
+                              placeholder="e.g. MIT"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Graduation Year</label>
+                            <input
+                              type="text"
+                              value={edu.graduation_year ?? ''}
+                              onChange={e => updateEduField(i, 'graduation_year', e.target.value)}
+                              placeholder="e.g. 2020"
+                              className="w-full px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {(editData.certifications?.length ?? 0) > 0 && (
                 <section>

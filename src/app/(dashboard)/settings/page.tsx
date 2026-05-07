@@ -10,6 +10,7 @@ import { PasswordCard } from '@/components/settings/PasswordCard'
 import { SubscriptionCard } from '@/components/settings/SubscriptionCard'
 import { AppearanceCard } from '@/components/settings/AppearanceCard'
 import { DeleteAccountCard } from '@/components/settings/DeleteAccountCard'
+import { PublicProfileCard } from '@/components/settings/PublicProfileCard'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -92,6 +93,8 @@ export default async function SettingsPage() {
           />
 
           <AppearanceCard />
+
+          <PublicProfileCard />
 
           <DeleteAccountCard />
 

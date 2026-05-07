@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronUp, FileText,
 } from 'lucide-react'
 import type { ParsedResume, Resume, ResumeExperience } from '@/types'
+import { ResumeEditorButton } from './ResumeEditorButton'
 
 interface VisualResumeCardProps {
   resume: Resume
@@ -158,7 +159,13 @@ export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResume
   const hiddenCount   = (skills?.length ?? 0) - SKILLS_PREVIEW
 
   return (
-    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+    <div className="relative bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+
+      {/* Edit button — top-right corner of card */}
+      <div className="absolute top-3 right-3 z-10">
+        <ResumeEditorButton parsedData={parsedData} avatarUrl={avatarUrl} />
+      </div>
+
       <div className="flex flex-col md:flex-row">
 
         {/* ── LEFT SIDEBAR ──────────────────────────────────────── */}

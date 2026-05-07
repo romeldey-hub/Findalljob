@@ -1,5 +1,29 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import type { ParsedResume } from '@/types'
+
+export async function PATCH(req: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json().catch(() => ({}))
+  const parsed_data = body.parsed_data as ParsedResume | undefined
+  if (!parsed_data) return NextResponse.json({ error: 'parsed_data required' }, { status: 400 })
+
+  const { error } = await supabase
+    .from('resumes')
+    .update({ parsed_data })
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+
+  if (error) {
+    console.error('[resume/patch] update error:', error.message)
+    return NextResponse.json({ error: 'Failed to save changes' }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true })
+}
 
 export async function DELETE() {
   const supabase = await createClient()

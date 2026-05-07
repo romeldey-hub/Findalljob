@@ -48,7 +48,7 @@ export async function GET() {
     .from('optimized_resumes')
     .select(`
       id, job_id, optimized_text, created_at,
-      jobs ( title, company, location, description, url, salary )
+      jobs ( title, company, location, description, url, salary, source )
     `)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })

@@ -65,12 +65,7 @@ export default function RootLayout({
           gtag('js', new Date());
           gtag('config', '${process.env.NEXT_PUBLIC_GA_ID}');
         `}</Script>
-      </head>
-      <body className="min-h-full flex flex-col">
-        <ThemeProvider>
-          <Analytics />
-          {children}
-        </ThemeProvider>
+        {/* JSON-LD in <head> keeps it outside React's body hydration boundary */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify({
@@ -92,6 +87,12 @@ export default function RootLayout({
             "description": "AI-powered job matching, resume optimization, and application tracking.",
           }) }}
         />
+      </head>
+      <body className="min-h-full flex flex-col">
+        <ThemeProvider>
+          <Analytics />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

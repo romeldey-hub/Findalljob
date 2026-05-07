@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
-import { isAdminUser, isProUser } from '@/lib/admin'
+import { isProUser } from '@/lib/admin'
 import { FREE_LIMITS } from '@/lib/limits'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -41,6 +41,36 @@ function detectSectionsFromText(text: string): Array<{ title: string; content: s
   }
 
   return sections
+}
+
+function extractLegacyDocText(buffer: Buffer): string {
+  const chunks: string[] = []
+  let current = ''
+
+  for (const byte of buffer) {
+    if ((byte >= 32 && byte <= 126) || byte === 9 || byte === 10 || byte === 13) {
+      current += String.fromCharCode(byte)
+    } else {
+      if (current.trim().length >= 4) chunks.push(current)
+      current = ''
+    }
+  }
+  if (current.trim().length >= 4) chunks.push(current)
+
+  let text = chunks.join('\n')
+    .replace(/\r/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  const metadataStart = text.search(/\n(?:\[Content_Types\]\.xml|_rels\/\.rels|Root Entry|WordDocument)\b/)
+  if (metadataStart > 0) text = text.slice(0, metadataStart).trim()
+
+  return text
+    .split('\n')
+    .filter(line => line.trim() !== 'bjbj')
+    .join('\n')
+    .trim()
 }
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.doc', '.docx']
@@ -98,15 +128,21 @@ export async function POST(request: NextRequest) {
     let rawText = ''
     try {
       if (ext === '.pdf') {
+        // pdf-parse v2 uses a class-based API: new PDFParse({ data: buffer }).getText()
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
-        const parsed = await pdfParse(buffer)
+        const { PDFParse } = require('pdf-parse') as {
+          PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }> }
+        }
+        const parser = new PDFParse({ data: buffer })
+        const parsed = await parser.getText()
         rawText = parsed.text.trim()
-      } else {
+      } else if (ext === '.docx') {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const mammoth = require('mammoth') as { extractRawText(opts: { buffer: Buffer }): Promise<{ value: string }> }
         const result = await mammoth.extractRawText({ buffer })
         rawText = result.value.trim()
+      } else {
+        rawText = extractLegacyDocText(buffer)
       }
     } catch (parseErr) {
       console.warn('[resume/upload] text extraction failed (non-fatal):', parseErr)
@@ -123,7 +159,7 @@ export async function POST(request: NextRequest) {
         hasText: false,
         canAnalyze: false,
         parsing: false,
-        error: 'Could not extract readable text from this file. Please upload a text-based PDF/DOCX.',
+        error: 'Could not extract text from this file. Try saving it as a PDF, or copy-paste your resume content into a new DOCX.',
       })
     }
 

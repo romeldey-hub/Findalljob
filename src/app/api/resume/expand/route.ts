@@ -136,7 +136,7 @@ export async function POST() {
         job_id:           jobId,
         similarity_score: r.score / 100,
         ai_score:         r.score,
-        ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
+        ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', mr: r.match_reasons ?? [], ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
       }
     })
     .filter((row): row is NonNullable<typeof row> => row !== null)

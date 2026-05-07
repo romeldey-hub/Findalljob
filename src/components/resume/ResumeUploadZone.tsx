@@ -51,6 +51,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
+  const [uploadError, setUploadError]   = useState<string | null>(null)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [showConfirm, setShowConfirm]   = useState(false)
   const [deleting, setDeleting]         = useState(false)
@@ -77,6 +78,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     if (!file) return
 
     setUploadState('uploading')
+    setUploadError(null)
     setActivityFailed(false)
     resetProgress(0)  // Step 0: "Reading your resume…" active during upload
     const formData = new FormData()
@@ -94,8 +96,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
         return
       }
       if (!uploadData.canAnalyze) {
+        const errMsg = (uploadData.error as string) ?? 'Could not extract readable text from this file.'
+        setUploadError(errMsg)
         setUploadState('no-text')
-        toast.warning((uploadData.error as string) ?? 'Could not extract readable text from this file.')
+        toast.warning(errMsg)
         stopProgress()
         return
       }
@@ -286,8 +290,17 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
           {uploadState === 'no-text' && (
             <>
               <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Image-based file detected</p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">Please paste your resume text instead</p>
+              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Could not read file</p>
+              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1 max-w-[240px] text-center leading-relaxed">
+                {uploadError ?? 'Could not extract text from this file.'}
+              </p>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setUploadState('idle'); setUploadError(null) }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+              >
+                Try another file
+              </button>
             </>
           )}
 

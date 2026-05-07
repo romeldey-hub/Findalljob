@@ -172,10 +172,10 @@ function TrackerCard({
             toast.error('No job URL')
           }
         }}
-        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500 transition-colors"
+        className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100"
       >
         <ExternalLink className="w-3.5 h-3.5" />
-        {app.status === 'saved' ? 'Apply Now' : 'View Job'}
+        Open Job
       </button>
     </div>
   )
@@ -338,9 +338,9 @@ function ApplicationDetailModal({ app, onClose }: { app: Application; onClose: (
                 href={app.job.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100"
               >
-                <ExternalLink className="w-3.5 h-3.5" />View Job
+                <ExternalLink className="w-3.5 h-3.5" />Open Job
               </a>
             )}
             <a

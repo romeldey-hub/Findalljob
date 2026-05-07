@@ -7,6 +7,7 @@ export interface RankedJob {
   score: number
   reasoning: string
   bridge_advice: string
+  match_reasons: string[]
   matched_skills: string[]
   missing_skills: string[]
 }
@@ -17,6 +18,7 @@ interface ClaudeRankedItem {
   score: number
   reasoning: string
   bridge_advice: string
+  match_reasons: string[]
   matched_skills: string[]
   missing_skills: string[]
 }
@@ -74,10 +76,13 @@ Return a JSON array — one entry per job, sorted by score descending:
     "score": 75,
     "reasoning": "2-3 sentences citing specific evidence from the candidate's background that explains fit or gaps.",
     "bridge_advice": "One actionable sentence on how to reframe or address the main skill gap for this specific role.",
-    "matched_skills": ["skill1", "skill2"],
-    "missing_skills": ["skill3"]
+    "match_reasons": ["Short narrative phrase (max 10 words) citing specific resume evidence vs job requirement — e.g. '8 yrs FAE experience at Intel/AMD', 'OEM channel background (HP, Dell, Lenovo)'"],
+    "matched_skills": ["keyword1", "keyword2"],
+    "missing_skills": ["gap1"]
   }
 ]
+
+match_reasons rules: 2-3 items, human-readable narrative phrases not just keywords, cite candidate's actual experience or skills, max 10-12 words each, positive framing.
 
 Return all ${batch.length} jobs. Use the exact integer shown in [brackets] as "index".`
 }
@@ -143,6 +148,7 @@ Education: ${eduLine || 'Not specified'}`
           score:          Math.min(100, Math.max(0, Number(r.score) || 0)),
           reasoning:      r.reasoning ?? '',
           bridge_advice:  r.bridge_advice ?? '',
+          match_reasons:  Array.isArray(r.match_reasons) ? r.match_reasons : [],
           matched_skills: Array.isArray(r.matched_skills) ? r.matched_skills : [],
           missing_skills: Array.isArray(r.missing_skills) ? r.missing_skills : [],
         }))

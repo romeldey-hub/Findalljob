@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import {
   Search, MapPin, Building2, Wand2,
   PlusCircle, Loader2, Briefcase, Lightbulb,
-  CheckCircle2, XCircle, RefreshCw,
+  CheckCircle2, RefreshCw,
   Bookmark, BookmarkCheck, Clock, Sparkles,
   SlidersHorizontal, ChevronDown, User, UserCheck, Mic, Lock,
 } from 'lucide-react'
@@ -17,8 +17,9 @@ import { track } from '@/lib/analytics'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { PaywallModal } from '@/components/PaywallModal'
 import { InterviewModal } from '@/components/InterviewModal'
-import { ApplyButton, sourceLabel, VerifiedBadge } from '@/components/jobs/ApplyButton'
-import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
+import { ApplyButton, sourceLabel } from '@/components/jobs/ApplyButton'
+import { OptimizeFlow }    from '@/components/resume/OptimizeFlow'
+import { QuickFixesModal } from '@/components/resume/QuickFixesModal'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { FREE_LIMITS } from '@/lib/limits'
@@ -45,6 +46,7 @@ interface MatchRecord {
   ai_score: number
   ai_reasoning: string
   bridge_advice?: string
+  match_reasons?: string[]
   matched_skills: string[]
   missing_skills: string[]
   job: {
@@ -59,6 +61,7 @@ interface MatchRecord {
     salary?: string
     description: string
     source?: string
+    created_at?: string
   }
 }
 
@@ -72,42 +75,51 @@ interface FilterState {
 
 const DEFAULT_FILTERS: FilterState = { minScore: 0, jobType: 'Any', experience: 'Any', location: '', datePosted: 'Any time' }
 
-// ── SkillTag ──────────────────────────────────────────────────────────────────
+// ── ImprovementTag ────────────────────────────────────────────────────────────
 
-function SkillTag({ label, variant }: { label: string; variant: 'match' | 'miss' }) {
-  const base = 'inline-flex items-center px-2.5 py-0.5 rounded-md border text-[11px] font-medium transition-colors cursor-default select-none'
-  const styles =
-    variant === 'match'
-      ? 'border-green-200 text-green-700 bg-transparent hover:bg-green-50'
-      : 'border-red-200 text-red-600 bg-transparent hover:bg-red-50'
-  return <span className={`${base} ${styles}`}>{label}</span>
+function ImprovementTag({ label, dim = false }: { label: string; dim?: boolean }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-medium cursor-default select-none ${
+      dim
+        ? 'border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 bg-transparent'
+        : 'border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 bg-[#F8FAFC] dark:bg-[#263549]/40'
+    }`}>
+      {label}
+    </span>
+  )
 }
+
+function recruiterReasonFromSkill(skill: string) {
+  return `Strong alignment with ${skill}`
+}
+
+const NEGATIVE_REASON_PATTERN = /\b(missing|gap|gaps|lacks?|weak|limited|preferred|required|needs?|should|could improve|without|not enough|no experience)\b/i
 
 // ── ScoreRing ─────────────────────────────────────────────────────────────────
 
 function ScoreRing({ score }: { score: number }) {
-  const r      = 36
+  const r      = 28
   const circ   = 2 * Math.PI * r
   const filled = (score / 100) * circ
 
   const ringColor = score >= 80 ? '#16A34A' : score >= 60 ? '#2563EB' : score >= 20 ? '#D97706' : '#9CA3AF'
-  const tierLabel = score >= 80 ? 'Strong Match' : score >= 60 ? 'Good Match' : score >= 20 ? 'Fair Match' : 'No Match'
-  const tierColor = score >= 80 ? 'text-green-600' : score >= 60 ? 'text-blue-600' : score >= 20 ? 'text-amber-600' : 'text-gray-400'
+  const tierLabel = score >= 80 ? 'Strong Match' : score >= 60 ? 'Good Match' : score >= 20 ? 'Fair Match' : 'Weak'
+  const tierColor = score >= 80 ? 'text-green-600 dark:text-green-500' : score >= 60 ? 'text-blue-600 dark:text-blue-400' : score >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'
   const topPct    = score >= 85 ? 10 : score >= 75 ? 20 : score >= 65 ? 35 : 50
 
   const animated     = useAnimate()
   const displayScore = useCountUp(score, 900)
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      <div className="relative w-[84px] h-[84px] flex items-center justify-center">
-        <svg width="84" height="84" viewBox="0 0 84 84" className="-rotate-90 absolute inset-0">
-          <circle cx="42" cy="42" r={r} fill="none" stroke="#F1F5F9" strokeWidth="7" />
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-[64px] h-[64px] flex items-center justify-center">
+        <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90 absolute inset-0">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="#F1F5F9" strokeWidth="4.5" className="dark:stroke-[#334155]" />
           <circle
-            cx="42" cy="42" r={r}
+            cx="32" cy="32" r={r}
             fill="none"
             stroke={ringColor}
-            strokeWidth="7"
+            strokeWidth="4.5"
             strokeLinecap="round"
             style={{
               strokeDasharray: circ,
@@ -117,12 +129,11 @@ function ScoreRing({ score }: { score: number }) {
           />
         </svg>
         <div className="relative z-10 text-center">
-          <div className="text-[24px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-none">{displayScore}</div>
-          <div className="text-[8px] font-bold tracking-[0.12em] uppercase text-gray-400 dark:text-slate-500 mt-0.5">Score</div>
+          <div className="text-[19px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-none">{displayScore}</div>
         </div>
       </div>
-      <span className={`text-[12px] font-bold ${tierColor}`}>{tierLabel}</span>
-      <span className="text-[10px] text-gray-400 dark:text-slate-500 text-center leading-tight">Top {topPct}% match</span>
+      <span className={`text-[10px] font-bold ${tierColor} leading-tight text-center`}>{tierLabel}</span>
+      <span className="text-[9px] text-gray-400 dark:text-slate-500 text-center leading-tight">Top {topPct}%</span>
     </div>
   )
 }
@@ -207,6 +218,18 @@ function applyFilters(matches: MatchRecord[], filters: FilterState): MatchRecord
   })
 }
 
+function formatPostedDate(dateStr?: string | null): string {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return ''
+  const diffDays = Math.floor((Date.now() - date.getTime()) / 86_400_000)
+  if (diffDays === 0) return 'Posted today'
+  if (diffDays === 1) return 'Posted yesterday'
+  if (diffDays <= 6)  return `Posted ${diffDays} days ago`
+  if (diffDays <= 13) return 'Posted this week'
+  return `Posted ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
 // ── JobCard ───────────────────────────────────────────────────────────────────
 
 function JobCard({
@@ -282,107 +305,71 @@ function JobCard({
     finally { setSaving(false) }
   }
 
-  const visibleMatched = match.matched_skills?.slice(0, 4) ?? []
-  const extraMatched   = Math.max(0, (match.matched_skills?.length ?? 0) - 4)
-  const visibleMissing = match.missing_skills?.slice(0, 3) ?? []
-  const description    = match.ai_reasoning || job.description || ''
+  // Confidence first: keep this section positive and recruiter-style.
+  const matchReasons = (match.match_reasons?.length
+    ? match.match_reasons
+    : (match.matched_skills ?? []).map(recruiterReasonFromSkill)
+  )
+    .filter((reason) => reason && !NEGATIVE_REASON_PATTERN.test(reason))
+    .slice(0, 4)
+  // Optimization signals: softer tags connected to the resume-fix action.
+  const improvementTags = (match.missing_skills?.length ? match.missing_skills : match.matched_skills ?? []).slice(0, 4)
+  const extraImprovementTags = Math.max(0, (match.missing_skills?.length ? match.missing_skills.length : match.matched_skills?.length ?? 0) - 4)
   const expLabel       = extractExperience(job.description || match.ai_reasoning || '', job.title)
   const jobType        = extractJobType(job.description || '')
+  const src            = sourceLabel(job.source)
+
+  const primaryBtn   = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-[11px] font-semibold transition-all hover:shadow-sm active:scale-[0.99]'
+  const secondaryBtn = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-500 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-all'
 
   return (
     <div
-      className={`animate-fade-in-up group bg-white dark:bg-[#1E293B] rounded-2xl border shadow-sm hover:-translate-y-[2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] transition-all duration-200 ease-out p-4 sm:p-6 ${
+      className={`animate-fade-in-up group bg-white dark:bg-[#1E293B] rounded-2xl border shadow-sm hover:-translate-y-[2px] hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] dark:hover:shadow-[0_6px_24px_rgba(0,0,0,0.35)] transition-all duration-200 ease-out p-4 sm:p-5 ${
         isNew
           ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15 dark:ring-[#2563EB]/20'
           : 'border-[#E5E7EB] dark:border-[#334155]'
       }`}
       style={{ animationDelay: `${animIndex * 60}ms` }}
     >
-      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+      <div className="flex gap-4">
 
-        {/* ── LEFT + MIDDLE ──────────────────────────────────────── */}
+        {/* ── MAIN CONTENT ──────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
 
-          {/* "Added by you" badge — manual jobs only */}
+          {/* "Added by you" badge */}
           {isManual && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-[10px] font-semibold text-violet-600 dark:text-violet-400 mb-2">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-[10px] font-semibold text-violet-600 dark:text-violet-400 mb-1.5">
               <User className="w-2.5 h-2.5" />Added by you
             </span>
           )}
 
-          {/* Mobile: centered score first, bookmark pinned top-right */}
-          <div className="sm:hidden relative mb-4 pt-1">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              title={saved ? 'Remove bookmark' : 'Save job'}
-              className="absolute right-0 top-0 text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
-            >
-              {saving
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : saved
-                ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400" />
-                : <Bookmark className="w-4 h-4" />}
-            </button>
+          {/* Job title */}
+          <h3 className="font-bold text-[16px] sm:text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] mb-1">
+            {job.title}
+          </h3>
 
-            <div className="flex w-full justify-center pb-4">
-              <ScoreRing score={match.ai_score} />
-            </div>
-
-            <h3 className="font-bold text-[16px] leading-snug text-[#0F172A] dark:text-[#F1F5F9]">
-              {job.title}
-            </h3>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {sourceLabel(job.source) && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-500 dark:text-slate-400 border border-[#E5E7EB] dark:border-[#334155]">
-                  {sourceLabel(job.source)}
-                </span>
-              )}
-              <VerifiedBadge label={job.verified_label} />
-            </div>
-          </div>
-
-          {/* Desktop: title + source badge + verified badge */}
-          <div className="hidden sm:flex items-start justify-between gap-2 mb-1.5">
-            <h3 className="font-bold text-[16px] sm:text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] pr-2">
-              {job.title}
-            </h3>
-            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {sourceLabel(job.source) && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-500 dark:text-slate-400 border border-[#E5E7EB] dark:border-[#334155]">
-                  {sourceLabel(job.source)}
-                </span>
-              )}
-              <VerifiedBadge label={job.verified_label} />
-            </div>
-          </div>
-
-          {/* Company · Location · Date · Job meta */}
-          <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[13px] text-gray-400 dark:text-slate-500 mb-3">
+          {/* Meta row */}
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[12px] text-gray-400 dark:text-slate-500 mb-3">
             <span className="font-semibold text-gray-600 dark:text-slate-300 flex items-center gap-1">
-              <Building2 className="w-3 h-3 text-gray-400 dark:text-slate-500" />{job.company}
+              <Building2 className="w-3 h-3 text-gray-400 dark:text-slate-500 flex-shrink-0" />{job.company}
             </span>
             {job.location && (
               <>
                 <span className="text-gray-200 dark:text-slate-700">·</span>
                 <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />{job.location}
+                  <MapPin className="w-3 h-3 flex-shrink-0" />{job.location}
                 </span>
               </>
             )}
             <span className="text-gray-200 dark:text-slate-700">·</span>
             <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />Posted recently
-            </span>
-            <span className="text-gray-200 dark:text-slate-700">·</span>
-            <span className="flex items-center gap-1">
-              <Briefcase className="w-3 h-3" />{jobType}
+              <Briefcase className="w-3 h-3 flex-shrink-0" />{jobType}
             </span>
             {expLabel && (
               <>
                 <span className="text-gray-200 dark:text-slate-700">·</span>
-                <span className="flex items-center gap-1.5 text-[12px] text-gray-400 dark:text-slate-500">
-                  <UserCheck className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />{expLabel}
+                <span className="flex items-center gap-1">
+                  <UserCheck className="w-3 h-3 flex-shrink-0 text-gray-300 dark:text-slate-600" />{expLabel}
                 </span>
               </>
             )}
@@ -392,100 +379,100 @@ function JobCard({
                 <span className="font-medium text-gray-500 dark:text-slate-400">{job.salary}</span>
               </>
             )}
-          </div>
-
-          {/* Description */}
-          {description && (
-            <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed line-clamp-2 mb-4">
-              {description}
-            </p>
-          )}
-
-          {/* ── Skill chips ─────────────────────────────────────── */}
-          <div className="space-y-2 mb-5">
-            {visibleMatched.length > 0 && (
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span className="text-[11px] font-bold text-green-600 dark:text-green-500 flex items-center gap-1 shrink-0 mr-0.5">
-                  <CheckCircle2 className="w-3 h-3" />Matched Skills
+            {formatPostedDate(job.created_at) && (
+              <>
+                <span className="text-gray-200 dark:text-slate-700">·</span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3 flex-shrink-0" />{formatPostedDate(job.created_at)}
                 </span>
-                {visibleMatched.map((s) => <SkillTag key={s} label={s} variant="match" />)}
-                {extraMatched > 0 && <SkillTag label={`+${extraMatched} more`} variant="match" />}
-              </div>
-            )}
-            {visibleMissing.length > 0 && (
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span className="text-[11px] font-bold text-red-500 flex items-center gap-1 shrink-0 mr-0.5">
-                  <XCircle className="w-3 h-3" />Missing Skills
-                </span>
-                {visibleMissing.map((s) => <SkillTag key={s} label={s} variant="miss" />)}
-              </div>
+              </>
             )}
           </div>
 
-          {/* ── Bridge advice ────────────────────────────────────── */}
-          {match.bridge_advice && (
-            <div className="flex items-start gap-1.5 mt-2 mb-1 px-2.5 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30">
-              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-500 shrink-0 mt-px">Tip:</span>
-              <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed">{match.bridge_advice}</p>
+          {/* ── Why this matches you — recruiter-style narrative bullets ── */}
+          {matchReasons.length > 0 && (
+            <div className="mb-3">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 dark:text-slate-500">
+                Why this matches you
+              </p>
+              <div className="space-y-0.5">
+                {matchReasons.map((r: string) => (
+                  <div key={r} className="flex items-start gap-1.5">
+                    <span className="text-green-500 dark:text-green-400 text-[11px] leading-[1.6] flex-shrink-0 mt-px">✔</span>
+                    <span className="text-[12px] text-gray-600 dark:text-slate-300 leading-[1.6]">{r}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* ── Action buttons ───────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-medium text-gray-400 dark:text-slate-500">Increase your chances before applying</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {isOptimized ? (
-                <div className="inline-flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-[12px] font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5" />Optimized
-                  </span>
-                  <a href="/optimizer" className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors">
-                    View →
-                  </a>
-                </div>
-              ) : (
-                <button
-                  onClick={() => onOptimize(job.id)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100"
-                >
-                  <Wand2 className="w-3.5 h-3.5" />Fix Resume for This Job
-                </button>
-              )}
+          {/* ── Improve match further — softer optimization signals ── */}
+          {improvementTags.length > 0 && (
+            <div className="mb-4">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 dark:text-slate-500">
+                {isOptimized ? 'Resume optimized for this role' : 'Improve match further'}
+              </p>
+              <div className="flex flex-wrap items-center gap-1">
+                {improvementTags.map((s) => <ImprovementTag key={s} label={s} />)}
+                {extraImprovementTags > 0 && <ImprovementTag label={`+${extraImprovementTags} more`} dim />}
+              </div>
+            </div>
+          )}
 
-              <button
-                onClick={() => onInterview(match)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100"
-              >
-                <Mic className="w-3.5 h-3.5" />Mock Interview
+          {/* ── Button row ──────────────────────────────────────── */}
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Primary: Fix Resume For This Job */}
+            {isOptimized ? (
+              <a href="/optimizer" className={`${secondaryBtn} text-green-600 dark:text-green-500 border-green-200 dark:border-green-800`}>
+                <CheckCircle2 className="w-3 h-3" />View Optimized Resume
+              </a>
+            ) : (
+              <button onClick={() => onOptimize(job.id)} className={primaryBtn}>
+                <Wand2 className="w-3 h-3" />Fix Resume For This Job
               </button>
-            </div>
+            )}
+
+            {/* Primary: interview preparation */}
+            <button onClick={() => onInterview(match)} className={primaryBtn}>
+              <Mic className="w-3 h-3" />Prepare For This Interview
+            </button>
           </div>
         </div>
 
-        {/* ── RIGHT: bookmark + score + apply ───────────────────── */}
-        <div className="flex flex-col items-stretch sm:items-center sm:justify-start gap-3 w-full sm:min-w-[110px] sm:w-[110px] sm:flex-shrink-0 border-t sm:border-t-0 border-[#F1F5F9] dark:border-[#334155] pt-4 sm:pt-0">
+        {/* ── ACTION PANEL (right column) ───────────────────────── */}
+        <div className="flex flex-col flex-shrink-0 pl-4 border-l border-[#F1F5F9] dark:border-[#334155]">
 
-          {/* Bookmark */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            title={saved ? 'Remove bookmark' : 'Save job'}
-            className="hidden sm:block sm:self-end text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
-          >
-            {saving
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : saved
-              ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400" />
-              : <Bookmark className="w-4 h-4" />}
-          </button>
+          {/* Bookmark — top right of panel */}
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              title={saved ? 'Remove bookmark' : 'Save job'}
+              className="text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
+            >
+              {saving
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : saved
+                ? <BookmarkCheck className="w-3.5 h-3.5 text-[#2563EB]" />
+                : <Bookmark className="w-3.5 h-3.5" />}
+            </button>
+          </div>
 
-          {/* Score ring */}
-          <div className="hidden sm:block">
+          {/* Score unit — top aligned */}
+          <div className="flex flex-col items-center">
             <ScoreRing score={match.ai_score} />
           </div>
 
-          {/* Apply Now — with loading state + fallback */}
-          <ApplyButton job={job} onApply={handleApplyCallback} />
+          {/* Source + CTA — anchored to bottom */}
+          <div className="flex flex-col items-center gap-2 mt-auto">
+            {src && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-400 dark:text-slate-500 border border-[#E5E7EB] dark:border-[#334155] whitespace-nowrap">
+                {src}
+              </span>
+            )}
+            <ApplyButton job={job} onApply={handleApplyCallback} variant="outline" />
+          </div>
+
         </div>
       </div>
     </div>
@@ -729,8 +716,9 @@ export default function MatchesPage() {
   const [searching, setSearching]     = useState(false)
   const [filters, setFilters]         = useState<FilterState>(DEFAULT_FILTERS)
   const [showPaywall, setShowPaywall] = useState(false)
-  const [sortOrder, setSortOrder]     = useState<'desc' | 'asc'>('desc')
+  const [sortKey, setSortKey]         = useState<'score' | 'date'>('score')
   const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
+  const [quickFixJobId, setQuickFixJobId]   = useState<string | null>(null)
   const [optimizeJobId, setOptimizeJobId]   = useState<string | null>(null)
   const [tierFilter, setTierFilter]         = useState<'all' | 'high' | 'medium' | 'stretch'>('all')
 
@@ -801,9 +789,14 @@ export default function MatchesPage() {
   const jobsToDisplay: MatchRecord[]  = mode === 'ai' ? displayAiJobs : manualJobs
   const displaySuggestions            = suggestions.length > 0 ? suggestions : (mode === 'ai' ? (data?.cvSuggestions ?? []) : [])
   const filteredJobs                  = applyFilters(jobsToDisplay, filters)
-  const sortedJobs                    = filteredJobs.slice().sort((a, b) =>
-    sortOrder === 'desc' ? b.ai_score - a.ai_score : a.ai_score - b.ai_score
-  )
+  const sortedJobs                    = filteredJobs.slice().sort((a, b) => {
+    if (sortKey === 'date') {
+      const da = new Date(a.job.created_at ?? 0).getTime()
+      const db = new Date(b.job.created_at ?? 0).getTime()
+      return db - da
+    }
+    return b.ai_score - a.ai_score
+  })
   const tieredJobs = tierFilter === 'all' ? sortedJobs : sortedJobs.filter((m) => {
     if (tierFilter === 'high')    return m.ai_score >= 80
     if (tierFilter === 'medium')  return m.ai_score >= 60 && m.ai_score < 80
@@ -1032,7 +1025,7 @@ export default function MatchesPage() {
   function handleOptimize(jobId: string) {
     const isPro = profileData?.plan === 'pro'
     if (!isPro) { setShowPaywall(true); return }
-    setOptimizeJobId(jobId)
+    setQuickFixJobId(jobId)
   }
 
   function handleInterview(match: MatchRecord) {
@@ -1309,13 +1302,18 @@ export default function MatchesPage() {
               <Clock className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
               <span className="font-bold text-[#0F172A] dark:text-[#F1F5F9]">{tieredJobs.length} matches</span>
               <span className="text-gray-200 dark:text-slate-700">·</span>
-              <button
-                onClick={() => setSortOrder((p) => p === 'desc' ? 'asc' : 'desc')}
-                className="flex items-center gap-1 text-[13px] text-gray-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white transition-colors"
-              >
-                Sorted by AI score
-                <span className="text-[14px] leading-none">{sortOrder === 'desc' ? '↓' : '↑'}</span>
-              </button>
+              <div className="relative flex items-center gap-1">
+                <span className="text-[12px] text-gray-400 dark:text-slate-500">Sort by:</span>
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as 'score' | 'date')}
+                  className="appearance-none bg-transparent text-[12px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] cursor-pointer outline-none pr-4 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
+                >
+                  <option value="score">Best Match</option>
+                  <option value="date">Latest Jobs</option>
+                </select>
+                <ChevronDown className="w-3 h-3 text-gray-400 dark:text-slate-500 pointer-events-none absolute right-0" />
+              </div>
             </div>
           )}
 
@@ -1439,6 +1437,19 @@ export default function MatchesPage() {
       </div>
 
       {showPaywall && profileData?.plan !== 'pro' && <PaywallModal onClose={() => setShowPaywall(false)} />}
+
+      {quickFixJobId && (() => {
+        const qMatch = jobsToDisplay.find(m => m.job.id === quickFixJobId)
+        return (
+          <QuickFixesModal
+            jobId={quickFixJobId}
+            jobTitle={qMatch?.job.title}
+            company={qMatch?.job.company}
+            onClose={() => setQuickFixJobId(null)}
+            onApplyFull={() => { setQuickFixJobId(null); setOptimizeJobId(quickFixJobId) }}
+          />
+        )
+      })()}
 
       {optimizeJobId && (
         <OptimizeFlow

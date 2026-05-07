@@ -10,11 +10,6 @@ import type { ParsedResume } from '@/types'
 import { toDataUri } from '@/lib/utils'
 import { useCountUp, useAnimate } from '@/lib/useAnimations'
 import { ResumePrintView } from '@/components/resume/ResumePrintView'
-import { InterviewModal } from '@/components/InterviewModal'
-import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
-import useSWR from 'swr'
-
-const fetcher = (url: string) => fetch(url).then(r => r.json())
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 
@@ -171,20 +166,6 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
   const printRef     = useRef<HTMLDivElement>(null)
   const [pdfBusy, setPdfBusy]             = useState(false)
   const [avatarDataUri, setAvatarDataUri] = useState<string | null>(null)
-  const [showInterview, setShowInterview] = useState(false)
-  const [showOptimize, setShowOptimize]   = useState(false)
-
-  const { data: profileData } = useSWR('/api/profile', fetcher)
-  const isPro = profileData?.plan === 'pro'
-
-  // Extract most-recent job from resume for interview context
-  const recentExp = parsedData.experience?.[0]
-  const interviewJob = {
-    id:          'resume',
-    title:       recentExp?.title    ?? 'General Practice',
-    company:     recentExp?.company  ?? '',
-    description: '',
-  }
 
   useEffect(() => {
     if (!avatarUrl) {
@@ -280,14 +261,14 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
             icon={<Wand2 className="w-4 h-4 text-white" />}
             label="Fix Resume for This Job"
             subtext="Boost your chances"
-            onClick={() => setShowOptimize(true)}
+            onClick={() => router.push('/matches')}
             primary
           />
           <ActionCard
             icon={<Mic className="w-4 h-4 text-white" />}
             label="Start Mock Interview"
             subtext="Practice before you apply"
-            onClick={() => setShowInterview(true)}
+            onClick={() => router.push('/matches')}
             primary
           />
           <ActionCard
@@ -323,23 +304,6 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
           <ResumePrintView data={parsedData} avatarUrl={avatarDataUri} />
         </div>
       </div>
-
-      {showInterview && (
-        <InterviewModal
-          job={interviewJob}
-          isPro={isPro}
-          onClose={() => setShowInterview(false)}
-          mode="resume"
-        />
-      )}
-
-      {showOptimize && (
-        <OptimizeFlow
-          mode="general"
-          avatarUrl={avatarDataUri}
-          onClose={() => setShowOptimize(false)}
-        />
-      )}
 
     </aside>
   )

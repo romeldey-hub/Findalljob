@@ -20,6 +20,7 @@ export interface ParsedResume {
   email: string
   phone: string
   location: string
+  linkedin?: string
   summary: string
   skills: string[]
   experience: ResumeExperience[]
@@ -149,6 +150,7 @@ export interface JobMatch {
   similarity_score: number
   ai_score: number
   ai_reasoning: string
+  match_reasons: string[]
   matched_skills: string[]
   missing_skills: string[]
   created_at: string

@@ -24,6 +24,7 @@ export interface ApplyButtonJob {
 interface ApplyButtonProps {
   job:      ApplyButtonJob
   onApply?: () => void
+  variant?: 'outline' | 'primary'
 }
 
 type ButtonState = 'idle' | 'opening'
@@ -188,7 +189,7 @@ export function VerifiedBadge({ label }: { label?: VerifiedLabel }) {
 
 // ── ApplyButton ────────────────────────────────────────────────────────────────
 
-export function ApplyButton({ job, onApply }: ApplyButtonProps) {
+export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonProps) {
   const [state,       setState]       = useState<ButtonState>('idle')
   const [showFallback, setShowFallback] = useState(false)
 
@@ -207,9 +208,13 @@ export function ApplyButton({ job, onApply }: ApplyButtonProps) {
     setState('idle')
   }
 
+  const btnClass = variant === 'primary'
+    ? 'flex w-full items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-[11px] font-semibold transition-all hover:shadow-md active:scale-100 disabled:opacity-60 whitespace-nowrap'
+    : 'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-60'
+
   return (
     <>
-      <div className="flex flex-col items-center gap-1 w-full">
+      <div className={variant === 'primary' ? 'flex flex-col items-center gap-1 w-full' : 'flex flex-col items-center gap-1 w-full'}>
 
         {/* Broken-link warning — only shown when confirmed broken */}
         {isBroken && (
@@ -220,24 +225,22 @@ export function ApplyButton({ job, onApply }: ApplyButtonProps) {
         )}
 
         {/* ── Main button ── */}
-        <button
-          onClick={handleClick}
-          disabled={state === 'opening'}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-60"
-        >
+        <button onClick={handleClick} disabled={state === 'opening'} className={btnClass}>
           {state === 'opening'
             ? <><Loader2 className="w-3 h-3 animate-spin" />Opening…</>
             : <>Open Job <ExternalLink className="w-3 h-3" /></>
           }
         </button>
 
-        {/* Manual escape hatch — assistive, not intrusive */}
-        <button
-          onClick={() => setShowFallback(true)}
-          className="text-[10px] text-gray-400 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
-        >
-          Opens in new tab
-        </button>
+        {/* Manual escape hatch — only for outline variant */}
+        {variant === 'outline' && (
+          <button
+            onClick={() => setShowFallback(true)}
+            className="text-[10px] text-gray-400 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
+          >
+            Opens in new tab
+          </button>
+        )}
 
       </div>
 

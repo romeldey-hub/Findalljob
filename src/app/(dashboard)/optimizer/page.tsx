@@ -6,13 +6,13 @@ import { toast } from 'sonner'
 import useSWR, { mutate as globalMutate } from 'swr'
 import {
   Wand2, Download, Loader2, Building2, Sparkles,
-  MapPin, Clock, Briefcase, Eye, Mic,
-  Calendar, Plus, Check, Trash2,
+  MapPin, Briefcase, Eye, Mic,
+  Plus, Trash2, UserCheck,
   Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import { InterviewModal } from '@/components/InterviewModal'
 import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
-import { ApplyButton } from '@/components/jobs/ApplyButton'
+import { ApplyButton, sourceLabel } from '@/components/jobs/ApplyButton'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { resolveAvatar } from '@/lib/avatar'
@@ -31,6 +31,7 @@ interface ProcessedResume {
   location: string
   description: string
   applyUrl: string
+  source?: string
   salary?: string | null
   createdAt: string
   optimizedData: OptimizedResumeData
@@ -41,43 +42,87 @@ interface RawSavedResume {
   job_id: string | null
   optimized_text: string
   created_at: string
-  jobs: { title: string; company: string; location: string; description: string; url: string; salary?: string } | null
+  jobs: { title: string; company: string; location: string; description: string; url: string; salary?: string; source?: string } | null
 }
 
 function parseRaw(r: RawSavedResume): ProcessedResume {
   return {
     id: r.id,
     jobId: r.job_id ?? '',
-    jobTitle: r.jobs?.title ?? (r.job_id ? 'Unknown Job' : 'General Improvement'),
+    jobTitle: r.jobs?.title ?? 'Optimized Resume',
     company: r.jobs?.company ?? '',
     location: r.jobs?.location ?? '',
     description: r.jobs?.description ?? '',
     applyUrl: r.jobs?.url ?? '',
+    source: r.jobs?.source,
     salary: r.jobs?.salary,
     createdAt: r.created_at,
     optimizedData: JSON.parse(r.optimized_text) as OptimizedResumeData,
   }
 }
 
+function extractExperience(description: string, title?: string): string | null {
+  if (description) {
+    const rangeMatch = description.match(/(\d+)\s*[-–to]+\s*(\d+)\s*(?:years?|yrs?)/i)
+    if (rangeMatch) return `${rangeMatch[1]}–${rangeMatch[2]} yrs`
+    const plusMatch = description.match(/(\d+)\+\s*(?:years?|yrs?)/i)
+    if (plusMatch) return `${plusMatch[1]}+ yrs`
+    const minMatch = description.match(/(?:minimum|at\s*least|min\.?)\s*(\d+)\s*(?:years?|yrs?)/i)
+    if (minMatch) return `${minMatch[1]}+ yrs`
+    const singleMatch = description.match(/(\d+)\s*(?:years?|yrs?)\s*(?:of\s*)?(?:exp|experience)/i)
+    if (singleMatch) return `${singleMatch[1]} yrs`
+  }
+  if (title) {
+    const t = title.toLowerCase()
+    if (/\barchitect\b/.test(t)) return '10+ yrs'
+    if (/\b(vp|vice\s*president|director)\b/.test(t)) return '10+ yrs'
+    if (/\b(manager|head\s*of)\b/.test(t)) return '8+ yrs'
+    if (/\b(lead|principal|staff)\b/.test(t)) return '7+ yrs'
+    if (/\b(senior|sr\.?)\b/.test(t)) return '5+ yrs'
+    if (/\b(associate|mid[-\s]?level)\b/.test(t)) return '2–5 yrs'
+    if (/\b(junior|jr\.?|entry[-\s]?level|fresher|trainee|graduate)\b/.test(t)) return '0–2 yrs'
+  }
+  return null
+}
+
+function extractJobType(text: string): string {
+  const t = text.toLowerCase()
+  if (/\bcontract\b|\bfreelance\b|\bcontractor\b/.test(t)) return 'Contract'
+  if (/\bpart[-\s]?time\b/.test(t)) return 'Part-time'
+  return 'Full-time'
+}
+
+function formatOptimizationNote(note: string) {
+  return note.trim().replace(/^[•\-\s]+/, '').replace(/[.。]+$/, '')
+}
+
+function keywordEnhancement(keyword: string) {
+  return `Strengthened ${keyword} positioning`
+}
+
 // ── ATS Score Ring ────────────────────────────────────────────────────────────
 
-function ATSScoreRing({ score }: { score: number }) {
-  const r      = 36
+function ATSScoreRing({ score, originalScore }: { score: number; originalScore?: number | null }) {
+  const r      = 28
   const circ   = 2 * Math.PI * r
   const filled = (score / 100) * circ
-  const color  = score >= 80 ? '#16A34A' : score >= 60 ? '#2563EB' : '#D97706'
-  const label  = score >= 80 ? 'Strong Match' : score >= 60 ? 'Good Match' : 'Fair Match'
+
+  const ringColor = score >= 80 ? '#16A34A' : score >= 60 ? '#2563EB' : score >= 20 ? '#D97706' : '#9CA3AF'
+  const tierLabel = score >= 80 ? 'Strong Match' : score >= 60 ? 'Good Match' : score >= 20 ? 'Fair Match' : 'Weak'
+  const tierColor = score >= 80 ? 'text-green-600 dark:text-green-500' : score >= 60 ? 'text-blue-600 dark:text-blue-400' : score >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'
+  const hasImproved = originalScore != null && originalScore < score
 
   const animated     = useAnimate()
   const displayScore = useCountUp(score, 900)
 
   return (
-    <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-      <div className="relative w-[84px] h-[84px] flex items-center justify-center">
-        <svg width="84" height="84" viewBox="0 0 84 84" className="-rotate-90 absolute inset-0">
-          <circle cx="42" cy="42" r={r} fill="none" stroke="#F1F5F9" strokeWidth="7" />
-          <circle cx="42" cy="42" r={r} fill="none" stroke={color} strokeWidth="7"
-            strokeLinecap="round"
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-[64px] h-[64px] flex items-center justify-center">
+        <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90 absolute inset-0">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="#F1F5F9" strokeWidth="4.5" className="dark:stroke-[#334155]" />
+          <circle
+            cx="32" cy="32" r={r}
+            fill="none" stroke={ringColor} strokeWidth="4.5" strokeLinecap="round"
             style={{
               strokeDasharray: circ,
               strokeDashoffset: animated ? circ - filled : circ,
@@ -86,11 +131,14 @@ function ATSScoreRing({ score }: { score: number }) {
           />
         </svg>
         <div className="relative z-10 text-center">
-          <div className="text-[22px] font-black leading-none" style={{ color }}>{displayScore}</div>
-          <div className="text-[8px] font-bold tracking-[0.08em] uppercase text-gray-400 dark:text-slate-500 mt-0.5">Score</div>
+          <div className="text-[19px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-none">{displayScore}</div>
         </div>
       </div>
-      <span className="text-[11px] font-bold text-center" style={{ color }}>{label}</span>
+      <span className={`text-[10px] font-bold ${tierColor} leading-tight text-center`}>{tierLabel}</span>
+      {hasImproved
+        ? <span className="text-[9px] font-semibold text-green-500 dark:text-green-400 text-center leading-tight">↑ {originalScore} → {score}</span>
+        : <span className="text-[9px] text-gray-400 dark:text-slate-500 text-center leading-tight">ATS Score</span>
+      }
     </div>
   )
 }
@@ -99,7 +147,6 @@ function ATSScoreRing({ score }: { score: number }) {
 
 function OptimizedJobCard({
   resume,
-  isActive,
   saved,
   saving,
   onViewResume,
@@ -109,7 +156,6 @@ function OptimizedJobCard({
   onInterview,
 }: {
   resume: ProcessedResume
-  isActive: boolean
   saved: boolean
   saving: boolean
   onViewResume: () => void
@@ -119,217 +165,179 @@ function OptimizedJobCard({
   onInterview?: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const { optimizedData: d, jobTitle, company, location, description, applyUrl, createdAt } = resume
-  const tags     = (d.matched_keywords ?? []).slice(0, 5)
-  const extraTags = Math.max(0, (d.matched_keywords?.length ?? 0) - 5)
-  const savedDate = new Date(createdAt).toLocaleString('en-US', {
-    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
+  const { optimizedData: d, jobTitle, company, location, applyUrl, source } = resume
+  const optimizationReasons = (d.improvements?.length
+    ? d.improvements.map((item) => formatOptimizationNote(item.note))
+    : (d.matched_keywords ?? []).map(keywordEnhancement)
+  ).filter(Boolean).slice(0, 4)
+  const contextTags = (d.matched_keywords ?? []).slice(0, 3)
+  const extraContextTags = Math.max(0, (d.matched_keywords?.length ?? 0) - 3)
+  const expLabel = extractExperience(resume.description || '', jobTitle)
+  const jobType = extractJobType(resume.description || '')
+  const src = sourceLabel(source)
+
+  const primaryBtn   = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-[11px] font-semibold transition-all hover:shadow-sm active:scale-[0.99]'
+  const secondaryBtn = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-500 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-all'
 
   return (
-    <div className="relative bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm hover:shadow-md transition-all duration-200 p-4 sm:p-6">
+    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm hover:-translate-y-[2px] hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] dark:hover:shadow-[0_6px_24px_rgba(0,0,0,0.35)] transition-all duration-200 ease-out p-4 sm:p-5">
 
-      {/* Mobile: score and improvement first */}
-      <div className="sm:hidden mb-5 pt-1">
-        {onToggleSave && (
-          <button
-            onClick={onToggleSave}
-            disabled={saving}
-            title={saved ? 'Remove from tracker' : 'Save to tracker'}
-            className="absolute right-4 top-4 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors disabled:opacity-50"
-          >
-            {saving
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : saved
-              ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400 transition-colors" />
-              : <Bookmark className="w-4 h-4" />}
-          </button>
-        )}
-        <div className="flex w-full flex-col items-center gap-2">
-          <ATSScoreRing score={d.ats_score} />
-          {d.original_score != null && d.original_score < d.ats_score && (
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-[10px] font-semibold text-green-500 dark:text-green-400">Improved from previous score</span>
-              <div className="flex items-center gap-1.5 text-[11px]">
-                <span className="text-gray-400 dark:text-slate-500">Previous: <span className="font-bold">{d.original_score}</span></span>
-                <span className="text-green-500 font-black">→ {d.ats_score}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <div className="flex gap-4">
 
-      {/* Top row: meta + score ring + bookmark */}
-      <div className="flex gap-6">
+        {/* ── MAIN CONTENT ──────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-[17px] text-[#0F172A] dark:text-[#F1F5F9] leading-snug mb-1.5">{jobTitle}</h3>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-400 dark:text-slate-500 mb-3">
-            <span className="font-semibold text-gray-600 dark:text-slate-300 flex items-center gap-1">
-              <Building2 className="w-3 h-3 text-gray-400 dark:text-slate-500" />{company}
-            </span>
-            {location && <>
-              <span className="text-gray-200 dark:text-slate-700">·</span>
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{location}</span>
-            </>}
-            <span className="text-gray-200 dark:text-slate-700">·</span>
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Posted recently</span>
-            <span className="text-gray-200 dark:text-slate-700">·</span>
-            <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />Full-time</span>
-          </div>
-          {description && (
-            <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed line-clamp-2 mb-4">
-              {description}
-            </p>
-          )}
-        </div>
-        <div className="hidden sm:flex flex-shrink-0 flex-col items-center gap-2 pt-1">
-          {onToggleSave && (
-            <button
-              onClick={onToggleSave}
-              disabled={saving}
-              title={saved ? 'Remove from tracker' : 'Save to tracker'}
-              className="self-end text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors disabled:opacity-50"
-            >
-              {saving
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : saved
-                ? <BookmarkCheck className="w-4 h-4 text-[#2563EB] hover:text-red-400 transition-colors" />
-                : <Bookmark className="w-4 h-4" />}
-            </button>
-          )}
-          <ATSScoreRing score={d.ats_score} />
-          {d.original_score != null && d.original_score < d.ats_score && (
-            <div className="flex flex-col items-center gap-1 mt-1.5">
-              <span className="text-[10px] font-semibold text-green-500 dark:text-green-400">Improved from previous score</span>
-              <div className="flex items-center gap-1.5 text-[11px]">
-                <span className="text-gray-400 dark:text-slate-500">Previous: <span className="font-bold">{d.original_score}</span></span>
-                <span className="text-green-500 font-black">→ {d.ats_score}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Key focus tags */}
-      {tags.length > 0 && (
-        <div className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">Key Focus Areas</p>
-          <div className="flex flex-wrap gap-1.5">
-            {tags.map((tag, i) => (
-              <span key={i} className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#263549] text-gray-600 dark:text-slate-400">
-                {tag}
-              </span>
-            ))}
-            {extraTags > 0 && (
-              <span className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#263549] text-gray-400 dark:text-slate-500">
-                +{extraTags} more
+          {/* Job title */}
+          <h3 className="font-bold text-[16px] sm:text-[17px] leading-snug text-[#0F172A] dark:text-[#F1F5F9] mb-1">
+            {jobTitle}
+          </h3>
+
+          {/* Meta row */}
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[12px] text-gray-400 dark:text-slate-500 mb-3">
+            {company && (
+              <span className="font-semibold text-gray-600 dark:text-slate-300 flex items-center gap-1">
+                <Building2 className="w-3 h-3 text-gray-400 dark:text-slate-500 flex-shrink-0" />{company}
               </span>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom: timestamp + actions */}
-      <div className="flex items-center justify-between pt-4 border-t border-[#F1F5F9] dark:border-[#334155] flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Calendar className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
-          <span className="text-[12px] text-gray-400 dark:text-slate-500">Saved on {savedDate}</span>
-          {isActive && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400">
-              Active (Latest)
+            {location && (
+              <>
+                {company && <span className="text-gray-200 dark:text-slate-700">·</span>}
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3 h-3 flex-shrink-0" />{location}
+                </span>
+              </>
+            )}
+            {(company || location) && <span className="text-gray-200 dark:text-slate-700">·</span>}
+            <span className="flex items-center gap-1">
+              <Briefcase className="w-3 h-3 flex-shrink-0" />{jobType}
             </span>
-          )}
-        </div>
+            {expLabel && (
+              <>
+                <span className="text-gray-200 dark:text-slate-700">·</span>
+                <span className="flex items-center gap-1">
+                  <UserCheck className="w-3 h-3 flex-shrink-0 text-gray-300 dark:text-slate-600" />{expLabel}
+                </span>
+              </>
+            )}
+            {resume.salary && (
+              <>
+                <span className="text-gray-200 dark:text-slate-700">·</span>
+                <span className="font-medium text-gray-500 dark:text-slate-400">{resume.salary}</span>
+              </>
+            )}
+          </div>
 
-        {confirmDelete ? (
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <span className="text-[12px] text-red-500 dark:text-red-400">Delete this resume?</span>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
-              >
-                Cancel
-              </button>
+          {/* ── What was improved for this role ──────────────────── */}
+          {optimizationReasons.length > 0 && (
+            <div className="mb-3">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 dark:text-slate-500">
+                What was improved for this role
+              </p>
+              <div className="space-y-0.5">
+                {optimizationReasons.map((reason) => (
+                  <div key={reason} className="flex items-start gap-1.5">
+                    <span className="text-green-500 dark:text-green-400 text-[11px] leading-[1.6] flex-shrink-0 mt-px">✔</span>
+                    <span className="text-[12px] text-gray-600 dark:text-slate-300 leading-[1.6]">{reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Lightweight context tags ────────────────────────── */}
+          {contextTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 mb-4">
+              {contextTags.map((tag: string, i: number) => (
+                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-md border border-slate-200 dark:border-[#334155] text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-[#263549]/50 cursor-default select-none">
+                  {tag}
+                </span>
+              ))}
+              {extraContextTags > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md border border-[#E5E7EB] dark:border-[#334155] text-[10px] font-medium text-gray-400 dark:text-slate-500 cursor-default select-none">
+                  +{extraContextTags} more
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Button row */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[12px] text-red-500 dark:text-red-400">Delete this resume?</span>
+              <button onClick={() => setConfirmDelete(false)} className={secondaryBtn}>Cancel</button>
               <button
                 onClick={() => { setConfirmDelete(false); onDelete() }}
-                className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[12px] font-bold transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-bold transition-colors"
               >
                 Yes, delete
               </button>
             </div>
-          </div>
-        ) : (
-          <>
-          <div className="grid w-full grid-cols-3 gap-2 sm:hidden">
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="justify-self-start p-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              title="Delete optimized resume"
-              aria-label="Delete optimized resume"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={onViewResume} className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
-              <Eye className="w-3.5 h-3.5 shrink-0" /><span className="truncate">View Resume</span>
-            </button>
-            <button onClick={onDownload} className="flex min-w-0 items-center justify-center gap-1 px-2 py-2 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
-              <Download className="w-3.5 h-3.5 shrink-0" /><span className="truncate">Download</span>
-            </button>
+          ) : (
+            <div className="flex items-center flex-wrap gap-2">
+              {onInterview && (
+                <button onClick={onInterview} className={primaryBtn}>
+                  <Mic className="w-3 h-3" />Prepare For This Interview
+                </button>
+              )}
+              <button onClick={onViewResume} className={secondaryBtn}>
+                <Eye className="w-3.5 h-3.5" />View Resume
+              </button>
+              <button onClick={onDownload} className={secondaryBtn}>
+                <Download className="w-3.5 h-3.5" />Download
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center p-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                title="Delete optimized resume"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── ACTION PANEL (right column) ───────────────────────── */}
+        <div className="flex flex-col flex-shrink-0 pl-4 border-l border-[#F1F5F9] dark:border-[#334155]">
+
+          {/* Bookmark — top right of panel */}
+          <div className="flex justify-end mb-2">
+            {onToggleSave ? (
+              <button
+                onClick={onToggleSave}
+                disabled={saving}
+                title={saved ? 'Remove from tracker' : 'Save to tracker'}
+                className="text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
+              >
+                {saving
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : saved
+                  ? <BookmarkCheck className="w-3.5 h-3.5 text-[#2563EB]" />
+                  : <Bookmark className="w-3.5 h-3.5" />}
+              </button>
+            ) : (
+              <div className="w-3.5 h-3.5" />
+            )}
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-2 sm:hidden">
-            {onInterview ? (
-              <button onClick={onInterview} className="flex min-w-0 items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[11px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all active:scale-100">
-                <Mic className="w-3.5 h-3.5 shrink-0" /><span className="truncate">Mock Interview</span>
-              </button>
-            ) : <div />}
-            {applyUrl && (
-              <ApplyButton
-                job={{
-                  id: resume.jobId || resume.id,
-                  title: jobTitle,
-                  company,
-                  url: applyUrl,
-                }}
-              />
-            )}
+          {/* Score ring — top aligned */}
+          <div className="flex flex-col items-center">
+            <ATSScoreRing score={d.ats_score} originalScore={d.original_score} />
           </div>
 
-          <div className="hidden sm:flex items-center gap-2">
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="p-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-red-200 dark:hover:border-red-800 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              title="Delete optimized resume"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={onViewResume} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
-              <Eye className="w-3.5 h-3.5" />View Resume
-            </button>
-            <button onClick={onDownload} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
-              <Download className="w-3.5 h-3.5" />Download
-            </button>
-            {onInterview && (
-              <button onClick={onInterview} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white text-[12px] font-semibold shadow-sm hover:opacity-90 active:opacity-100 hover:shadow-md transition-all hover:scale-[1.02] active:scale-100">
-                <Mic className="w-3.5 h-3.5" />Mock Interview
-              </button>
+          {/* Source + CTA — anchored to bottom */}
+          <div className="flex flex-col items-center gap-2 mt-auto">
+            {src && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#F1F5F9] dark:bg-[#263549] text-gray-400 dark:text-slate-500 border border-[#E5E7EB] dark:border-[#334155] whitespace-nowrap">
+                {src}
+              </span>
             )}
-            {applyUrl && (
-              <div className="w-[110px]">
-                <ApplyButton
-                  job={{
-                    id: resume.jobId || resume.id,
-                    title: jobTitle,
-                    company,
-                    url: applyUrl,
-                  }}
-                />
-              </div>
-            )}
+            <ApplyButton
+              job={{ id: resume.jobId || resume.id, title: jobTitle, company, url: applyUrl, source }}
+              variant="outline"
+            />
           </div>
-          </>
-        )}
+
+        </div>
       </div>
     </div>
   )
@@ -342,7 +350,7 @@ function OptimizerContent() {
 
   const [previewResume, setPreviewResume]   = useState<OptimizedResumeData | null>(null)
   const [interviewResume, setInterviewResume] = useState<ProcessedResume | null>(null)
-  const [downloading, setDownloading]       = useState<string | null>(null)
+  const [, setDownloading]                  = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl]           = useState<string | null>(null)
   const [savingJobId, setSavingJobId]       = useState<string | null>(null)
 
@@ -506,7 +514,6 @@ function OptimizerContent() {
               <OptimizedJobCard
                 key={resume.id}
                 resume={resume}
-                isActive={resume.id === allResumes[0].id}
                 saved={savedJobIds.has(resume.jobId)}
                 saving={savingJobId === resume.jobId}
                 onToggleSave={resume.jobId ? () => handleToggleSave(resume.jobId) : undefined}

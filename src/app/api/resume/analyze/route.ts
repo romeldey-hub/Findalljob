@@ -9,6 +9,7 @@ import { JobSourceRouter } from '@/lib/jobs/router'
 import { generateSearchStrategy } from '@/lib/jobs/strategy'
 import { createNotification } from '@/lib/notifications'
 import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
+import { buildCandidateProfile, applyAdvancedRelevanceFilter } from '@/lib/jobs/relevance'
 import type { ParsedResume, NormalizedJob } from '@/types'
 import type { RankedJob } from '@/lib/ai/reranker'
 
@@ -158,12 +159,6 @@ function candidateTerms(parsedResume: ParsedResume, searchQueries: string[]): Se
   ].filter(Boolean).join(' ')
 
   return new Set(tokenize(text))
-}
-
-// A job is relevant if at least one title word overlaps with the candidate's terms.
-// This removes clearly off-topic listings (e.g. "Truck Driver" returned for "Software Engineer").
-function titleIsRelevant(job: NormalizedJob, terms: Set<string>): boolean {
-  return tokenize(job.title).some((tok) => terms.has(tok))
 }
 
 function heuristicFit(job: NormalizedJob, terms: Set<string>): number {
@@ -465,7 +460,8 @@ export async function POST() {
           ...(strategy.competitors?.direct   ?? []),
           ...(strategy.competitors?.adjacent ?? []),
         ]
-        const competitorSet = new Set(allCompetitors.map((c) => c.toLowerCase()))
+        const competitorSet    = new Set(allCompetitors.map((c) => c.toLowerCase()))
+        const candidateProfile = buildCandidateProfile(parsedResume, searchQueries)
 
         console.log(`[PIPELINE] Queries generated: [${searchQueries.map((q) => `"${q}"`).join(', ')}]`)
         console.log(`[PIPELINE] Competitor companies: direct=[${strategy.competitors?.direct?.join(', ') ?? ''}] adjacent=[${strategy.competitors?.adjacent?.join(', ') ?? ''}]`)
@@ -601,13 +597,16 @@ export async function POST() {
           console.log(`[PIPELINE] Removed by country filter: 0 (no country detected — filter skipped)`)
         }
 
-        // ── Relevance filter — removes clearly off-topic titles by token overlap ─
-        const candidateTermSet = candidateTerms(parsedResume, searchQueries)
-        const beforeRelevance  = jobs.length
-        const relevanceKept    = jobs.filter((j) => titleIsRelevant(j, candidateTermSet))
-        const removedByRelevance = beforeRelevance - relevanceKept.length
-        jobs.splice(0, jobs.length, ...relevanceKept)
-        console.log(`[PIPELINE] Removed by relevance filter: ${removedByRelevance} → ${jobs.length} remaining`)
+        // ── Advanced relevance filter — role family + seniority + function + industry ─
+        const relevanceResult = applyAdvancedRelevanceFilter(jobs, candidateProfile, competitorSet)
+        jobs.splice(0, jobs.length, ...relevanceResult.filtered)
+        const reasonStr = Object.entries(relevanceResult.removalReasons).map(([k, v]) => `${k}=${v}`).join(', ')
+        console.log(`[PIPELINE] Advanced relevance filter: removed ${relevanceResult.removedCount} → ${jobs.length} remaining (threshold: ${relevanceResult.thresholdUsed || 'fallback'}${relevanceResult.usedFallback ? ', token-overlap fallback' : ''})`)
+        console.log(`[PIPELINE] Removal reasons: ${reasonStr || 'none'}`)
+        console.log(`[PIPELINE] Candidate profile: family=${candidateProfile.roleFamily ?? 'unknown'}, seniority=${candidateProfile.seniority}, functions=[${candidateProfile.functions.slice(0, 5).join(', ')}], industries=[${candidateProfile.industries.join(', ')}]`)
+        for (const s of relevanceResult.removedSamples.slice(0, 12)) {
+          console.log(`[RELEVANCE FILTER] Removed: ${s.title}${s.company ? ' at ' + s.company : ''} | Reason: ${s.reason}`)
+        }
 
         // ── Competitor job count (informational — does NOT affect filtering) ────
         const competitorJobsFound = jobs.filter((j) => competitorSet.has(j.company.toLowerCase()))
@@ -722,7 +721,7 @@ export async function POST() {
               job_id:           dbJobId,
               similarity_score: r.score / 100,
               ai_score:         r.score,
-              ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
+              ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', mr: r.match_reasons ?? [], ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
             }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
