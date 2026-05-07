@@ -8,7 +8,7 @@ import useSWR, { mutate as globalMutate } from 'swr'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
-  FileText, Briefcase, Wand2, Kanban, Settings,
+  FileText, Briefcase, Settings,
   LogOut, ChevronRight, Crown, Bell, HelpCircle,
   CheckCheck, Loader2, Trash2, AlertTriangle, CheckSquare, X, ShieldCheck,
 } from 'lucide-react'
@@ -242,11 +242,9 @@ function NotificationsPopup({ onClose }: { onClose: () => void }) {
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const BASE_NAV = [
-  { href: '/resume',    label: 'My Resume',   icon: FileText },
-  { href: '/matches',   label: 'Matched Jobs', icon: Briefcase },
-  { href: '/optimizer', label: 'Optimized',   icon: Wand2 },
-  { href: '/tracker',   label: 'Tracker',     icon: Kanban },
-  { href: '/settings',  label: 'Settings',    icon: Settings },
+  { href: '/resume',   label: 'My Resume',   icon: FileText },
+  { href: '/matches',  label: 'Matched Jobs', icon: Briefcase },
+  { href: '/settings', label: 'Settings',    icon: Settings },
 ]
 
 const ADMIN_NAV = { href: '/admin', label: 'Admin', icon: ShieldCheck }

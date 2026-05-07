@@ -11,6 +11,7 @@ import {
   CheckCircle2, RefreshCw,
   Bookmark, BookmarkCheck, Clock, Sparkles,
   SlidersHorizontal, ChevronDown, User, UserCheck, Mic, Lock,
+  Download, Trash2,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { track } from '@/lib/analytics'
@@ -20,6 +21,8 @@ import { InterviewModal } from '@/components/InterviewModal'
 import { ApplyButton, sourceLabel } from '@/components/jobs/ApplyButton'
 import { OptimizeFlow }    from '@/components/resume/OptimizeFlow'
 import { QuickFixesModal } from '@/components/resume/QuickFixesModal'
+import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
+import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { FREE_LIMITS } from '@/lib/limits'
@@ -237,6 +240,9 @@ function JobCard({
   initialSaved = false, initialApplicationId,
   isOptimized = false, isManual = false, isNew = false,
   animIndex = 0,
+  optimizedResumeId,
+  onViewOptimized,
+  onDeleteOptimized,
 }: {
   match: MatchRecord
   onOptimize: (id: string) => void
@@ -247,11 +253,25 @@ function JobCard({
   isManual?: boolean
   isNew?: boolean
   animIndex?: number
+  optimizedResumeId?: string
+  onViewOptimized?: () => void
+  onDeleteOptimized?: (id: string) => Promise<void>
 }) {
   const { job } = match
   const [saved, setSaved]                 = useState(initialSaved)
   const [saving, setSaving]               = useState(false)
   const [applicationId, setApplicationId] = useState<string | undefined>(initialApplicationId)
+  const [deleting, setDeleting]           = useState(false)
+
+  async function handleDeleteClick() {
+    if (!optimizedResumeId || deleting) return
+    setDeleting(true)
+    try {
+      await onDeleteOptimized?.(optimizedResumeId)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -421,11 +441,35 @@ function JobCard({
 
           {/* ── Button row ──────────────────────────────────────── */}
           <div className="flex items-center flex-wrap gap-2">
-            {/* Primary: Fix Resume For This Job */}
+            {/* Primary: Fix Resume For This Job / View Optimized Resume */}
             {isOptimized ? (
-              <a href="/optimizer" className={`${secondaryBtn} text-green-600 dark:text-green-500 border-green-200 dark:border-green-800`}>
-                <CheckCircle2 className="w-3 h-3" />View Optimized Resume
-              </a>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={onViewOptimized}
+                  className={`${secondaryBtn} text-green-600 dark:text-green-500 border-green-200 dark:border-green-800`}
+                >
+                  <CheckCircle2 className="w-3 h-3" />View Optimized Resume
+                </button>
+                {optimizedResumeId && (
+                  <>
+                    <button
+                      onClick={onViewOptimized}
+                      title="Download optimized resume"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 hover:border-[#2563EB]/40 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
+                    >
+                      <Download className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={handleDeleteClick}
+                      disabled={deleting}
+                      title="Delete optimized resume"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                    </button>
+                  </>
+                )}
+              </div>
             ) : (
               <button onClick={() => onOptimize(job.id)} className={primaryBtn}>
                 <Wand2 className="w-3 h-3" />Fix Resume For This Job
@@ -718,8 +762,9 @@ export default function MatchesPage() {
   const [showPaywall, setShowPaywall] = useState(false)
   const [sortKey, setSortKey]         = useState<'score' | 'date'>('score')
   const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
-  const [quickFixJobId, setQuickFixJobId]   = useState<string | null>(null)
-  const [optimizeJobId, setOptimizeJobId]   = useState<string | null>(null)
+  const [quickFixJobId, setQuickFixJobId]         = useState<string | null>(null)
+  const [optimizeJobId, setOptimizeJobId]         = useState<string | null>(null)
+  const [viewOptimizedJobId, setViewOptimizedJobId] = useState<string | null>(null)
   const [tierFilter, setTierFilter]         = useState<'all' | 'high' | 'medium' | 'stretch'>('all')
 
   // mode determines which list is rendered — never both simultaneously
@@ -767,13 +812,18 @@ export default function MatchesPage() {
     return map
   }, [appsData])
 
-  const optimizedJobIds = useMemo(() => {
-    const ids = new Set<string>()
+  const optimizedResumesByJobId = useMemo(() => {
+    const map = new Map<string, { id: string; data: OptimizedResumeData }>()
     for (const r of (optimizedData?.resumes ?? [])) {
-      if (r.job_id) ids.add(r.job_id)
+      if (!r.job_id || !r.optimized_text) continue
+      try {
+        map.set(r.job_id, { id: r.id, data: JSON.parse(r.optimized_text) as OptimizedResumeData })
+      } catch { /* malformed — skip */ }
     }
-    return ids
+    return map
   }, [optimizedData])
+
+  const optimizedJobIds = useMemo(() => new Set(optimizedResumesByJobId.keys()), [optimizedResumesByJobId])
 
   // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null
   const savedAiJobs: MatchRecord[] = useMemo(
@@ -1030,6 +1080,16 @@ export default function MatchesPage() {
 
   function handleInterview(match: MatchRecord) {
     setInterviewMatch(match)
+  }
+
+  async function handleDeleteOptimized(id: string) {
+    const res = await fetch(`/api/resume/optimize?id=${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      toast.error('Failed to delete optimized resume')
+      throw new Error('Delete failed')
+    }
+    toast.success('Optimized resume removed')
+    globalMutate('/api/resume/optimize')
   }
 
   // activitySteps comes from useAnalyzeProgress — driven by real SSE events + time gating
@@ -1414,8 +1474,11 @@ export default function MatchesPage() {
                 initialSaved={savedJobIds.has(match.job.id)}
                 initialApplicationId={savedJobToAppId.get(match.job.id)}
                 isOptimized={optimizedJobIds.has(match.job.id)}
+                optimizedResumeId={optimizedResumesByJobId.get(match.job.id)?.id}
                 onOptimize={handleOptimize}
                 onInterview={handleInterview}
+                onViewOptimized={() => setViewOptimizedJobId(match.job.id)}
+                onDeleteOptimized={handleDeleteOptimized}
                 animIndex={i}
               />
             ))}
@@ -1435,6 +1498,19 @@ export default function MatchesPage() {
           className="hidden xl:block w-60 flex-shrink-0"
         />
       </div>
+
+      {viewOptimizedJobId && (() => {
+        const entry = optimizedResumesByJobId.get(viewOptimizedJobId)
+        if (!entry) return null
+        return (
+          <ResumePreviewModal
+            data={entry.data}
+            onClose={() => setViewOptimizedJobId(null)}
+            heading="Optimized Resume"
+            previewSubtitle="Resume tailored for this specific job."
+          />
+        )
+      })()}
 
       {showPaywall && profileData?.plan !== 'pro' && <PaywallModal onClose={() => setShowPaywall(false)} />}
 
