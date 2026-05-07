@@ -20,7 +20,6 @@ import { PaywallModal } from '@/components/PaywallModal'
 import { InterviewModal } from '@/components/InterviewModal'
 import { ApplyButton, sourceLabel } from '@/components/jobs/ApplyButton'
 import { OptimizeFlow }    from '@/components/resume/OptimizeFlow'
-import { QuickFixesModal } from '@/components/resume/QuickFixesModal'
 import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
@@ -762,7 +761,6 @@ export default function MatchesPage() {
   const [showPaywall, setShowPaywall] = useState(false)
   const [sortKey, setSortKey]         = useState<'score' | 'date'>('score')
   const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
-  const [quickFixJobId, setQuickFixJobId]         = useState<string | null>(null)
   const [optimizeJobId, setOptimizeJobId]         = useState<string | null>(null)
   const [viewOptimizedJobId, setViewOptimizedJobId] = useState<string | null>(null)
   const [tierFilter, setTierFilter]         = useState<'all' | 'high' | 'medium' | 'stretch'>('all')
@@ -1075,7 +1073,7 @@ export default function MatchesPage() {
   function handleOptimize(jobId: string) {
     const isPro = profileData?.plan === 'pro'
     if (!isPro) { setShowPaywall(true); return }
-    setQuickFixJobId(jobId)
+    setOptimizeJobId(jobId)
   }
 
   function handleInterview(match: MatchRecord) {
@@ -1514,25 +1512,12 @@ export default function MatchesPage() {
 
       {showPaywall && profileData?.plan !== 'pro' && <PaywallModal onClose={() => setShowPaywall(false)} />}
 
-      {quickFixJobId && (() => {
-        const qMatch = jobsToDisplay.find(m => m.job.id === quickFixJobId)
-        return (
-          <QuickFixesModal
-            jobId={quickFixJobId}
-            jobTitle={qMatch?.job.title}
-            company={qMatch?.job.company}
-            onClose={() => setQuickFixJobId(null)}
-            onApplyFull={() => { setQuickFixJobId(null); setOptimizeJobId(quickFixJobId) }}
-          />
-        )
-      })()}
-
       {optimizeJobId && (
         <OptimizeFlow
           mode="job"
           jobId={optimizeJobId}
-          redirectTo="/optimizer"
           onClose={() => setOptimizeJobId(null)}
+          onSaved={() => globalMutate('/api/resume/optimize')}
         />
       )}
 

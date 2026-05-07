@@ -621,7 +621,7 @@ export async function optimizeResume(
   const originalSkillCount = countSkills(resumeText)
 
   function buildPrompt(structureLock: string, retryContext?: string): string {
-    return `You are acting as a senior hiring manager and ATS specialist tailoring this candidate's resume for a specific job. Your goal is to UPGRADE it for maximum relevance to this role — without losing a single piece of information.
+    return `You are an expert resume strategist and ATS specialist. Your task: analyze the job description, analyze the candidate's resume, classify fit vs gaps honestly, then rewrite the resume to maximize relevance to this specific role — without sacrificing truthfulness or fabricating anything.
 
 ${retryContext ?? ''}
 ${structureLock}
@@ -630,51 +630,72 @@ ${structureLock}
 Job Title: ${jobTitle}
 Company: ${company}
 ${originalScore > 0 ? `Current ATS Match Score: ${originalScore}/100\n` : ''}
-━━━ JOB DESCRIPTION (first 4000 chars) ━━━
+━━━ JOB DESCRIPTION ━━━
 ${jobDescription.slice(0, 4000)}
 
 ━━━ CANDIDATE'S RESUME ━━━
 ${resumeText.slice(0, 8000)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 
-━━━ YOUR ENHANCEMENT MANDATE ━━━
+━━━ PHASE 1 — JOB REQUIREMENTS ANALYSIS ━━━
+Internally identify from the JD:
+• Seniority level (Junior / Mid / Senior / Lead / Principal / Director)
+• Required skills — must-have for this role
+• Preferred skills — nice-to-have
+• Tools, technologies, frameworks, platforms named
+• Key responsibilities and deliverables
+• Industry/domain terminology and ATS search keywords
 
-STEP 1 — PRESERVE EVERYTHING (MANDATORY):
-• Keep ALL companies, job titles, dates, and locations exactly as written
-• Keep ALL bullet points — every single one must appear in enhanced form
-• Keep ALL skills — expand the list, never shrink it
-• Keep ALL certifications, education, and contact details
-• Keep ALL tools, technologies, platforms, and product names mentioned
+━━━ PHASE 2 — CANDIDATE PROFILE EXTRACTION ━━━
+Internally note from the resume:
+• Core skills and demonstrated expertise
+• Work history: companies, titles, tenures, quantified achievements
+• Projects and deliverables mentioned
+• Education, certifications
+• Tools and technologies already in use
+• Transferable skills that bridge to the target role
 
-STEP 2 — JOB-TARGETED PROFESSIONAL SUMMARY:
-• Rewrite to directly address the target role and company
-• Mirror 3–5 key phrases directly from the job description
-• Position the candidate as the ideal fit for THIS specific role
-• 3–4 sentences, senior and confident in tone
+━━━ PHASE 3 — HONEST GAP CLASSIFICATION ━━━
+For each JD requirement, classify internally as:
+A. PRESENT — clearly demonstrated in the resume; amplify it
+B. TRANSFERABLE — adjacent skill exists; reframe to make the connection explicit
+C. MISSING — genuinely absent; DO NOT add, imply, or fabricate
 
-STEP 3 — EXPERIENCE BULLETS (most important):
-For EVERY bullet in EVERY role:
-• Keep the original fact intact — enhance the language and add business impact
-• Reframe bullets to emphasise skills and outcomes the JD values most
-• Inject relevant JD keywords naturally where they fit the candidate's real experience
-• Start with a strong action verb (Led, Built, Spearheaded, Delivered, Scaled, Architected, Optimized, Drove, Implemented, Launched)
-• If no metric exists, add scope or context relevant to the target role
-• NEVER fabricate specific numbers (%, revenue, headcount) not in the original
+━━━ PHASE 4 — INTELLIGENT REWRITE RULES ━━━
+
+TRUTHFULNESS (ABSOLUTE — never violate):
+• NEVER invent companies, roles, job titles, dates, degrees, certifications, or tools
+• NEVER add specific numbers (%, revenue, headcount, team size) not in the original
+• NEVER claim knowledge or skills the candidate has not demonstrated
+• ONLY strengthen what is transferable or already present — never fabricate gaps away
+
+PROFESSIONAL SUMMARY:
+• Rewrite to directly target this role and mirror 3–5 key JD phrases
+• Position the candidate as the ideal fit based on their REAL experience
+• 3–4 sentences, confident and senior in tone
+
+EXPERIENCE BULLETS (most important):
+• Preserve ALL bullets — enhance every one, delete none
+• Reframe bullets to highlight outcomes and skills the JD values most
+• Add job-specific keywords naturally where they honestly fit the experience
+• Start each bullet with a strong action verb
+• Add scope or context to vague bullets; only add measurable impact when logically supported
+• NEVER fabricate specific metrics not in the original
 
 BULLET UPGRADE EXAMPLES:
-❌ "Managed client accounts" → ✅ "Managed a portfolio of enterprise client accounts, serving as the primary point of contact for escalations, renewals, and solution expansion discussions"
+❌ "Managed client accounts" → ✅ "Managed portfolio of enterprise client accounts, serving as primary contact for escalations, renewals, and solution expansion"
 ❌ "Built reports in Excel" → ✅ "Built analytical dashboards and automated reporting pipelines in Excel, enabling data-driven decisions for cross-functional stakeholders"
 ❌ "Worked on GTM strategy" → ✅ "Contributed to go-to-market strategy development including competitive positioning, channel enablement, and sales collateral aligned with enterprise buyer journeys"
 
-STEP 4 — SKILLS SECTION:
-• Move skills most relevant to the JD to the top
-• Add skills mentioned in the JD that the candidate demonstrably has (inferred from experience)
-• Keep every original skill — do not remove any
-• Aim for 15–25 total skills
+SKILLS SECTION:
+• Reorder: put JD-relevant skills first
+• Add skills inferred from actual experience (transferable, class B above)
+• Keep ALL original skills — never remove any
+• Target 15–25 total skills
 
-STEP 5 — ATS KEYWORD OPTIMIZATION:
-• Inject the JD's most important keywords into summary and bullets naturally
-• Ensure keyword density is high enough to pass ATS without feeling stuffed
+ATS KEYWORDS:
+• Inject the JD's most critical keywords into summary and bullets naturally
+• Ensure keyword density passes ATS without feeling stuffed
 
 ━━━ SCORING ━━━
 • ats_score: 0–100 honest ATS fitness score for the UPGRADED resume against this JD

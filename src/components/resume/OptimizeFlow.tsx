@@ -14,9 +14,10 @@ type Props = {
   avatarUrl?: string | null
   onClose: () => void
   redirectTo?: string
+  onSaved?: () => void
 }
 
-export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Props) {
+export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSaved }: Props) {
   const router = useRouter()
   const [step, setStep]         = useState(1)
   const [error, setError]       = useState<string | null>(null)
@@ -100,11 +101,11 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
         toast.error(saveData.error ?? 'Failed to save. Please try again.')
         return
       }
-      toast.success(mode === 'general' ? 'Resume improved! Re-analyzing your matches…' : 'Resume optimized! Re-analyzing your matches…')
-      // Clear the guard so the matches page auto-triggers a fresh analysis with the updated resume
+      toast.success(mode === 'general' ? 'Resume improved! Re-analyzing your matches…' : 'Resume optimized for this job!')
       if (typeof window !== 'undefined') localStorage.removeItem('lastAnalyzedAt')
+      onSaved?.()
       onClose()
-      router.push(redirectTo ?? '/matches')
+      if (mode === 'general') router.push(redirectTo ?? '/matches')
     } catch {
       toast.error('Something went wrong. Please try again.')
     } finally {
@@ -120,15 +121,15 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo }: Pr
     <ResumePreviewModal
       data={result}
       onClose={onClose}
-      onApprove={() => handleApprove()}
       onSaveEdits={handleApprove}
       isSaving={isSaving}
       avatarUrl={avatarUrl}
-      heading={isJob ? 'Preview Optimized Resume' : 'Preview Improved Resume'}
+      heading={isJob ? 'Optimized Resume for This Job' : 'Preview Improved Resume'}
       previewSubtitle={isJob
-        ? 'Review the AI-optimized version of your resume for this job.'
+        ? 'Review and edit your AI-optimized resume before saving.'
         : 'Enhancing clarity, impact, and ATS performance'}
-      approveLabel={isJob ? 'Approve & Save' : 'Accept & Done'}
+      startInEditMode={isJob}
+      {...(!isJob && { onApprove: () => handleApprove(), approveLabel: 'Accept & Done' })}
     />
   ) : (
     <ProgressModal
