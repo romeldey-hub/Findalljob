@@ -3,6 +3,7 @@ import { ResumeUploadZone } from '@/components/resume/ResumeUploadZone'
 import { VisualResumeCard } from '@/components/resume/VisualResumeCard'
 import { InsightsPanel } from '@/components/resume/InsightsPanel'
 import { ReanalyzeButton } from '@/components/resume/ReanalyzeButton'
+import { CreateResumeWithAI } from '@/components/resume/CreateResumeWithAI'
 import { FileText, Sparkles, RefreshCw } from 'lucide-react'
 import type { ParsedResume, Resume } from '@/types'
 import { resolveAvatar } from '@/lib/avatar'
@@ -130,8 +131,9 @@ export default async function ResumePage() {
           </div>
           <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">No resume uploaded yet</p>
           <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
-            Upload your resume above to get AI-matched job listings.
+            Upload your resume above, or let AI build one for you in 2 minutes.
           </p>
+          <CreateResumeWithAI avatarUrl={avatarUrl} />
         </div>
       )}
 

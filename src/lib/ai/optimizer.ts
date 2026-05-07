@@ -1,4 +1,5 @@
 import { callClaudeJSON } from './claude'
+import type { ResumeSection } from '@/types'
 
 export interface ResumeImprovement {
   section: 'summary' | 'experience' | 'skills' | 'education'
@@ -40,7 +41,7 @@ export interface OptimizedResumeData {
    * Every non-standard section from the original resume (Languages, Personal Details,
    * Hobbies, Declaration, etc.) output here — never merged into other fields.
    */
-  additionalSections?: Array<{ title: string; content: string }>
+  additionalSections?: ResumeSection[]
 
   // ── ATS metadata ──────────────────────────────────────────────────────────────
   ats_score: number

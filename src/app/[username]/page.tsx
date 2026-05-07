@@ -5,7 +5,8 @@ import {
   Download, CheckCircle2, Sparkles, Globe, Lock, Phone,
 } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/server'
-import type { ParsedResume, ResumeExperience } from '@/types'
+import type { ParsedResume, ResumeExperience, ResumeSection } from '@/types'
+import { FileText } from 'lucide-react'
 import { ShareButton } from '@/components/profile/ShareButton'
 import { ReadMoreText } from '@/components/profile/ReadMoreText'
 import { LogoMark } from '@/components/LogoMark'
@@ -261,7 +262,15 @@ export default async function PublicProfilePage(
         <nav className="bg-white dark:bg-[#0F172A] border-b border-[#E5E7EB] dark:border-[#1E293B] px-4 py-2.5">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
             <LogoMark href="/" size="sm" onDark={false} />
-            <ProfileThemeToggle />
+            <div className="flex items-center gap-2">
+              <ProfileThemeToggle />
+              <a
+                href="/signup"
+                className="text-[12px] font-semibold text-[#2563EB] hover:text-blue-700 transition-colors"
+              >
+                Create your profile →
+              </a>
+            </div>
           </div>
         </nav>
         <div className="flex-1 flex items-center justify-center px-4">
@@ -300,9 +309,31 @@ export default async function PublicProfilePage(
   const certifications = pd?.certifications ?? []
   const linkedin       = pd?.linkedin      || ''
 
+  const STRUCTURED_TITLES = new Set([
+    'summary', 'professional summary', 'profile', 'objective', 'about',
+    'experience', 'work experience', 'employment', 'career history',
+    'skills', 'core competencies', 'key skills', 'technical skills',
+    'education', 'academic', 'qualifications',
+    'certifications', 'certificates', 'credentials', 'licenses',
+  ])
+  const customSections: ResumeSection[] = (pd?.sections ?? []).filter(
+    s => !STRUCTURED_TITLES.has(s.title.trim().toLowerCase())
+  )
+
   const showEmail    = Boolean(profileRow.show_email    && email)
   const showPhone    = Boolean(profileRow.show_phone    && phone)
   const showDownload = Boolean(profileRow.show_resume_download && resumeRow?.file_url)
+
+  // Pre-filled mailto for recruiters
+  const firstName  = name.split(' ')[0]
+  const roleLabel  = currentTitle || 'your field'
+  const mailtoHref = showEmail
+    ? `mailto:${email}?subject=${encodeURIComponent(
+        'Opportunity discussion via FindAllJob profile'
+      )}&body=${encodeURIComponent(
+        `Hi ${firstName},\n\nI came across your FindAllJob profile and would like to connect regarding a possible opportunity.\n\nYour experience in ${roleLabel} looks relevant to what we are exploring.\n\nCould we schedule a quick conversation?\n\nRegards,`
+      )}`
+    : null
 
   function resolveUrl(raw: string | null | undefined): string {
     if (!raw) return ''
@@ -331,13 +362,13 @@ export default async function PublicProfilePage(
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <LogoMark href="/" size="sm" onDark={false} />
           <div className="flex items-center gap-2">
+            <ProfileThemeToggle />
             <a
               href="/signup"
               className="text-[12px] font-semibold text-[#2563EB] hover:text-blue-700 transition-colors"
             >
               Create your profile →
             </a>
-            <ProfileThemeToggle />
           </div>
         </div>
       </nav>
@@ -458,19 +489,28 @@ export default async function PublicProfilePage(
                 <div className="flex flex-col items-center justify-between flex-shrink-0">
                   <ProfileScoreRing score={profileScore} />
 
-                  <div className="flex flex-row flex-wrap gap-2 justify-center">
-                    {showEmail && (
+                  <div className="flex flex-col items-center gap-2">
+                    {mailtoHref ? (
                       <a
-                        href={`mailto:${email}`}
-                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#2563EB] text-white text-[12px] font-semibold hover:bg-blue-700 transition-colors"
+                        href={mailtoHref}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#2563EB] text-white text-[12px] font-semibold hover:bg-blue-700 transition-colors w-full"
                       >
                         <Mail className="w-3.5 h-3.5" />Contact
                       </a>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/30 text-[12px] font-semibold cursor-not-allowed w-full">
+                          <Mail className="w-3.5 h-3.5" />Contact
+                        </span>
+                        <p className="text-[10px] text-white/30 text-center leading-snug max-w-[130px]">
+                          Email contact not enabled
+                        </p>
+                      </div>
                     )}
                     {showDownload && (
                       <a
                         href={`/api/profile/${username}/pdf`}
-                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-white/20 text-white text-[12px] font-medium hover:bg-white/10 transition-colors"
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-white/20 text-white text-[12px] font-medium hover:bg-white/10 transition-colors w-full"
                       >
                         <Download className="w-3.5 h-3.5" />Download CV
                       </a>
@@ -621,6 +661,41 @@ export default async function PublicProfilePage(
           </Card>
         )}
 
+        {/* Custom / Additional Sections (Languages, Awards, Interests, etc.) */}
+        {customSections.length > 0 && customSections.map((section, i) => (
+          <Card key={i}>
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="w-4 h-4 text-[#2563EB] flex-shrink-0" />
+              <h2 className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#0F172A] dark:text-[#F1F5F9]">
+                {section.title}
+              </h2>
+              <div className="flex-1 h-px bg-[#E5E7EB] dark:bg-[#334155]" />
+            </div>
+            {(section.type === 'bullets') && (section.items?.length ?? 0) > 0 ? (
+              <ul className="space-y-1.5">
+                {section.items!.map((item, j) => (
+                  <li key={j} className="flex gap-2.5 text-[13px] text-gray-600 dark:text-slate-400 leading-relaxed">
+                    <span className="text-[#2563EB] mt-1 flex-shrink-0 leading-none text-[10px]">▸</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : (section.type === 'keyvalue') && (section.pairs?.length ?? 0) > 0 ? (
+              <div className="space-y-2">
+                {section.pairs!.map((pair, j) => (
+                  <div key={j} className="flex items-baseline gap-3 text-[13px]">
+                    <span className="font-semibold text-[#0F172A] dark:text-[#F1F5F9] min-w-[110px] flex-shrink-0">{pair.key}</span>
+                    <span className="text-gray-300 dark:text-slate-600 flex-shrink-0">:</span>
+                    <span className="text-gray-600 dark:text-slate-400 leading-relaxed">{pair.value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[13px] text-gray-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">{section.content}</p>
+            )}
+          </Card>
+        ))}
+
         {/* AI Match Insights */}
         {(aiRoles.length > 0 || aiIndustries.length > 0) && (
           <Card>
@@ -683,9 +758,9 @@ export default async function PublicProfilePage(
               title="Contact"
             />
             <div className="flex flex-wrap gap-4">
-              {showEmail && (
+              {showEmail && mailtoHref && (
                 <a
-                  href={`mailto:${email}`}
+                  href={mailtoHref}
                   className="flex items-center gap-2 text-[13px] text-gray-600 dark:text-slate-400 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
                 >
                   <Mail className="w-4 h-4 text-[#2563EB]" />

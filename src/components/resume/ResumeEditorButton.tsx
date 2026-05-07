@@ -58,6 +58,14 @@ function toParsed(opt: OptimizedResumeData, original: ParsedResume): ParsedResum
     skills:         opt.skills,
     education:      opt.education,
     certifications: opt.certifications,
+    // Preserve custom/additional sections from the editor back into parsed sections
+    sections: opt.additionalSections?.map(s => ({
+      title:   s.title,
+      content: s.content,
+      type:    s.type,
+      items:   s.items,
+      pairs:   s.pairs,
+    })),
   }
 }
 

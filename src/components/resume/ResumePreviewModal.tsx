@@ -1,12 +1,54 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Loader2, Download, X, CheckCircle2, FileText, Plus, Check,
-  Briefcase, GraduationCap, Sparkles,
+  Briefcase, GraduationCap, Sparkles, Wand2, BriefcaseBusiness,
+  ChevronUp, ChevronDown, Trash2, AlignLeft, List, Table2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
+import type { ResumeSection } from '@/types'
+
+// ── Inline AI assist helper ───────────────────────────────────────────────────
+
+type AIAction = 'improve' | 'shorten' | 'strengthen' | 'add_bullet'
+
+async function aiAssist(action: AIAction, text: string, context?: string): Promise<string> {
+  const res = await fetch('/api/resume/ai-assist', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ action, text, context }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? 'AI assist failed')
+  return data.result as string
+}
+
+// ── Small AI action buttons ───────────────────────────────────────────────────
+
+function AIBtn({
+  label,
+  loading,
+  onClick,
+}: {
+  label:   string
+  loading: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={loading}
+      onClick={onClick}
+      className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border border-violet-200 dark:border-violet-800/60 text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/30 hover:bg-violet-100 dark:hover:bg-violet-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      {loading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />}
+      {label}
+    </button>
+  )
+}
 
 // ── Keyword highlighter ───────────────────────────────────────────────────────
 
@@ -22,6 +64,43 @@ function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
           : <span key={i}>{part}</span>
       )}
     </>
+  )
+}
+
+// ── Section content renderer (shared between preview and PDF export) ─────────
+
+function SectionContentPreview({ section }: { section: ResumeSection }) {
+  const type = section.type ?? 'text'
+  if (type === 'bullets' && (section.items?.length ?? 0) > 0) {
+    return (
+      <ul style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {section.items!.map((item, i) => (
+          <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <span className="text-[#2563EB] flex-shrink-0" style={{ marginTop: '2px', fontSize: '12px' }}>•</span>
+            <span className="text-[13px] text-gray-600" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{item}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (type === 'keyvalue' && (section.pairs?.length ?? 0) > 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {section.pairs!.map((pair, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span className="text-[12px] font-semibold text-[#0F172A]" style={{ minWidth: '110px', flexShrink: 0 }}>{pair.key}</span>
+            <span className="text-[12px] text-gray-500" style={{ flexShrink: 0 }}>:</span>
+            <span className="text-[12px] text-gray-600" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{pair.value}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  // Default: plain text (including fallback for bullets/keyvalue with no data)
+  return (
+    <p className="text-[13px] text-gray-600 whitespace-pre-line" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+      {section.content}
+    </p>
   )
 }
 
@@ -44,10 +123,12 @@ export function ResumePreviewModal({
   isSaving = false,
   avatarUrl,
   onSaveEdits,
+  onSaveAndFindJobs,
   approveLabel = 'Approve & Save',
   heading = 'Preview Optimized Resume',
   previewSubtitle,
   startInEditMode = false,
+  mode = 'edit',
 }: {
   data: OptimizedResumeData
   onClose: () => void
@@ -55,15 +136,19 @@ export function ResumePreviewModal({
   isSaving?: boolean
   avatarUrl?: string | null
   onSaveEdits?: (edited: OptimizedResumeData) => void
+  onSaveAndFindJobs?: (edited: OptimizedResumeData) => Promise<void>
   approveLabel?: string
   heading?: string
   previewSubtitle?: string
   startInEditMode?: boolean
+  mode?: 'edit' | 'create'
 }) {
   const [isEditing, setIsEditing]         = useState(startInEditMode)
   const [editData, setEditData]           = useState<OptimizedResumeData>(data)
   const [isDownloading, setIsDownloading] = useState(false)
   const [newSkill, setNewSkill]           = useState('')
+  const [isSavingJobs, setIsSavingJobs]   = useState(false)
+  const [aiLoading, setAILoading]         = useState<Record<string, boolean>>({})
 
   const d        = data
   const initials = (d.name ?? '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?'
@@ -80,7 +165,80 @@ export function ResumePreviewModal({
       : 'Review the AI-improved version of your resume.'
   )
 
+  const editHeading = mode === 'create' ? heading : 'Edit Resume'
+  const editSubtitle = mode === 'create'
+    ? 'Review your AI-generated resume. Edit any field, then save to find matching jobs.'
+    : 'Edit your resume content before saving.'
+
   function enterEdit() { setEditData(data); setIsEditing(true) }
+
+  function setAI(key: string, val: boolean) {
+    setAILoading(prev => ({ ...prev, [key]: val }))
+  }
+
+  async function handleAISummary(action: AIAction) {
+    const key = `summary_${action}`
+    setAI(key, true)
+    try {
+      const result = await aiAssist(action, editData.summary ?? '')
+      setEditData(prev => ({ ...prev, summary: result }))
+      toast.success('Summary updated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI assist failed')
+    } finally {
+      setAI(key, false)
+    }
+  }
+
+  async function handleAIBullet(expIdx: number, bulletIdx: number, action: AIAction) {
+    const key = `exp_${expIdx}_bullet_${bulletIdx}_${action}`
+    setAI(key, true)
+    try {
+      const bullet = editData.experience[expIdx].bullets[bulletIdx]
+      const result = await aiAssist(action, bullet)
+      updateBullet(expIdx, bulletIdx, result)
+      toast.success('Bullet updated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI assist failed')
+    } finally {
+      setAI(key, false)
+    }
+  }
+
+  async function handleAIAddBullet(expIdx: number) {
+    const key = `exp_${expIdx}_add`
+    setAI(key, true)
+    try {
+      const existing = editData.experience[expIdx].bullets.join('\n')
+      const result   = await aiAssist('add_bullet', existing, existing)
+      addBullet(expIdx)
+      // After adding, update the last bullet with the AI-generated text
+      setEditData(prev => ({
+        ...prev,
+        experience: prev.experience.map((exp, i) => {
+          if (i !== expIdx) return exp
+          const bullets = [...exp.bullets]
+          bullets[bullets.length - 1] = result
+          return { ...exp, bullets }
+        }),
+      }))
+      toast.success('Bullet added')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI assist failed')
+    } finally {
+      setAI(key, false)
+    }
+  }
+
+  async function handleSaveAndFindJobs() {
+    if (!onSaveAndFindJobs) return
+    setIsSavingJobs(true)
+    try {
+      await onSaveAndFindJobs(editData)
+    } finally {
+      setIsSavingJobs(false)
+    }
+  }
 
   function updateField(key: string, value: string) {
     setEditData(prev => ({ ...prev, [key]: value }))
@@ -136,6 +294,102 @@ export function ResumePreviewModal({
     if (!trimmed) return
     setEditData(prev => ({ ...prev, skills: [...(prev.skills ?? []), trimmed] }))
     setNewSkill('')
+  }
+
+  // ── Custom section helpers ─────────────────────────────────────────────────
+
+  function addCustomSection() {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: [
+        ...(prev.additionalSections ?? []),
+        { title: '', content: '', type: 'text' as const, items: [], pairs: [] },
+      ],
+    }))
+  }
+
+  function removeCustomSection(idx: number) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).filter((_, i) => i !== idx),
+    }))
+  }
+
+  function updateCustomSection(idx: number, updates: Partial<ResumeSection>) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx ? { ...s, ...updates } : s
+      ),
+    }))
+  }
+
+  function moveCustomSection(idx: number, dir: -1 | 1) {
+    setEditData(prev => {
+      const secs   = [...(prev.additionalSections ?? [])]
+      const target = idx + dir
+      if (target < 0 || target >= secs.length) return prev
+      ;[secs[idx], secs[target]] = [secs[target], secs[idx]]
+      return { ...prev, additionalSections: secs }
+    })
+  }
+
+  function addSectionItem(idx: number) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx ? { ...s, items: [...(s.items ?? []), ''] } : s
+      ),
+    }))
+  }
+
+  function removeSectionItem(idx: number, j: number) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx ? { ...s, items: (s.items ?? []).filter((_, k) => k !== j) } : s
+      ),
+    }))
+  }
+
+  function updateSectionItem(idx: number, j: number, value: string) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx
+          ? { ...s, items: (s.items ?? []).map((it, k) => k === j ? value : it) }
+          : s
+      ),
+    }))
+  }
+
+  function addSectionPair(idx: number) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx ? { ...s, pairs: [...(s.pairs ?? []), { key: '', value: '' }] } : s
+      ),
+    }))
+  }
+
+  function removeSectionPair(idx: number, j: number) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx ? { ...s, pairs: (s.pairs ?? []).filter((_, k) => k !== j) } : s
+      ),
+    }))
+  }
+
+  function updateSectionPair(idx: number, j: number, field: 'key' | 'value', value: string) {
+    setEditData(prev => ({
+      ...prev,
+      additionalSections: (prev.additionalSections ?? []).map((s, i) =>
+        i === idx
+          ? { ...s, pairs: (s.pairs ?? []).map((p, k) => k === j ? { ...p, [field]: value } : p) }
+          : s
+      ),
+    }))
   }
 
   async function handleDownload() {
@@ -214,7 +468,7 @@ export function ResumePreviewModal({
     setIsEditing(false)
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -224,10 +478,10 @@ export function ResumePreviewModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB] dark:border-[#334155] flex-shrink-0">
           <div>
             <h2 className="font-bold text-[16px] text-[#0F172A] dark:text-[#F1F5F9]">
-              {isEditing ? 'Edit Resume' : heading}
+              {isEditing ? editHeading : heading}
             </h2>
             <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">
-              {isEditing ? 'Edit your resume content before saving.' : subtitle}
+              {isEditing ? editSubtitle : subtitle}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -267,7 +521,14 @@ export function ResumePreviewModal({
               </section>
 
               <section>
-                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Professional Summary</p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500">Professional Summary</p>
+                  <div className="flex items-center gap-1.5">
+                    <AIBtn label="Improve" loading={!!aiLoading['summary_improve']}   onClick={() => handleAISummary('improve')}   />
+                    <AIBtn label="Shorter" loading={!!aiLoading['summary_shorten']}   onClick={() => handleAISummary('shorten')}   />
+                    <AIBtn label="Stronger" loading={!!aiLoading['summary_strengthen']} onClick={() => handleAISummary('strengthen')} />
+                  </div>
+                </div>
                 <textarea
                   rows={4}
                   value={editData.summary ?? ''}
@@ -329,27 +590,47 @@ export function ResumePreviewModal({
                         {/* Bullet points */}
                         <div className="space-y-2">
                           {(exp.bullets ?? []).map((bullet, j) => (
-                            <div key={j} className="flex gap-2">
-                              <textarea
-                                rows={2}
-                                value={bullet}
-                                onChange={e => updateBullet(i, j, e.target.value)}
-                                className="flex-1 px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none"
-                              />
-                              <button
-                                onClick={() => removeBullet(i, j)}
-                                className="mt-1 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                            <div key={j} className="flex flex-col gap-1">
+                              <div className="flex gap-2">
+                                <textarea
+                                  rows={2}
+                                  value={bullet}
+                                  onChange={e => updateBullet(i, j, e.target.value)}
+                                  className="flex-1 px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none"
+                                />
+                                <button
+                                  onClick={() => removeBullet(i, j)}
+                                  className="mt-1 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-1.5 pl-0.5">
+                                <AIBtn label="Improve"  loading={!!aiLoading[`exp_${i}_bullet_${j}_improve`]}   onClick={() => handleAIBullet(i, j, 'improve')}   />
+                                <AIBtn label="Shorter"  loading={!!aiLoading[`exp_${i}_bullet_${j}_shorten`]}   onClick={() => handleAIBullet(i, j, 'shorten')}   />
+                                <AIBtn label="Stronger" loading={!!aiLoading[`exp_${i}_bullet_${j}_strengthen`]} onClick={() => handleAIBullet(i, j, 'strengthen')} />
+                              </div>
                             </div>
                           ))}
-                          <button
-                            onClick={() => addBullet(i)}
-                            className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium mt-1"
-                          >
-                            <Plus className="w-3.5 h-3.5" />Add bullet
-                          </button>
+                          <div className="flex items-center gap-3 mt-1">
+                            <button
+                              onClick={() => addBullet(i)}
+                              className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium"
+                            >
+                              <Plus className="w-3.5 h-3.5" />Add bullet
+                            </button>
+                            <button
+                              onClick={() => handleAIAddBullet(i)}
+                              disabled={!!aiLoading[`exp_${i}_add`]}
+                              className="flex items-center gap-1 text-[11px] font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {aiLoading[`exp_${i}_add`]
+                                ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                : <Wand2 className="w-2.5 h-2.5" />
+                              }
+                              Add with AI
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -467,6 +748,168 @@ export function ResumePreviewModal({
                   </div>
                 </section>
               )}
+
+              {/* ── Custom / Additional Sections ──────────────────────── */}
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500">Additional Sections</p>
+                  <span className="text-[10px] text-gray-300 dark:text-slate-600 italic">Languages, Awards, Hobbies, etc.</span>
+                </div>
+
+                {(editData.additionalSections?.length ?? 0) > 0 && (
+                  <div className="space-y-3 mb-3">
+                    {(editData.additionalSections ?? []).map((section, idx) => {
+                      const effectiveType = section.type ?? 'text'
+                      const totalSecs = (editData.additionalSections ?? []).length
+                      return (
+                        <div key={idx} className="bg-[#F8FAFC] dark:bg-[#0F172A]/60 rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-4">
+
+                          {/* Title row + reorder + delete */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <input
+                              type="text"
+                              value={section.title}
+                              onChange={e => updateCustomSection(idx, { title: e.target.value })}
+                              placeholder="Section title (e.g. Languages Known)"
+                              className="flex-1 px-3 py-1.5 text-[12px] font-semibold border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                            />
+                            <button
+                              onClick={() => moveCustomSection(idx, -1)}
+                              disabled={idx === 0}
+                              title="Move up"
+                              className="w-6 h-6 rounded flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => moveCustomSection(idx, 1)}
+                              disabled={idx === totalSecs - 1}
+                              title="Move down"
+                              className="w-6 h-6 rounded flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => removeCustomSection(idx)}
+                              title="Delete section"
+                              className="w-6 h-6 rounded flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Type selector */}
+                          <div className="flex items-center gap-1.5 mb-3">
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500 mr-1">Type:</span>
+                            {([
+                              { val: 'text',     icon: AlignLeft, label: 'Text'      },
+                              { val: 'bullets',  icon: List,      label: 'Bullets'   },
+                              { val: 'keyvalue', icon: Table2,    label: 'Key-Value' },
+                            ] as const).map(({ val, icon: Icon, label }) => (
+                              <button
+                                key={val}
+                                onClick={() => updateCustomSection(idx, { type: val })}
+                                className={[
+                                  'flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors',
+                                  effectiveType === val
+                                    ? 'border-[#2563EB] bg-blue-50 dark:bg-[#1E3A5F] text-[#2563EB]'
+                                    : 'border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:border-[#2563EB]/40 hover:text-[#2563EB]',
+                                ].join(' ')}
+                              >
+                                <Icon className="w-2.5 h-2.5" />{label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Content editor by type */}
+                          {effectiveType === 'text' && (
+                            <textarea
+                              rows={3}
+                              value={section.content}
+                              onChange={e => updateCustomSection(idx, { content: e.target.value })}
+                              placeholder="Write the section content here…"
+                              className="w-full px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none"
+                            />
+                          )}
+
+                          {effectiveType === 'bullets' && (
+                            <div className="space-y-2">
+                              {(section.items ?? []).map((item, j) => (
+                                <div key={j} className="flex gap-2 items-center">
+                                  <span className="text-[#2563EB] text-[11px] flex-shrink-0">•</span>
+                                  <input
+                                    type="text"
+                                    value={item}
+                                    onChange={e => updateSectionItem(idx, j, e.target.value)}
+                                    placeholder="Add item…"
+                                    className="flex-1 px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                                  />
+                                  <button
+                                    onClick={() => removeSectionItem(idx, j)}
+                                    className="w-6 h-6 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 rounded transition-colors flex-shrink-0"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                              <button
+                                onClick={() => addSectionItem(idx)}
+                                className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium mt-1"
+                              >
+                                <Plus className="w-3.5 h-3.5" />Add item
+                              </button>
+                            </div>
+                          )}
+
+                          {effectiveType === 'keyvalue' && (
+                            <div className="space-y-2">
+                              {(section.pairs ?? []).map((pair, j) => (
+                                <div key={j} className="flex gap-2 items-center">
+                                  <input
+                                    type="text"
+                                    value={pair.key}
+                                    onChange={e => updateSectionPair(idx, j, 'key', e.target.value)}
+                                    placeholder="Label"
+                                    className="w-[35%] px-3 py-1.5 text-[12px] font-medium border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                                  />
+                                  <span className="text-gray-300 dark:text-slate-600 text-[11px] flex-shrink-0">:</span>
+                                  <input
+                                    type="text"
+                                    value={pair.value}
+                                    onChange={e => updateSectionPair(idx, j, 'value', e.target.value)}
+                                    placeholder="Value"
+                                    className="flex-1 px-3 py-1.5 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
+                                  />
+                                  <button
+                                    onClick={() => removeSectionPair(idx, j)}
+                                    className="w-6 h-6 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 rounded transition-colors flex-shrink-0"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                              <button
+                                onClick={() => addSectionPair(idx)}
+                                className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium mt-1"
+                              >
+                                <Plus className="w-3.5 h-3.5" />Add field
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <button
+                  onClick={addCustomSection}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-400 dark:text-slate-500 hover:border-[#2563EB]/50 hover:text-[#2563EB] hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all w-full justify-center"
+                >
+                  <Plus className="w-3.5 h-3.5" />Add Section
+                </button>
+              </section>
+
             </div>
           ) : (
             <div>
@@ -746,7 +1189,7 @@ export function ResumePreviewModal({
                         <h3 className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#0F172A] leading-[1.4]">{section.title}</h3>
                         <div className="flex-1 h-px bg-[#E5E7EB]" />
                       </div>
-                      <p className="text-[13px] text-gray-600 whitespace-pre-line" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{section.content}</p>
+                      <SectionContentPreview section={section} />
                     </div>
                   ))}
                 </div>
@@ -760,17 +1203,31 @@ export function ResumePreviewModal({
           {isEditing ? (
             <>
               <button
-                onClick={() => setIsEditing(false)}
+                onClick={() => { if (mode === 'create') { onClose() } else { setIsEditing(false) } }}
                 className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={handleSaveChanges}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all shadow-sm"
-              >
-                <Check className="w-3.5 h-3.5" />Save Changes
-              </button>
+
+              {mode === 'create' ? (
+                <button
+                  onClick={handleSaveAndFindJobs}
+                  disabled={isSavingJobs}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[13px] font-bold hover:from-violet-700 hover:to-blue-700 transition-all shadow-sm hover:scale-[1.02] active:scale-100 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+                >
+                  {isSavingJobs
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saving…</>
+                    : <><BriefcaseBusiness className="w-3.5 h-3.5" />Save Resume &amp; Find Jobs</>
+                  }
+                </button>
+              ) : (
+                <button
+                  onClick={handleSaveChanges}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" />Save Changes
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -809,6 +1266,7 @@ export function ResumePreviewModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

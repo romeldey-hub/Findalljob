@@ -5,7 +5,7 @@ import {
   Mail, Phone, MapPin, Briefcase, GraduationCap,
   ChevronDown, ChevronUp, FileText,
 } from 'lucide-react'
-import type { ParsedResume, Resume, ResumeExperience } from '@/types'
+import type { ParsedResume, Resume, ResumeExperience, ResumeSection } from '@/types'
 import { ResumeEditorButton } from './ResumeEditorButton'
 
 interface VisualResumeCardProps {
@@ -39,6 +39,40 @@ function computeDuration(start: string, end: string | null): string {
   const diff = ey - sy
   if (diff <= 0) return '< 1 yr'
   return `${diff} yr${diff > 1 ? 's' : ''}`
+}
+
+// ── Section content renderer ──────────────────────────────────────────────────
+
+function SectionContent({ section }: { section: ResumeSection }) {
+  const type = section.type ?? 'text'
+  if (type === 'bullets' && (section.items?.length ?? 0) > 0) {
+    return (
+      <ul className="space-y-1.5">
+        {section.items!.map((item, i) => (
+          <li key={i} className="flex gap-2.5 text-[13px] text-gray-600 dark:text-slate-400">
+            <span className="text-[#2563EB] mt-1 flex-shrink-0 leading-none">•</span>
+            <span className="leading-relaxed">{item}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (type === 'keyvalue' && (section.pairs?.length ?? 0) > 0) {
+    return (
+      <div className="space-y-1.5">
+        {section.pairs!.map((pair, i) => (
+          <div key={i} className="flex items-baseline gap-2 text-[13px]">
+            <span className="font-semibold text-[#0F172A] dark:text-[#F1F5F9] min-w-[110px] flex-shrink-0">{pair.key}</span>
+            <span className="text-gray-300 dark:text-slate-600 flex-shrink-0">:</span>
+            <span className="text-gray-600 dark:text-slate-400 leading-relaxed">{pair.value}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <p className="text-[14px] text-gray-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">{section.content}</p>
+  )
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -320,7 +354,7 @@ export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResume
               title={section.title}
               icon={<FileText className="w-4 h-4 text-[#2563EB]" />}
             >
-              <p className="text-[14px] text-gray-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">{section.content}</p>
+              <SectionContent section={section} />
             </ContentSection>
           ))}
 

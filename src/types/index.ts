@@ -15,6 +15,22 @@ export interface ResumeEducation {
   graduation_year: string
 }
 
+/**
+ * A custom or additional resume section.
+ * `content` is always present as a plain-text fallback (used by the AI optimizer).
+ * `type` controls the rich editor / render mode:
+ *   - 'text'     → simple paragraph (default)
+ *   - 'bullets'  → unordered list stored in `items`
+ *   - 'keyvalue' → label/value pairs stored in `pairs`
+ */
+export interface ResumeSection {
+  title:   string
+  content: string   // plain text — always populated for AI compatibility
+  type?:   'text' | 'bullets' | 'keyvalue'
+  items?:  string[]
+  pairs?:  Array<{ key: string; value: string }>
+}
+
 export interface ParsedResume {
   name: string
   email: string
@@ -28,10 +44,10 @@ export interface ParsedResume {
   certifications: string[]
   /**
    * Lossless section map: every section found in the original resume,
-   * including Languages, Personal Details, Declaration, and any custom sections.
-   * Used to pass complete content to AI optimization.
+   * including Languages, Personal Details, Declaration, and any user-added sections.
+   * Used to pass complete content to AI optimization and to display on all resume views.
    */
-  sections?: Array<{ title: string; content: string }>
+  sections?: ResumeSection[]
 }
 
 export interface Resume {
