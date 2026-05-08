@@ -9,7 +9,7 @@ import {
   Search, MapPin, Building2, Wand2,
   PlusCircle, Loader2, Briefcase, Lightbulb,
   CheckCircle2, RefreshCw,
-  Bookmark, BookmarkCheck, Clock, Sparkles,
+  Clock, Sparkles,
   SlidersHorizontal, ChevronDown, User, UserCheck, Mic, Lock,
   Download, Trash2,
 } from 'lucide-react'
@@ -99,7 +99,24 @@ const NEGATIVE_REASON_PATTERN = /\b(missing|gap|gaps|lacks?|weak|limited|preferr
 
 // ── ScoreRing ─────────────────────────────────────────────────────────────────
 
-function ScoreRing({ score }: { score: number }) {
+const SPARKS = [
+  // Inner ring — cardinal, fast
+  { tx: '0px',   ty: '-38px', color: '#22C55E', dur: 1050, delay: 0   },
+  { tx: '38px',  ty: '0px',   color: '#FBBF24', dur: 1100, delay: 55  },
+  { tx: '0px',   ty: '38px',  color: '#22C55E', dur: 1050, delay: 28  },
+  { tx: '-38px', ty: '0px',   color: '#34D399', dur: 1100, delay: 82  },
+  // Outer ring — diagonal, slower + farther
+  { tx: '30px',  ty: '-50px', color: '#FBBF24', dur: 1550, delay: 70  },
+  { tx: '50px',  ty: '-30px', color: '#86EFAC', dur: 1500, delay: 140 },
+  { tx: '50px',  ty: '30px',  color: '#22C55E', dur: 1550, delay: 45  },
+  { tx: '30px',  ty: '50px',  color: '#FCD34D', dur: 1500, delay: 115 },
+  { tx: '-30px', ty: '50px',  color: '#34D399', dur: 1550, delay: 65  },
+  { tx: '-50px', ty: '30px',  color: '#FBBF24', dur: 1500, delay: 130 },
+  { tx: '-50px', ty: '-30px', color: '#22C55E', dur: 1550, delay: 95  },
+  { tx: '-30px', ty: '-50px', color: '#86EFAC', dur: 1500, delay: 160 },
+]
+
+function ScoreRing({ score, celebrate = false }: { score: number; celebrate?: boolean }) {
   const r      = 28
   const circ   = 2 * Math.PI * r
   const filled = (score / 100) * circ
@@ -109,13 +126,25 @@ function ScoreRing({ score }: { score: number }) {
   const tierColor = score >= 80 ? 'text-green-600 dark:text-green-500' : score >= 60 ? 'text-blue-600 dark:text-blue-400' : score >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'
   const topPct    = score >= 85 ? 10 : score >= 75 ? 20 : score >= 65 ? 35 : 50
 
+  // Track previous score so count-up animates from old→new instead of 0→new
+  const prevScoreRef  = useRef(score)
+  const countFromRef  = useRef(0)
+  if (prevScoreRef.current !== score) {
+    countFromRef.current  = prevScoreRef.current
+    prevScoreRef.current  = score
+  }
+
   const animated     = useAnimate()
-  const displayScore = useCountUp(score, 900)
+  const displayScore = useCountUp(score, celebrate ? 1800 : 900, 0, countFromRef.current)
 
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="relative w-[64px] h-[64px] flex items-center justify-center">
-        <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90 absolute inset-0">
+        <svg
+          width="64" height="64" viewBox="0 0 64 64"
+          className="-rotate-90 absolute inset-0"
+          style={celebrate ? { animation: 'scoreGlow 3.5s ease-out forwards' } : undefined}
+        >
           <circle cx="32" cy="32" r={r} fill="none" stroke="#F1F5F9" strokeWidth="4.5" className="dark:stroke-[#334155]" />
           <circle
             cx="32" cy="32" r={r}
@@ -130,6 +159,26 @@ function ScoreRing({ score }: { score: number }) {
             }}
           />
         </svg>
+
+        {celebrate && (
+          <div className="absolute inset-0 pointer-events-none" style={{ overflow: 'visible' }}>
+            {SPARKS.map((s, i) => (
+              <div
+                key={i}
+                className="absolute w-[6px] h-[6px] rounded-full"
+                style={{
+                  top: '50%', left: '50%',
+                  marginTop: '-3px', marginLeft: '-3px',
+                  backgroundColor: s.color,
+                  '--tx': s.tx,
+                  '--ty': s.ty,
+                  animation: `scoreSpark ${s.dur}ms ease-out ${s.delay}ms forwards`,
+                } as React.CSSProperties}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="relative z-10 text-center">
           <div className="text-[19px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-none">{displayScore}</div>
         </div>
@@ -239,9 +288,12 @@ function JobCard({
   initialSaved = false, initialApplicationId,
   isOptimized = false, isManual = false, isNew = false,
   animIndex = 0,
-  optimizedResumeId,
+  optimizedScore,
+  celebrate = false,
+  isOptimizing = false,
   onViewOptimized,
-  onDeleteOptimized,
+  onDownloadOptimized,
+  onDeleteRequest,
 }: {
   match: MatchRecord
   onOptimize: (id: string) => void
@@ -252,25 +304,17 @@ function JobCard({
   isManual?: boolean
   isNew?: boolean
   animIndex?: number
-  optimizedResumeId?: string
+  optimizedScore?: number
+  celebrate?: boolean
+  isOptimizing?: boolean
   onViewOptimized?: () => void
-  onDeleteOptimized?: (id: string) => Promise<void>
+  onDownloadOptimized?: () => void
+  onDeleteRequest?: () => void
 }) {
   const { job } = match
   const [saved, setSaved]                 = useState(initialSaved)
   const [saving, setSaving]               = useState(false)
   const [applicationId, setApplicationId] = useState<string | undefined>(initialApplicationId)
-  const [deleting, setDeleting]           = useState(false)
-
-  async function handleDeleteClick() {
-    if (!optimizedResumeId || deleting) return
-    setDeleting(true)
-    try {
-      await onDeleteOptimized?.(optimizedResumeId)
-    } finally {
-      setDeleting(false)
-    }
-  }
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -341,6 +385,10 @@ function JobCard({
   const primaryBtn   = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-[11px] font-semibold transition-all hover:shadow-sm active:scale-[0.99]'
   const secondaryBtn = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[11px] font-medium text-gray-500 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-all'
 
+  // Show optimized score only after modal closes (not while it's still open)
+  const displayedScore = (!isOptimizing && isOptimized && optimizedScore != null)
+    ? optimizedScore : match.ai_score
+
   return (
     <div
       className={`animate-fade-in-up group bg-white dark:bg-[#1E293B] rounded-2xl border shadow-sm hover:-translate-y-[2px] hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] dark:hover:shadow-[0_6px_24px_rgba(0,0,0,0.35)] transition-all duration-200 ease-out p-4 sm:p-5 ${
@@ -348,7 +396,15 @@ function JobCard({
           ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15 dark:ring-[#2563EB]/20'
           : 'border-[#E5E7EB] dark:border-[#334155]'
       }`}
-      style={{ animationDelay: `${animIndex * 60}ms` }}
+      style={celebrate ? {
+        animationName: 'cardCelebrate',
+        animationDuration: '3.5s',
+        animationTimingFunction: 'ease-out',
+        animationFillMode: 'forwards',
+        animationDelay: '0ms',
+      } : {
+        animationDelay: `${animIndex * 60}ms`,
+      }}
     >
       <div className="flex gap-4">
 
@@ -449,25 +505,20 @@ function JobCard({
                 >
                   <CheckCircle2 className="w-3 h-3" />View Optimized Resume
                 </button>
-                {optimizedResumeId && (
-                  <>
-                    <button
-                      onClick={onViewOptimized}
-                      title="Download optimized resume"
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 hover:border-[#2563EB]/40 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
-                    >
-                      <Download className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={handleDeleteClick}
-                      disabled={deleting}
-                      title="Delete optimized resume"
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                    </button>
-                  </>
-                )}
+                <button
+                  onClick={onDownloadOptimized}
+                  title="Download optimized resume"
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 hover:border-[#2563EB]/40 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
+                >
+                  <Download className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={onDeleteRequest}
+                  title="Delete optimized resume"
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               </div>
             ) : (
               <button onClick={() => onOptimize(job.id)} className={primaryBtn}>
@@ -483,27 +534,14 @@ function JobCard({
         </div>
 
         {/* ── ACTION PANEL (right column) ───────────────────────── */}
-        <div className="flex flex-col flex-shrink-0 pl-4 border-l border-[#F1F5F9] dark:border-[#334155]">
-
-          {/* Bookmark — top right of panel */}
-          <div className="flex justify-end mb-2">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              title={saved ? 'Remove bookmark' : 'Save job'}
-              className="text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors disabled:opacity-50"
-            >
-              {saving
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : saved
-                ? <BookmarkCheck className="w-3.5 h-3.5 text-[#2563EB]" />
-                : <Bookmark className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+        <div className="flex flex-col flex-shrink-0 pl-4 border-l border-[#F1F5F9] dark:border-[#334155]" style={{ overflow: 'visible' }}>
 
           {/* Score unit — top aligned */}
-          <div className="flex flex-col items-center">
-            <ScoreRing score={match.ai_score} />
+          <div className="flex flex-col items-center" style={{ overflow: 'visible' }}>
+            <ScoreRing
+              score={displayedScore}
+              celebrate={celebrate}
+            />
           </div>
 
           {/* Source + CTA — anchored to bottom */}
@@ -727,6 +765,38 @@ function CvSuggestions({ suggestions }: { suggestions: string[] }) {
   )
 }
 
+// ── DeleteConfirmModal ────────────────────────────────────────────────────────
+
+function DeleteConfirmModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl p-6 z-10">
+        <h3 className="font-bold text-[17px] text-[#0F172A] dark:text-[#F1F5F9] mb-2">
+          Delete optimized resume?
+        </h3>
+        <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed mb-6">
+          This will remove the saved optimized version for this job and restore your original match score.
+        </p>
+        <div className="flex gap-2.5">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-all"
+          >
+            Delete Resume
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Analyze progress configuration (defined outside component — never recreated) ──
 
 const REANALYZE_STEP_DEFS: StepDefinition[] = [
@@ -758,12 +828,18 @@ export default function MatchesPage() {
   const [searchOpen, setSearchOpen]   = useState(false)
   const [searching, setSearching]     = useState(false)
   const [filters, setFilters]         = useState<FilterState>(DEFAULT_FILTERS)
-  const [showPaywall, setShowPaywall] = useState(false)
-  const [sortKey, setSortKey]         = useState<'score' | 'date'>('score')
-  const [interviewMatch, setInterviewMatch] = useState<MatchRecord | null>(null)
+  const [showPaywall, setShowPaywall]               = useState(false)
+  const [showInterviewPaywall, setShowInterviewPaywall] = useState(false)
+  const [sortKey, setSortKey]                       = useState<'score' | 'date'>('score')
+  const [interviewMatch, setInterviewMatch]         = useState<MatchRecord | null>(null)
   const [optimizeJobId, setOptimizeJobId]         = useState<string | null>(null)
-  const [viewOptimizedJobId, setViewOptimizedJobId] = useState<string | null>(null)
+  const [celebratingJobId, setCelebratingJobId]   = useState<string | null>(null)
+  const pendingCelebrationRef                     = useRef<string | null>(null)
+  const [viewOptimized, setViewOptimized]   = useState<{ jobId: string; autoDownload?: boolean } | null>(null)
+  const [deleteConfirmJobId, setDeleteConfirmJobId] = useState<string | null>(null)
+  const [showDownloadPaywall, setShowDownloadPaywall] = useState(false)
   const [tierFilter, setTierFilter]         = useState<'all' | 'high' | 'medium' | 'stretch'>('all')
+  const [localOptimizedResumes, setLocalOptimizedResumes] = useState<Map<string, OptimizedResumeData>>(() => new Map())
 
   // mode determines which list is rendered — never both simultaneously
   const [mode, setMode]                 = useState<'ai' | 'manual'>('ai')
@@ -822,6 +898,18 @@ export default function MatchesPage() {
   }, [optimizedData])
 
   const optimizedJobIds = useMemo(() => new Set(optimizedResumesByJobId.keys()), [optimizedResumesByJobId])
+
+  // Merged: DB-persisted (Pro) + session-local (free). DB entries take precedence.
+  const allOptimizedByJobId = useMemo(() => {
+    const map = new Map<string, { id?: string; data: OptimizedResumeData }>()
+    for (const [jid, entry] of optimizedResumesByJobId) map.set(jid, entry)
+    for (const [jid, data] of localOptimizedResumes) {
+      if (!map.has(jid)) map.set(jid, { data })
+    }
+    return map
+  }, [optimizedResumesByJobId, localOptimizedResumes])
+
+  const allOptimizedJobIds = useMemo(() => new Set(allOptimizedByJobId.keys()), [allOptimizedByJobId])
 
   // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null
   const savedAiJobs: MatchRecord[] = useMemo(
@@ -898,11 +986,20 @@ export default function MatchesPage() {
     let noJobsMessage = ''
 
     try {
-      const res = await fetch('/api/resume/analyze', { method: 'POST' })
+      const res = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: reanalyze }),
+      })
 
       // Early JSON errors (401, 404, 500 before the stream starts)
       if (!res.ok) {
-        const data    = await res.json().catch(() => ({}))
+        const data = await res.json().catch(() => ({}))
+        if (data.requiresUpgrade) {
+          stopProgress()
+          setShowPaywall(true)
+          return
+        }
         const message = userFacingError(data.error ?? 'Analysis failed.')
         localStorage.setItem('lastAnalyzedAt', String(Date.now()))
         setAnalyzeError(message)
@@ -1071,12 +1168,27 @@ export default function MatchesPage() {
   }
 
   function handleOptimize(jobId: string) {
-    const isPro = profileData?.plan === 'pro'
-    if (!isPro) { setShowPaywall(true); return }
+    const credits      = profileData?.credits_remaining
+    const OPTIMIZE_COST = 2  // jobOptimize credit cost
+    if (credits != null && credits < OPTIMIZE_COST) {
+      setShowPaywall(true)
+      return
+    }
     setOptimizeJobId(jobId)
   }
 
   function handleInterview(match: MatchRecord) {
+    const credits        = profileData?.credits_remaining
+    const INTERVIEW_COST = 2  // interviewSession credit cost
+
+    // Only block when we know the balance is too low.
+    // If credits_remaining is null (not yet loaded) let the user through —
+    // the API enforces the credit check server-side.
+    // Plan-level gating (Pro vs free) happens inside InterviewModal itself.
+    if (credits != null && credits < INTERVIEW_COST) {
+      setShowInterviewPaywall(true)
+      return
+    }
     setInterviewMatch(match)
   }
 
@@ -1090,7 +1202,60 @@ export default function MatchesPage() {
     globalMutate('/api/resume/optimize')
   }
 
+  function handleLocalSaved(jobId: string, data: OptimizedResumeData) {
+    setLocalOptimizedResumes(prev => {
+      const next = new Map(prev)
+      next.set(jobId, data)
+      return next
+    })
+  }
+
+  function handleClearLocalOptimized(jobId: string) {
+    setLocalOptimizedResumes(prev => {
+      const next = new Map(prev)
+      next.delete(jobId)
+      return next
+    })
+  }
+
+  // Pro: download icon opens modal with auto-download; Free: download paywall
+  function handleDownloadOptimizedClick(jobId: string) {
+    if (isCurrentUserPro) {
+      setViewOptimized({ jobId, autoDownload: true })
+    } else {
+      setShowDownloadPaywall(true)
+    }
+  }
+
+  // Save edits made from within the "View Optimized Resume" modal — persists for all users
+  async function handleViewOptimizedSaveEdits(jobId: string, edited: OptimizedResumeData) {
+    const res = await fetch('/api/resume/optimize/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ optimizedData: edited, jobId }),
+    })
+    if (!res.ok) { toast.error('Failed to save changes.'); return }
+    handleLocalSaved(jobId, edited)  // optimistic update while SWR re-fetches
+    globalMutate('/api/resume/optimize')
+    toast.success('Changes saved.')
+  }
+
+  // Confirm delete: Pro deletes from DB; Free clears local state
+  async function handleConfirmDelete(jobId: string) {
+    const entry = allOptimizedByJobId.get(jobId)
+    if (!entry) return
+    if (entry.id) {
+      try { await handleDeleteOptimized(entry.id) } catch { /* error toasted inside */ }
+    } else {
+      handleClearLocalOptimized(jobId)
+      toast.success('Optimized resume removed')
+    }
+  }
+
   // activitySteps comes from useAnalyzeProgress — driven by real SSE events + time gating
+
+  // Pro = any paid plan; free = 'free' or not yet loaded
+  const isCurrentUserPro = profileData !== undefined && (profileData?.plan ?? 'free') !== 'free'
 
   const searchesUsed       = profileData?.job_search_count ?? 0
   const searchLimitReached = profileData !== undefined && profileData?.plan !== 'pro' && searchesUsed >= FREE_LIMITS.jobSearch
@@ -1136,7 +1301,7 @@ export default function MatchesPage() {
             )}
             {searchLimitReached && (
               <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 underline whitespace-nowrap">
-                Upgrade to search
+                Unlock more searches
               </span>
             )}
             {!searchLimitReached && (
@@ -1289,7 +1454,7 @@ export default function MatchesPage() {
                       onClick={() => setShowPaywall(true)}
                       className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline"
                     >
-                      Limit reached · Upgrade
+                      Unlock unlimited re-analysis
                     </button>
                   )}
                 </div>
@@ -1471,15 +1636,38 @@ export default function MatchesPage() {
                 isNew={match.id === newlyAddedId}
                 initialSaved={savedJobIds.has(match.job.id)}
                 initialApplicationId={savedJobToAppId.get(match.job.id)}
-                isOptimized={optimizedJobIds.has(match.job.id)}
-                optimizedResumeId={optimizedResumesByJobId.get(match.job.id)?.id}
+                isOptimized={allOptimizedJobIds.has(match.job.id)}
+                optimizedScore={allOptimizedByJobId.get(match.job.id)?.data.ats_score}
+                celebrate={celebratingJobId === match.job.id}
+                isOptimizing={optimizeJobId === match.job.id}
                 onOptimize={handleOptimize}
                 onInterview={handleInterview}
-                onViewOptimized={() => setViewOptimizedJobId(match.job.id)}
-                onDeleteOptimized={handleDeleteOptimized}
+                onViewOptimized={() => setViewOptimized({ jobId: match.job.id })}
+                onDownloadOptimized={() => handleDownloadOptimizedClick(match.job.id)}
+                onDeleteRequest={() => setDeleteConfirmJobId(match.job.id)}
                 animIndex={i}
               />
             ))}
+
+            {/* Free plan — show upgrade banner when matches are capped */}
+            {!isLoading && mode === 'ai' && profileData?.plan !== 'pro' && profileData !== undefined &&
+              (data?.totalMatches ?? 0) > (data?.matchLimit ?? FREE_LIMITS.matchesPerDay) && (
+              <div className="flex flex-col items-center gap-2 py-6 px-5 rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
+                <Lock className="w-4 h-4 text-gray-300 dark:text-slate-600" />
+                <p className="text-[13px] font-semibold text-gray-600 dark:text-slate-300">
+                  {(data?.totalMatches ?? 0) - (data?.matchLimit ?? FREE_LIMITS.matchesPerDay)} more matched jobs waiting for you
+                </p>
+                <p className="text-[12px] text-gray-400 dark:text-slate-500">
+                  You&apos;re seeing {data?.matchLimit ?? FREE_LIMITS.matchesPerDay} of {data?.totalMatches} AI-ranked matches.
+                </p>
+                <button
+                  onClick={() => setShowPaywall(true)}
+                  className="mt-1 px-4 py-1.5 rounded-lg bg-[#0F172A] dark:bg-[#2563EB] text-white text-[12px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors"
+                >
+                  See all {data?.totalMatches} matches
+                </button>
+              </div>
+            )}
 
             {/* CV suggestions follow the results */}
             {displaySuggestions.length > 0 && (
@@ -1497,27 +1685,73 @@ export default function MatchesPage() {
         />
       </div>
 
-      {viewOptimizedJobId && (() => {
-        const entry = optimizedResumesByJobId.get(viewOptimizedJobId)
+      {viewOptimized && (() => {
+        const entry = allOptimizedByJobId.get(viewOptimized.jobId)
         if (!entry) return null
         return (
           <ResumePreviewModal
             data={entry.data}
-            onClose={() => setViewOptimizedJobId(null)}
-            heading="Optimized Resume"
-            previewSubtitle="Resume tailored for this specific job."
+            onClose={() => setViewOptimized(null)}
+            heading="Optimized Resume for This Job"
+            previewSubtitle={isCurrentUserPro ? 'Review and edit your saved optimized resume.' : 'Your AI-tailored resume for this job.'}
+            canDownload={isCurrentUserPro}
+            onLockedDownload={!isCurrentUserPro ? () => { setViewOptimized(null); setShowDownloadPaywall(true) } : undefined}
+            isOptimizedPreview
+            viewMode
+            autoDownload={viewOptimized.autoDownload && isCurrentUserPro}
+            onSaveEdits={async (edited) => handleViewOptimizedSaveEdits(viewOptimized.jobId, edited)}
           />
         )
       })()}
 
-      {showPaywall && profileData?.plan !== 'pro' && <PaywallModal onClose={() => setShowPaywall(false)} />}
+      {showPaywall && <PaywallModal onClose={() => setShowPaywall(false)} />}
+
+      {showInterviewPaywall && (
+        <PaywallModal
+          variant="interview"
+          onClose={() => setShowInterviewPaywall(false)}
+          onMaybeLater={() => setShowInterviewPaywall(false)}
+        />
+      )}
+
+      {showDownloadPaywall && (
+        <PaywallModal
+          variant="download"
+          onClose={() => setShowDownloadPaywall(false)}
+          onMaybeLater={() => setShowDownloadPaywall(false)}
+        />
+      )}
+
+      {deleteConfirmJobId && (
+        <DeleteConfirmModal
+          onCancel={() => setDeleteConfirmJobId(null)}
+          onConfirm={() => {
+            const jobId = deleteConfirmJobId
+            setDeleteConfirmJobId(null)
+            void handleConfirmDelete(jobId)
+          }}
+        />
+      )}
 
       {optimizeJobId && (
         <OptimizeFlow
           mode="job"
           jobId={optimizeJobId}
-          onClose={() => setOptimizeJobId(null)}
-          onSaved={() => globalMutate('/api/resume/optimize')}
+          onClose={() => {
+            const jobId = pendingCelebrationRef.current
+            pendingCelebrationRef.current = null
+            setOptimizeJobId(null)
+            if (jobId) {
+              setCelebratingJobId(jobId)
+              setTimeout(() => setCelebratingJobId(null), 3500)
+            }
+          }}
+          onSaved={() => {
+            globalMutate('/api/resume/optimize')
+            pendingCelebrationRef.current = optimizeJobId
+          }}
+          onLocalSaved={handleLocalSaved}
+          onUpgradeRequired={() => setShowPaywall(true)}
         />
       )}
 

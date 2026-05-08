@@ -138,6 +138,29 @@
   animation: fadeInUp 350ms ease-out both;
 }
 
+@keyframes scoreGlow {
+  0%   { filter: drop-shadow(0 0 0px transparent); }
+  15%  { filter: drop-shadow(0 0 16px rgba(34, 197, 94, 1)); }
+  35%  { filter: drop-shadow(0 0 22px rgba(34, 197, 94, 0.85)); }
+  60%  { filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.55)); }
+  85%  { filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.25)); }
+  100% { filter: drop-shadow(0 0 0px transparent); }
+}
+
+@keyframes scoreSpark {
+  0%   { opacity: 1; transform: translate(0, 0) scale(1.4); }
+  50%  { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.2); }
+}
+
+@keyframes cardCelebrate {
+  0%   { box-shadow: 0 1px 3px rgba(0,0,0,0.10); }
+  18%  { box-shadow: 0 0 0 3px rgba(34,197,94,0.55), 0 0 30px rgba(34,197,94,0.25), 0 4px 18px rgba(0,0,0,0.12); }
+  45%  { box-shadow: 0 0 0 2px rgba(34,197,94,0.35), 0 0 20px rgba(34,197,94,0.15), 0 4px 14px rgba(0,0,0,0.10); }
+  78%  { box-shadow: 0 0 0 1px rgba(34,197,94,0.15), 0 2px 8px rgba(0,0,0,0.08); }
+  100% { box-shadow: 0 1px 3px rgba(0,0,0,0.10); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in-up { animation: none; }
 }

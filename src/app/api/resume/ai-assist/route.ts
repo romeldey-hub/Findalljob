@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { callClaude } from '@/lib/ai/claude'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { generateLight } from '@/lib/ai/client'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { FREE_LIMITS, PRO_LIMITS } from '@/lib/limits'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
 
 const PROMPTS: Record<string, (text: string, context?: string) => string> = {
   improve: (text) =>
@@ -21,6 +25,42 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const admin = createAdminClient()
+
+  // Resolve plan and daily limit
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, plan_tier, ai_assist_daily_count, ai_assist_date')
+    .eq('user_id', user.id)
+    .single()
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until
+  )
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
+  const dailyLimit = isPro ? PRO_LIMITS.aiAssistPerDay : FREE_LIMITS.aiAssistPerDay
+
+  const today     = new Date().toISOString().slice(0, 10)
+  const isToday   = profileRow?.ai_assist_date === today
+  const usedToday = isToday ? (profileRow?.ai_assist_daily_count ?? 0) : 0
+
+  if (usedToday >= dailyLimit) {
+    return NextResponse.json(
+      { error: `Daily AI assist limit reached (${dailyLimit}/day). Resets at midnight.${isPro ? '' : ' Upgrade to keep strengthening your resume.'}` },
+      { status: 429 }
+    )
+  }
+
+  // Credit check: each AI assist action costs 0.5 credits
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'aiAssist', isPro, admin, planTier)
+  if (!creditAllowed) {
+    return NextResponse.json(
+      insufficientCreditsResponse('aiAssist', creditBalance.remainingCredits),
+      { status: 402 }
+    )
+  }
+
   const body = await req.json().catch(() => ({}))
   const { action, text, context } = body as { action: string; text: string; context?: string }
 
@@ -30,8 +70,21 @@ export async function POST(req: Request) {
   if (!promptFn) return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
   try {
-    const result = await callClaude(promptFn(text, context), undefined, 512)
-    return NextResponse.json({ result: result.trim() })
+    const result = await generateLight(promptFn(text, context), { task: `bullet_${action}`, maxTokens: 150, userId: user.id, isFreeUser: !isPro })
+
+    // Deduct credits and increment daily counter (both fire-and-forget)
+    const afterCredits = await deductCredits(user.id, 'aiAssist', admin)
+    void admin
+      .from('profiles')
+      .update({ ai_assist_daily_count: usedToday + 1, ai_assist_date: today })
+      .eq('user_id', user.id)
+
+    return NextResponse.json({
+      result:           result.trim(),
+      creditCost:       creditCost,
+      creditsUsed:      creditCost,
+      creditsRemaining: afterCredits?.remainingCredits ?? 0,
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'AI assist failed'
     console.error('[resume/ai-assist]', msg)

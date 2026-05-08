@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 
-// Counts from 0 → target using cubic ease-out via requestAnimationFrame.
+// Counts from `from` → target using cubic ease-out via requestAnimationFrame.
 // Respects prefers-reduced-motion — returns target immediately if set.
-export function useCountUp(target: number, duration = 900, delay = 0): number {
-  const [value, setValue] = useState(0)
+export function useCountUp(target: number, duration = 900, delay = 0, from = 0): number {
+  const [value, setValue] = useState(from)
 
   useEffect(() => {
+    setValue(from)
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       const t = setTimeout(() => setValue(target), 0)
       return () => clearTimeout(t)
@@ -18,13 +19,13 @@ export function useCountUp(target: number, duration = 900, delay = 0): number {
       if (now < startAt) { raf = requestAnimationFrame(tick); return }
       const t      = Math.min((now - startAt) / duration, 1)
       const eased  = 1 - Math.pow(1 - t, 3) // cubic ease-out
-      setValue(Math.round(eased * target))
+      setValue(Math.round(from + eased * (target - from)))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
 
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [target, duration, delay])
+  }, [target, duration, delay, from])
 
   return value
 }

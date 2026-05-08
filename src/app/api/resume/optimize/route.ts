@@ -4,6 +4,8 @@ import { optimizeResume, optimizeResumeGeneral, calculateImprovedScore } from '@
 import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
 import { parseResumeFromPDF } from '@/lib/ai/parser'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { getOptimizedResumeCache } from '@/lib/cache'
 import type { ParsedResume } from '@/types'
 
 function reconstructResumeText(p: ParsedResume): string {
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   const { data: baseProfile } = await adminClient
     .from('profiles')
-    .select('subscription_status, ai_actions_used')
+    .select('subscription_status, ai_actions_used, plan_tier')
     .eq('user_id', user.id)
     .single()
 
@@ -98,13 +100,33 @@ export async function POST(request: NextRequest) {
   const effectiveProUntil = await resolveProUntil(
     adminClient, user.id, baseProfile?.subscription_status, billingProfile?.pro_until
   )
-  const isPro = isProUser(user.email, profile.role, profile.subscription_status, effectiveProUntil)
+  const isPro    = isProUser(user.email, profile.role, profile.subscription_status, effectiveProUntil)
+  const planTier = (baseProfile?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
 
   const body = await request.json()
   const mode = (body.mode as string | undefined) ?? 'job-specific'
 
-  // ── GENERAL MODE (free for all users) ──────────────────────────────────────
+  // ── GENERAL MODE ─────────────────────────────────────────────────────────────
   if (mode === 'general') {
+    // Free users: 1 general optimization preview per day
+    if (!isPro) {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: freeQuota } = await adminClient
+        .from('profiles')
+        .select('optimize_free_daily_count, optimize_free_date')
+        .eq('user_id', user.id)
+        .single()
+      const isToday   = freeQuota?.optimize_free_date === today
+      const usedToday = isToday ? (freeQuota?.optimize_free_daily_count ?? 0) : 0
+      if (usedToday >= 1) {
+        return NextResponse.json(
+          { requiresUpgrade: true, error: 'You\'ve used your free optimization preview for today. Upgrade to keep tailoring your resume and improve your shortlist chances.' },
+          { status: 429 }
+        )
+      }
+      // Increment after success — stored in a closure and called below
+      void adminClient.from('profiles').update({ optimize_free_daily_count: usedToday + 1, optimize_free_date: today }).eq('user_id', user.id)
+    }
     const resumeResult = await supabase
       .from('resumes')
       .select('id, raw_text, parsed_data, file_url')
@@ -128,7 +150,7 @@ export async function POST(request: NextRequest) {
           const fileRes = await fetch(file_url)
           if (!fileRes.ok) throw new Error('Could not download resume file')
           const buffer = Buffer.from(await fileRes.arrayBuffer())
-          const reparsed = await parseResumeFromPDF(buffer)
+          const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro)
           raw_text = reconstructResumeText(reparsed)
         } catch (err) {
           console.error('[optimize:general] PDF re-parse failed:', err)
@@ -141,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     let optimizedData
     try {
-      optimizedData = await optimizeResumeGeneral(raw_text)
+      optimizedData = await optimizeResumeGeneral(raw_text, user.id, !isPro)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[optimize:general] Claude failed:', msg)
@@ -151,12 +173,56 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ optimizedData, mode: 'general', isFreePreview: false })
   }
 
-  // ── JOB-SPECIFIC MODE (Pro only) ────────────────────────────────────────────
+  // ── JOB-SPECIFIC MODE ────────────────────────────────────────────────────────
+
+  // Hoisted so the finalize block can reference them without re-fetching
+  const JOB_OPTIMIZE_MONTHLY_LIMIT = 3
+  const thisMonth = new Date().toISOString().slice(0, 7) // "YYYY-MM"
+  let proCurrentCount = 0
+  let proCreditCost   = 0
+  let freeUsedToday   = 0
+  let freeToday       = ''
+
   if (!isPro) {
-    return NextResponse.json(
-      { requiresUpgrade: true, error: 'Upgrade to Pro to optimize your resume for a specific job.' },
-      { status: 402 }
-    )
+    // Free users get 1 preview per day (shared quota with general optimization)
+    freeToday = new Date().toISOString().slice(0, 10)
+    const { data: freeQuota } = await adminClient
+      .from('profiles')
+      .select('optimize_free_daily_count, optimize_free_date')
+      .eq('user_id', user.id)
+      .single()
+    const isToday = freeQuota?.optimize_free_date === freeToday
+    freeUsedToday = isToday ? (freeQuota?.optimize_free_daily_count ?? 0) : 0
+    if (freeUsedToday >= 1) {
+      return NextResponse.json(
+        { requiresUpgrade: true, error: "You've used your free optimization preview for today. Upgrade to keep tailoring your resume for every job." },
+        { status: 402 }
+      )
+    }
+  } else {
+    // Pro users: monthly quota + credit check before the expensive Claude call
+    const { data: quotaRow } = await adminClient
+      .from('profiles')
+      .select('job_optimize_month_count, job_optimize_month')
+      .eq('user_id', user.id)
+      .single()
+    const currentMonth = quotaRow?.job_optimize_month ?? ''
+    proCurrentCount = currentMonth === thisMonth ? (quotaRow?.job_optimize_month_count ?? 0) : 0
+    if (proCurrentCount >= JOB_OPTIMIZE_MONTHLY_LIMIT) {
+      return NextResponse.json(
+        { error: `Monthly limit reached: you can optimize your resume for ${JOB_OPTIMIZE_MONTHLY_LIMIT} specific jobs per month. Resets on the 1st.` },
+        { status: 429 }
+      )
+    }
+    const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+      await checkCredits(user.id, 'jobOptimize', isPro, adminClient, planTier)
+    if (!creditAllowed) {
+      return NextResponse.json(
+        insufficientCreditsResponse('jobOptimize', creditBalance.remainingCredits),
+        { status: 402 }
+      )
+    }
+    proCreditCost = creditCost
   }
 
   const { jobId } = body
@@ -201,7 +267,7 @@ export async function POST(request: NextRequest) {
         const fileRes = await fetch(file_url)
         if (!fileRes.ok) throw new Error('Could not download resume file')
         const buffer = Buffer.from(await fileRes.arrayBuffer())
-        const reparsed = await parseResumeFromPDF(buffer)
+        const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro)
         raw_text = reconstructResumeText(reparsed)
       } catch (err) {
         console.error('[optimize] PDF re-parse failed:', err)
@@ -215,9 +281,28 @@ export async function POST(request: NextRequest) {
   const { title, company, location, description, url, salary } = jobResult.data
   const originalScore = matchResult.data?.ai_score ?? 0
 
+  // Cache check for Pro users: return a saved optimization for the same resume+job
+  if (isPro) {
+    const cached = await getOptimizedResumeCache(adminClient, user.id, jobId, resumeResult.data.id)
+    if (cached) {
+      console.log('[optimize] cache hit job_id=%s resume_id=%s', jobId, resumeResult.data.id)
+      return NextResponse.json({
+        optimizedData: cached,
+        jobTitle:      title,
+        company,
+        location:      location ?? '',
+        description:   description ?? '',
+        salary:        salary ?? null,
+        applyUrl:      url,
+        isFreePreview: false,
+        fromCache:     true,
+      })
+    }
+  }
+
   let optimizedData
   try {
-    optimizedData = await optimizeResume(raw_text, title, description, company, originalScore)
+    optimizedData = await optimizeResume(raw_text, title, description, company, originalScore, user.id, !isPro)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[optimize] Claude failed:', msg)
@@ -232,15 +317,48 @@ export async function POST(request: NextRequest) {
     optimizedData.original_score = originalScore
   }
 
+  // ── Finalize: free preview vs Pro save ──────────────────────────────────────
+  if (!isPro) {
+    // Consume the free preview slot (quota was verified above)
+    void adminClient
+      .from('profiles')
+      .update({ optimize_free_daily_count: freeUsedToday + 1, optimize_free_date: freeToday })
+      .eq('user_id', user.id)
+
+    return NextResponse.json({
+      optimizedData,
+      jobTitle: title,
+      company,
+      location:      location ?? '',
+      description:   description ?? '',
+      salary:        salary ?? null,
+      applyUrl:      url,
+      isFreePreview: true,
+    })
+  }
+
+  // Pro: deduct credits and increment monthly counter
+  const afterCredits = await deductCredits(user.id, 'jobOptimize', adminClient)
+  void adminClient
+    .from('profiles')
+    .update({
+      job_optimize_month_count: proCurrentCount + 1,
+      job_optimize_month: thisMonth,
+    })
+    .eq('user_id', user.id)
+
   return NextResponse.json({
     optimizedData,
     jobTitle: title,
     company,
-    location: location ?? '',
-    description: description ?? '',
-    salary: salary ?? null,
-    applyUrl: url,
-    isFreePreview: false,
+    location:         location ?? '',
+    description:      description ?? '',
+    salary:           salary ?? null,
+    applyUrl:         url,
+    isFreePreview:    false,
+    creditCost:       proCreditCost,
+    creditsUsed:      proCreditCost,
+    creditsRemaining: afterCredits?.remainingCredits ?? 0,
   })
 }
 

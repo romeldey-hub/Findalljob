@@ -116,7 +116,8 @@ export async function generateSearchStrategy(
   }
 
   try {
-    const raw      = await callClaudeJSON<SearchStrategy>(buildPrompt(resumeText), SYSTEM, 1500)
+    const rawResult = await callClaudeJSON<SearchStrategy>(buildPrompt(resumeText), SYSTEM, 1500)
+    const raw       = 'data' in rawResult ? rawResult.data : rawResult
     const queries  = (raw.search_queries ?? [])
       .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
     const companies = (raw.target_companies ?? [])

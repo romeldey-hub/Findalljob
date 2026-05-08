@@ -1,4 +1,4 @@
-import { callClaudeJSON } from './claude'
+import { generateLightJSON } from './client'
 import type { ParsedResume } from '@/types'
 
 interface SuggestionInput {
@@ -15,7 +15,9 @@ const SUGGESTIONS_SYSTEM_PROMPT = `You are an expert career coach who gives spec
 
 export async function generateCvSuggestions(
   resume: ParsedResume,
-  topJobs: SuggestionInput[]
+  topJobs: SuggestionInput[],
+  userId?: string,
+  isFreeUser?: boolean,
 ): Promise<string[]> {
   // Tally missing skills by frequency across all matched jobs
   const freq: Record<string, number> = {}
@@ -55,7 +57,7 @@ Return JSON:
 Each suggestion must be 1-2 sentences, concrete (mention specific skills/tools/patterns), and immediately actionable.`
 
   try {
-    const result = await callClaudeJSON<SuggestionResult>(prompt, SUGGESTIONS_SYSTEM_PROMPT, 1024)
+    const result = await generateLightJSON<SuggestionResult>(prompt, { task: 'resume_suggestions', system: SUGGESTIONS_SYSTEM_PROMPT, maxTokens: 350, userId, isFreeUser })
     return result.improvements ?? []
   } catch {
     return []

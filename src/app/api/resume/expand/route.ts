@@ -1,7 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { rerankJobs } from '@/lib/ai/reranker'
 import { JobSourceRouter } from '@/lib/jobs/router'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { checkRateLimit, userRateLimitKey, rateLimitResponse } from '@/lib/rate-limit'
 import type { NormalizedJob, ParsedResume } from '@/types'
 
 export const maxDuration = 300
@@ -37,11 +41,47 @@ function addUnique(target: NormalizedJob[], seen: Set<string>, incoming: Normali
   }
 }
 
-export async function POST() {
+export async function POST(_req: NextRequest) {
   const supabase = await createClient()
   const admin = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // ── Plan resolution ──────────────────────────────────────────────────────
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, plan_tier')
+    .eq('user_id', user.id)
+    .single()
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until,
+  )
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
+
+  // ── Rate limit: 3 expansions / minute / user ─────────────────────────────
+  const rlResult = await checkRateLimit(
+    userRateLimitKey(user.id, 'job_expand'),
+    'job_expand',
+    admin,
+  )
+  if (!rlResult.allowed) {
+    console.warn(`[resume/expand] rate-limited | user=${user.id}`)
+    return NextResponse.json(rateLimitResponse(rlResult), { status: 429 })
+  }
+
+  // ── Credit check (1 credit: job search + AI reranking) ───────────────────
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'jobExpand', isPro, admin, planTier)
+
+  if (!creditAllowed) {
+    console.warn(`[resume/expand] insufficient credits | user=${user.id} | remaining=${creditBalance.remainingCredits}`)
+    return NextResponse.json(
+      insufficientCreditsResponse('jobExpand', creditBalance.remainingCredits),
+      { status: 402 },
+    )
+  }
 
   const { data: resume, error: resumeError } = await supabase
     .from('resumes')
@@ -153,5 +193,12 @@ export async function POST() {
     return NextResponse.json({ error: `Could not save expanded matches: ${matchError.message}` }, { status: 500 })
   }
 
-  return NextResponse.json({ added: matchRows.length })
+  // ── Deduct 1 credit after all work succeeds ──────────────────────────────
+  const afterCredits = await deductCredits(user.id, 'jobExpand', admin)
+
+  return NextResponse.json({
+    added:            matchRows.length,
+    creditCost,
+    creditsRemaining: afterCredits?.remainingCredits ?? creditBalance.remainingCredits - creditCost,
+  })
 }

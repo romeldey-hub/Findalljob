@@ -607,19 +607,19 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
                   {/* Headline + subtext */}
                   <div>
                     <h3 className="text-[20px] font-black text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">
-                      Continue Your Interview
+                      Don&apos;t lose your momentum
                     </h3>
                     <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed">
-                      You&apos;ve completed 1 of 5 questions. Upgrade to unlock the full mock interview and improve your chances.
+                      You&apos;re 20% through. Complete all 5 questions to get AI coaching on every answer — tailored to your resume and this role.
                     </p>
                   </div>
 
                   {/* Benefits */}
                   <div className="space-y-2.5">
                     {[
-                      '4 more tailored questions to go',
-                      'Deep AI feedback on every answer',
-                      'Full interview simulation with scoring',
+                      '4 more questions tailored to your resume and this role',
+                      'Detailed AI coaching on every answer you give',
+                      'Full session score — know exactly where you stand',
                     ].map((b, i) => (
                       <div key={i} className="flex items-center gap-2.5">
                         <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
@@ -636,7 +636,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
                       href="/settings"
                       className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[14px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all hover:scale-[1.01] active:scale-100 shadow-sm"
                     >
-                      <Crown className="w-3.5 h-3.5 text-amber-400" />Upgrade to Pro
+                      <Crown className="w-3.5 h-3.5 text-amber-400" />Unlock full interview practice
                     </a>
                     <button
                       onClick={onClose}
@@ -697,7 +697,7 @@ function FeedbackPanel({
   onNext: () => void
 }) {
   const nextLabel = !isPro
-    ? 'Continue Interview (Upgrade to Pro)'
+    ? 'Unlock full interview practice'
     : questionNumber >= TOTAL_QUESTIONS
     ? 'Finish Interview'
     : 'Next Question →'

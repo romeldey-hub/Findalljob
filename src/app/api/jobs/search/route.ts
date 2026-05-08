@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   if (!fallback && !isPro && currentSearchCount >= FREE_LIMITS.jobSearch) {
     return NextResponse.json({
-      error: `You've used all ${FREE_LIMITS.jobSearch} free job searches. Upgrade to Pro to continue.`,
+      error: `You've used all ${FREE_LIMITS.jobSearch} free job searches. Upgrade to keep finding jobs that match your profile.`,
       limitReached: true,
     }, { status: 403 })
   }

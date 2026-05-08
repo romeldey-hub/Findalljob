@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { track } from '@/lib/analytics'
 import { usePricing } from '@/hooks/usePricing'
+import type { PlanId } from '@/lib/pricing'
 
 interface RazorpayPaymentResponse {
   razorpay_order_id: string
@@ -58,12 +59,13 @@ declare global {
 interface RazorpayPaymentProps {
   isLoading?: boolean
   label?: string
+  planId: PlanId
 }
 
-export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to Pro' }: RazorpayPaymentProps) {
+export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to Pro', planId }: RazorpayPaymentProps) {
   const [loading, setLoading] = useState(false)
-  const router  = useRouter()
-  const pricing = usePricing()
+  const router = useRouter()
+  const region = usePricing()
 
   const handleUpgrade = async () => {
     track.upgradeClick('payment_widget')
@@ -74,7 +76,7 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
       const orderResponse = await fetch('/api/razorpay/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ countryCode: pricing.countryCode }),
+        body: JSON.stringify({ countryCode: region.countryCode, planId }),
       })
       if (!orderResponse.ok) {
         const errData = await orderResponse.json().catch(() => ({}))

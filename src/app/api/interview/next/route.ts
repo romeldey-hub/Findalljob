@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { callClaude } from '@/lib/ai/claude'
+import { generateLight } from '@/lib/ai/client'
 import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
+import { checkRateLimit, userRateLimitKey, rateLimitResponse } from '@/lib/rate-limit'
 import type { ParsedResume } from '@/types'
 
 export const maxDuration = 30
@@ -23,6 +24,20 @@ export async function POST(req: NextRequest) {
   const { questionNumber, previousQuestions, jobTitle, company, jobDescription } = await req.json()
   if (!questionNumber || !jobTitle) {
     return NextResponse.json({ error: 'questionNumber and jobTitle are required' }, { status: 400 })
+  }
+
+  // ── Rate limit: 8 questions / minute / user ────────────────────────────────
+  {
+    const adminForRl = createAdminClient()
+    const rlResult = await checkRateLimit(
+      userRateLimitKey(user.id, 'interview_next'),
+      'interview_next',
+      adminForRl,
+    )
+    if (!rlResult.allowed) {
+      console.warn(`[interview/next] rate-limited | user=${user.id}`)
+      return NextResponse.json(rateLimitResponse(rlResult), { status: 429 })
+    }
   }
 
   // ── Backend pro enforcement ────────────────────────────────────────────────
@@ -65,7 +80,7 @@ export async function POST(req: NextRequest) {
 
   const theme = QUESTION_THEMES[questionNumber] ?? 'professional skills or situational judgment'
 
-  const question = await callClaude(
+  const question = await generateLight(
     `Generate interview question #${questionNumber} for this candidate.
 
 JOB: ${jobTitle} at ${company}
@@ -84,8 +99,7 @@ Rules:
 - Must explore a genuinely different angle than previous questions
 - Use STAR-friendly framing where appropriate ("Tell me about a time when…", "Describe a situation where…")
 - Return ONLY the question text`,
-    'You are a professional interviewer conducting a structured mock interview. Generate targeted, thoughtful questions.',
-    250,
+    { task: `interview_q${questionNumber}`, system: 'You are a professional interviewer conducting a structured mock interview. Generate targeted, thoughtful questions.', maxTokens: 150, userId: user.id, isFreeUser: false },
   )
 
   return NextResponse.json({ question: question.trim(), questionNumber })

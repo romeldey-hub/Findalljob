@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse }        from 'next/server'
 import Razorpay                             from 'razorpay'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { getPricingByCountry }             from '@/lib/pricing'
+import { getPlanPricing, type PlanId }     from '@/lib/pricing'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Dynamic pricing based on user's country
-  const body        = await request.json().catch(() => ({})) as { countryCode?: string }
-  const pricing     = getPricingByCountry(body.countryCode)
+  // Dynamic pricing based on user's country and plan
+  const body     = await request.json().catch(() => ({})) as { countryCode?: string; planId?: PlanId }
+  const plan     = getPlanPricing(body.countryCode, body.planId ?? 'pro_lite')
 
   const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret })
   const admin    = createAdminClient()
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const order = await razorpay.orders.create({
-      amount:   pricing.amount,
-      currency: pricing.currency,
+      amount:   plan.amount,
+      currency: plan.currency,
       receipt:  `ord_${user.id.slice(0, 8)}_${Date.now().toString().slice(-8)}`,
       notes: {
         supabase_user_id: user.id,
@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Store order ID for later signature verification — non-fatal if column missing
+    // Store order ID and pending plan tier for later signature verification — non-fatal if column missing
     const { error: saveErr } = await admin
       .from('profiles')
-      .update({ razorpay_order_id: order.id })
+      .update({ razorpay_order_id: order.id, pending_plan_tier: body.planId ?? 'pro_lite' })
       .eq('user_id', user.id)
     if (saveErr) console.warn('[checkout] could not save razorpay_order_id:', saveErr.message)
 

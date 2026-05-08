@@ -1,7 +1,10 @@
-import { NextResponse }       from 'next/server'
-import { createClient }       from '@/lib/supabase/server'
-import { computeVerifiedLabel } from '@/types'
-import type { ApplyStatus }   from '@/types'
+import { NextResponse }          from 'next/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { computeVerifiedLabel }  from '@/types'
+import { isProUser }             from '@/lib/admin'
+import { resolveProUntil }       from '@/lib/billing'
+import { FREE_LIMITS }           from '@/lib/limits'
+import type { ApplyStatus }      from '@/types'
 
 function decodeReasoning(raw: string): {
   reasoning:      string
@@ -35,6 +38,19 @@ export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Resolve Pro status — used to determine match cap
+  const admin = createAdminClient()
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until')
+    .eq('user_id', user.id)
+    .single()
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until
+  )
+  const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const matchLimit = isPro ? 20 : FREE_LIMITS.matchesPerDay
 
   const [matchesResult, resumeResult] = await Promise.all([
     supabase
@@ -122,5 +138,6 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json({ matches, cvSuggestions, hasResume })
+  const visibleMatches = isPro ? matches : matches.slice(0, matchLimit)
+  return NextResponse.json({ matches: visibleMatches, cvSuggestions, hasResume, isPro, matchLimit, totalMatches: matches.length })
 }

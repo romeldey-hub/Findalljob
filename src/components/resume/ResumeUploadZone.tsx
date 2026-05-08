@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
-  Sparkles, MoreHorizontal, RefreshCcw, Trash2, X, AlertTriangle, Lock,
+  Sparkles, RefreshCcw, Trash2, X, AlertTriangle, Lock,
 } from 'lucide-react'
 import { track } from '@/lib/analytics'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
@@ -15,16 +15,15 @@ import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgres
 // ── Progress configuration (outside component — never recreated) ──────────────
 
 const UPLOAD_STEP_DEFS: StepDefinition[] = [
-  { label: 'Reading your resume...',       defaultDescription: 'Opening the file and checking the content.' },
+  { label: 'Reading your resume...',        defaultDescription: 'Opening the file and checking the content.' },
   { label: 'Understanding your profile...', defaultDescription: 'Extracting your skills, roles, and career path.' },
-  { label: 'Creating search strategy...',  defaultDescription: 'Building focused queries for your background.' },
-  { label: 'Searching job sources...',     defaultDescription: 'Searching multiple job sources for matches.' },
-  { label: 'Checking job relevance...',    defaultDescription: 'Filtering the most relevant opportunities.' },
-  { label: 'Scoring matches...',           defaultDescription: 'AI is scoring jobs against your profile.' },
-  { label: 'Preparing matched jobs...',    defaultDescription: 'Saving and organising your best matches.' },
+  { label: 'Creating search strategy...',   defaultDescription: 'Building focused queries for your background.' },
+  { label: 'Searching job sources...',      defaultDescription: 'Searching multiple job sources for matches.' },
+  { label: 'Checking job relevance...',     defaultDescription: 'Filtering the most relevant opportunities.' },
+  { label: 'Scoring matches...',            defaultDescription: 'AI is scoring jobs against your profile.' },
+  { label: 'Preparing matched jobs...',     defaultDescription: 'Saving and organising your best matches.' },
 ]
 
-// Step 0 (reading/upload) is handled before analyze starts; SSE drives steps 1–6
 const UPLOAD_STEP_MAP: Record<string, number> = {
   resume_loaded:  1,
   profile_parsed: 1,
@@ -52,26 +51,12 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
   const [uploadError, setUploadError]   = useState<string | null>(null)
-  const [menuOpen, setMenuOpen]         = useState(false)
   const [showConfirm, setShowConfirm]   = useState(false)
   const [deleting, setDeleting]         = useState(false)
   const [activityFailed, setActivityFailed] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
 
   const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
     useAnalyzeProgress({ stepDefs: UPLOAD_STEP_DEFS, stepMap: UPLOAD_STEP_MAP })
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [menuOpen])
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -80,11 +65,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     setUploadState('uploading')
     setUploadError(null)
     setActivityFailed(false)
-    resetProgress(0)  // Step 0: "Reading your resume…" active during upload
+    resetProgress(0)
     const formData = new FormData()
     formData.append('file', file)
 
-    // ── Step 1: Upload (fatal — bail out if this fails) ────────────────────
     try {
       const uploadRes  = await fetch('/api/resume/upload', { method: 'POST', body: formData })
       const uploadData = await uploadRes.json()
@@ -113,8 +97,6 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
       return
     }
 
-    // ── Step 2: Analyze (non-fatal — always redirect to Matched Jobs) ───────
-    // Upload (step 0) is done — reset at step 1 "Understanding your profile"
     setUploadState('analyzing')
     resetProgress(1)
     toast.info('Analyzing your profile and matching jobs…')
@@ -122,7 +104,6 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     let analyzeFailed = false
     let matchCount    = 0
 
-    // Abort the stream after 10 minutes to prevent infinite hangs
     const abortController = new AbortController()
     const abortTimer = setTimeout(() => abortController.abort(), 10 * 60 * 1000)
 
@@ -195,7 +176,6 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     }
 
     if (analyzeFailed) {
-      // Reset to idle so user can see the upload zone and try again
       setUploadState('idle')
       resetProgress()
       return
@@ -205,7 +185,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     setTimeout(() => router.push('/matches'), 2000)
   }, [router, resetProgress, stopProgress, onSSEEvent])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
@@ -235,286 +215,296 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     }
   }
 
-  const busy      = uploadState === 'uploading' || uploadState === 'analyzing'
-  const fileName  = resumeInfo?.file_url
+  const busy       = uploadState === 'uploading' || uploadState === 'analyzing'
+  const fileName   = resumeInfo?.file_url
     ? decodeURIComponent(resumeInfo.file_url.split('/').pop()?.split('?')[0] ?? 'resume')
         .replace(/^\d+-/, '')
     : null
   const uploadDate = resumeInfo?.created_at
     ? new Date(resumeInfo.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null
-  // activitySteps from useAnalyzeProgress — driven by real SSE events + time gating
+
+  // Compact mode: resume exists and not mid-upload
+  const compactMode = hasExistingResume && uploadState === 'idle'
 
   return (
     <>
-    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* ── LEFT: Drag-drop zone ─────────────────────────────── */}
-        <div
-          {...getRootProps()}
-          className={[
-            'flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed p-8 min-h-[200px] cursor-pointer transition-all duration-150',
-            isDragActive
-              ? 'border-[#2563EB] bg-blue-50 dark:bg-[#1E3A5F]'
-              : 'border-[#E5E7EB] dark:border-[#334155] hover:border-[#2563EB]/50 hover:bg-[#F8FAFC] dark:hover:bg-[#263549]',
-            busy ? 'opacity-70 pointer-events-none' : '',
-          ].join(' ')}
-        >
-          <input {...getInputProps()} />
-
-          {uploadState === 'uploading' && (
-            <>
-              <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Uploading…</p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">Please wait</p>
-            </>
-          )}
-
-          {uploadState === 'analyzing' && (
-            <>
-              <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Finding the best opportunities for you...</p>
-              <p className="text-[13px] font-medium text-gray-500 dark:text-slate-400 mt-1">⏳ This usually takes 3–5 minutes</p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">We’re scanning multiple job sources to find the most relevant matches.</p>
-            </>
-          )}
-
-          {uploadState === 'success' && (
-            <>
-              <CheckCircle2 className="w-10 h-10 text-green-500 mb-3" />
-              <p className="font-semibold text-[14px] text-green-600">Done! Redirecting…</p>
-            </>
-          )}
-
-          {uploadState === 'no-text' && (
-            <>
-              <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Could not read file</p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1 max-w-[240px] text-center leading-relaxed">
-                {uploadError ?? 'Could not extract text from this file.'}
-              </p>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setUploadState('idle'); setUploadError(null) }}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
-              >
-                Try another file
-              </button>
-            </>
-          )}
-
-          {uploadState === 'idle' && uploadLimitReached && (
-            <>
-              <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center mb-4">
-                <Lock className="w-7 h-7 text-amber-500" />
-              </div>
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Upload limit reached</p>
-              <p className="text-[12px] text-gray-500 dark:text-slate-400 mt-1.5 max-w-[220px]">
-                You&apos;ve used all {uploadLimit} free resume uploads.
-              </p>
-              <a
-                href="/settings"
-                className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[13px] font-semibold transition-all shadow-sm"
-                onClick={(e) => e.stopPropagation()}
-              >
-                Upgrade to Pro
-              </a>
-            </>
-          )}
-
-          {uploadState === 'idle' && !uploadLimitReached && (
-            <>
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 transition-colors ${
-                isDragActive ? 'bg-[#2563EB]/10' : 'bg-[#F8FAFC] dark:bg-[#263549]'
-              }`}>
-                <UploadCloud className={`w-7 h-7 ${isDragActive ? 'text-[#2563EB]' : 'text-gray-300 dark:text-slate-600'}`} />
-              </div>
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">
-                {isDragActive ? 'Drop your resume here' : 'Upload or drag & drop your resume'}
-              </p>
-              <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1.5">PDF or Word (.doc / .docx) · Max 5 MB</p>
-              <button
-                type="button"
-                className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 hover:scale-[1.02] active:scale-100 transition-all shadow-sm"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                {hasExistingResume ? 'Replace Resume' : 'Upload Resume'}
-              </button>
-              {!isPro && (
-                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
-                  {uploadLimit - uploadCount} of {uploadLimit} free uploads remaining
-                </p>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* ── RIGHT: File info or tips ─────────────────────────── */}
-        {hasExistingResume && resumeInfo ? (
-          <div className="flex flex-col rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] overflow-hidden h-full">
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#0F172A] dark:text-[#F1F5F9]" />
-                <span className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Active Resume</span>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
-                Ready
-              </span>
-            </div>
-
-            {/* File row */}
-            <div className="flex items-center gap-3 px-5 py-3 flex-1">
-              <div className="w-10 h-10 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-[#2563EB]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] truncate">{fileName}</p>
-                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">
-                  Updated {uploadDate}{resumeInfo.version > 1 ? ` · v${resumeInfo.version}` : ''}
-                </p>
-              </div>
-
-              {/* 3-dot menu */}
-              <div ref={menuRef} className="relative flex-shrink-0">
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 dark:text-slate-600 hover:bg-[#F8FAFC] dark:hover:bg-[#334155] hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-
-                {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl shadow-lg z-20 overflow-hidden py-1">
-                    <button
-                      onClick={() => { setMenuOpen(false); document.querySelector<HTMLInputElement>('input[type="file"]')?.click() }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors text-left"
-                    >
-                      <RefreshCcw className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                      Replace Resume
-                    </button>
-                    <div className="border-t border-[#F1F5F9] dark:border-[#334155] my-1" />
-                    <button
-                      onClick={() => { setMenuOpen(false); setShowConfirm(true) }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors text-left"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete Resume
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Status banner */}
-            <div className="flex items-center gap-2 px-5 py-3 bg-[#F8FAFC] dark:bg-[#0F172A]/40 border-t border-[#E5E7EB] dark:border-[#334155]">
-              <CheckCircle2 className="w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0" />
-              <span className="text-[12px] font-semibold text-gray-500 dark:text-slate-400">Parsed &amp; ready for job matching</span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col justify-center gap-3 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] p-6">
-            <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="w-4 h-4 text-[#2563EB]" />
-              <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9]">What happens after upload?</p>
-            </div>
-            {[
-              'AI parses your resume into structured data',
-              'Skills, experience & education are extracted',
-              'Jobs are fetched and matched to your profile',
-              'A match score is generated for each listing',
-            ].map((step, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-5 h-5 rounded-full bg-[#2563EB] flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-[9px] font-bold text-white">{i + 1}</span>
-                </div>
-                <p className="text-[12px] text-gray-600 dark:text-slate-400 leading-snug">{step}</p>
-              </div>
-            ))}
-            <p className="text-[12px] font-medium text-gray-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-              ⏳ Processing usually takes 3–5 minutes
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-
-    {busy || uploadState === 'success' ? (
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
-        <ProgressiveActivity
-          title={activityFailed ? 'We saved your resume' : 'Matching your resume'}
-          steps={activitySteps}
-        />
-        <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
-          <div className="aspect-video w-full">
-            <iframe
-              className="h-full w-full"
-              src="https://www.youtube.com/embed/6HPs3i2Nth0?si=l8ARqLm0UI9RKA9L"
-              title="YouTube video player"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              referrerPolicy="strict-origin-when-cross-origin"
-              allowFullScreen
-            />
-          </div>
-        </div>
-      </div>
-    ) : null}
-
-    {/* ── Delete confirmation modal ─────────────────────────────────────── */}
-    {showConfirm && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        onClick={() => !deleting && setShowConfirm(false)}
-      >
-        <div className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-[2px]" />
-        <div
-          className="relative w-full max-w-[420px] bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Close */}
-          <button
-            onClick={() => setShowConfirm(false)}
-            disabled={deleting}
-            className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 hover:bg-gray-100 dark:hover:bg-[#263549] transition-colors disabled:opacity-40"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          {/* Icon */}
-          <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center mb-4">
-            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-          </div>
-
-          <h2 className="text-[17px] font-black text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">Delete Resume?</h2>
-          <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed mb-6">
-            This will remove your current resume and all related data including job matches and scores.
-            This action cannot be undone.
-          </p>
-
+      {/* ── COMPACT TOP BAR ─────────────────────────────────────────────────── */}
+      {compactMode && resumeInfo && (
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm px-5 py-4">
           <div className="flex items-center gap-3">
+
+            {/* File icon */}
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] dark:bg-[#1E3A5F] flex items-center justify-center flex-shrink-0">
+              <FileText className="w-[18px] h-[18px] text-[#2563EB]" />
+            </div>
+
+            {/* Name + date */}
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] truncate leading-tight">
+                {fileName ?? 'resume'}
+              </p>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">
+                Updated {uploadDate}{resumeInfo.version > 1 ? ` · v${resumeInfo.version}` : ''}
+              </p>
+            </div>
+
+            {/* Ready badge */}
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 flex-shrink-0">
+              <CheckCircle2 className="w-3 h-3" />
+              Ready
+            </span>
+
+            {/* Replace Resume */}
+            <button
+              type="button"
+              onClick={() => open()}
+              disabled={uploadLimitReached}
+              title={uploadLimitReached ? 'Upload limit reached — upgrade to Pro' : 'Upload a new resume file'}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#263549] text-[12px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] hover:bg-[#F8FAFC] dark:hover:bg-[#2E3D56] transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCcw className="w-3 h-3 text-gray-400 dark:text-slate-500" />
+              Replace Resume
+            </button>
+
+            {/* Delete — subtle, red on hover */}
+            <button
+              type="button"
+              onClick={() => setShowConfirm(true)}
+              title="Delete resume"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex-shrink-0"
+            >
+              <Trash2 className="w-[15px] h-[15px]" />
+            </button>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── FULL UPLOAD ZONE ────────────────────────────────────────────────── */}
+      {/* Hidden in compact mode but kept in DOM so `open()` / getInputProps work */}
+      <div className={compactMode ? 'hidden' : undefined}>
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            {/* LEFT: Drag-drop zone */}
+            <div
+              {...getRootProps()}
+              className={[
+                'flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed p-8 min-h-[200px] cursor-pointer transition-all duration-150',
+                isDragActive
+                  ? 'border-[#2563EB] bg-blue-50 dark:bg-[#1E3A5F]'
+                  : 'border-[#E5E7EB] dark:border-[#334155] hover:border-[#2563EB]/50 hover:bg-[#F8FAFC] dark:hover:bg-[#263549]',
+                busy ? 'opacity-70 pointer-events-none' : '',
+              ].join(' ')}
+            >
+              <input {...getInputProps()} />
+
+              {uploadState === 'uploading' && (
+                <>
+                  <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-3" />
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Uploading…</p>
+                  <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">Please wait</p>
+                </>
+              )}
+
+              {uploadState === 'analyzing' && (
+                <>
+                  <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-3" />
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Finding the best opportunities for you...</p>
+                  <p className="text-[13px] font-medium text-gray-500 dark:text-slate-400 mt-1">⏳ This usually takes 3–5 minutes</p>
+                  <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1">We're scanning multiple job sources to find the most relevant matches.</p>
+                </>
+              )}
+
+              {uploadState === 'success' && (
+                <>
+                  <CheckCircle2 className="w-10 h-10 text-green-500 mb-3" />
+                  <p className="font-semibold text-[14px] text-green-600">Done! Redirecting…</p>
+                </>
+              )}
+
+              {uploadState === 'no-text' && (
+                <>
+                  <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Could not read file</p>
+                  <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1 max-w-[240px] text-center leading-relaxed">
+                    {uploadError ?? 'Could not extract text from this file.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setUploadState('idle'); setUploadError(null) }}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+                  >
+                    Try another file
+                  </button>
+                </>
+              )}
+
+              {uploadState === 'idle' && uploadLimitReached && (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center mb-4">
+                    <Lock className="w-7 h-7 text-amber-500" />
+                  </div>
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Upload limit reached</p>
+                  <p className="text-[12px] text-gray-500 dark:text-slate-400 mt-1.5 max-w-[220px]">
+                    You&apos;ve used all {uploadLimit} free resume uploads.
+                  </p>
+                  <a
+                    href="/settings"
+                    className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[13px] font-semibold transition-all shadow-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Upgrade to Pro
+                  </a>
+                </>
+              )}
+
+              {uploadState === 'idle' && !uploadLimitReached && (
+                <>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 transition-colors ${
+                    isDragActive ? 'bg-[#2563EB]/10' : 'bg-[#F8FAFC] dark:bg-[#263549]'
+                  }`}>
+                    <UploadCloud className={`w-7 h-7 ${isDragActive ? 'text-[#2563EB]' : 'text-gray-300 dark:text-slate-600'}`} />
+                  </div>
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">
+                    {isDragActive ? 'Drop your resume here' : 'Upload or drag & drop your resume'}
+                  </p>
+                  <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1.5">PDF or Word (.doc / .docx) · Max 5 MB</p>
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 hover:scale-[1.02] active:scale-100 transition-all shadow-sm"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    {hasExistingResume ? 'Replace Resume' : 'Upload Resume'}
+                  </button>
+                  {!isPro && (
+                    <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
+                      {uploadLimit - uploadCount} of {uploadLimit} free uploads remaining
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* RIGHT: What happens after upload */}
+            <div className="flex flex-col justify-center gap-3 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="w-4 h-4 text-[#2563EB]" />
+                <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9]">What happens after upload?</p>
+              </div>
+              {[
+                'AI parses your resume into structured data',
+                'Skills, experience & education are extracted',
+                'Jobs are fetched and matched to your profile',
+                'A match score is generated for each listing',
+              ].map((step, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-[#2563EB] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-[9px] font-bold text-white">{i + 1}</span>
+                  </div>
+                  <p className="text-[12px] text-gray-600 dark:text-slate-400 leading-snug">{step}</p>
+                </div>
+              ))}
+              <p className="text-[12px] font-medium text-gray-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                ⏳ Processing usually takes 3–5 minutes
+              </p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {/* ── Progress strip ───────────────────────────────────────────────────── */}
+      {busy || uploadState === 'success' ? (
+        <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
+          <ProgressiveActivity
+            title={activityFailed ? 'We saved your resume' : 'Matching your resume'}
+            steps={activitySteps}
+          />
+          <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
+            <div className="aspect-video w-full">
+              <iframe
+                className="h-full w-full"
+                src="https://www.youtube.com/embed/6HPs3i2Nth0?si=l8ARqLm0UI9RKA9L"
+                title="YouTube video player"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Delete confirmation modal ─────────────────────────────────────── */}
+      {showConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => !deleting && setShowConfirm(false)}
+        >
+          <div className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-[420px] bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close */}
             <button
               onClick={() => setShowConfirm(false)}
               disabled={deleting}
-              className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors disabled:opacity-40"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 hover:bg-gray-100 dark:hover:bg-[#263549] transition-colors disabled:opacity-40"
             >
-              Cancel
+              <X className="w-4 h-4" />
             </button>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {deleting
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Deleting…</>
-                : <><Trash2 className="w-3.5 h-3.5" />Delete</>}
-            </button>
+
+            {/* Icon */}
+            <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            </div>
+
+            <h2 className="text-[17px] font-black text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">Delete this resume?</h2>
+            <p className="text-[13px] text-gray-500 dark:text-slate-400 mb-3">This will permanently remove:</p>
+
+            <ul className="space-y-1.5 mb-5">
+              {[
+                'Parsed resume data and profile',
+                'All matched job listings and scores',
+                'Optimized resume versions',
+                'Interview prep progress tied to this resume',
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-2 text-[13px] text-gray-600 dark:text-slate-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+
+            <p className="text-[12px] text-gray-400 dark:text-slate-500 mb-5">This action cannot be undone.</p>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {deleting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Deleting…</>
+                  : <><Trash2 className="w-3.5 h-3.5" />Delete Resume</>}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
+
     </>
   )
 }

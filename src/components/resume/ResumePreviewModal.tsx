@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Loader2, Download, X, CheckCircle2, FileText, Plus, Check,
   Briefcase, GraduationCap, Sparkles, Wand2, BriefcaseBusiness,
-  ChevronUp, ChevronDown, Trash2, AlignLeft, List, Table2,
+  ChevronUp, ChevronDown, Trash2, AlignLeft, List, Table2, Lock, Crown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
@@ -22,7 +22,12 @@ async function aiAssist(action: AIAction, text: string, context?: string): Promi
     body:    JSON.stringify({ action, text, context }),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error ?? 'AI assist failed')
+  if (!res.ok) {
+    const msg = data.requiresUpgrade
+      ? 'Out of AI credits. Upgrade to Pro to continue using AI writing tools.'
+      : (data.error ?? 'AI assist failed')
+    throw new Error(msg)
+  }
   return data.result as string
 }
 
@@ -129,19 +134,34 @@ export function ResumePreviewModal({
   previewSubtitle,
   startInEditMode = false,
   mode = 'edit',
+  canDownload = true,
+  isFreePreview = false,
+  isOptimizedPreview = false,
+  onLockedDownload,
+  onUnlock,
+  autoDownload = false,
+  viewMode = false,
 }: {
   data: OptimizedResumeData
   onClose: () => void
   onApprove?: () => void
   isSaving?: boolean
   avatarUrl?: string | null
-  onSaveEdits?: (edited: OptimizedResumeData) => void
+  onSaveEdits?: (edited: OptimizedResumeData) => Promise<void> | void
   onSaveAndFindJobs?: (edited: OptimizedResumeData) => Promise<void>
   approveLabel?: string
   heading?: string
   previewSubtitle?: string
   startInEditMode?: boolean
   mode?: 'edit' | 'create'
+  canDownload?: boolean
+  isFreePreview?: boolean
+  isOptimizedPreview?: boolean
+  onLockedDownload?: () => void
+  onUnlock?: () => void
+  autoDownload?: boolean
+  /** True when opened from "View Optimized Resume" on the job card (not from a fresh optimization run) */
+  viewMode?: boolean
 }) {
   const [isEditing, setIsEditing]         = useState(startInEditMode)
   const [editData, setEditData]           = useState<OptimizedResumeData>(data)
@@ -149,6 +169,8 @@ export function ResumePreviewModal({
   const [newSkill, setNewSkill]           = useState('')
   const [isSavingJobs, setIsSavingJobs]   = useState(false)
   const [aiLoading, setAILoading]         = useState<Record<string, boolean>>({})
+  // Tracks whether the user edited and saved from viewMode — switches footer from Close to Save
+  const [hasLocalEdits, setHasLocalEdits] = useState(false)
 
   const d        = data
   const initials = (d.name ?? '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?'
@@ -463,10 +485,19 @@ export function ResumePreviewModal({
     }
   }
 
-  function handleSaveChanges() {
-    onSaveEdits?.(editData)
+  async function handleSaveChanges() {
+    await onSaveEdits?.(editData)
     setIsEditing(false)
+    setHasLocalEdits(true)
   }
+
+  // Auto-download: Pro users clicking the download icon trigger download on mount
+  useEffect(() => {
+    if (autoDownload && canDownload) {
+      const t = setTimeout(() => void handleDownload(), 300)
+      return () => clearTimeout(t)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1223,15 +1254,24 @@ export function ResumePreviewModal({
               ) : (
                 <button
                   onClick={handleSaveChanges}
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all shadow-sm"
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Check className="w-3.5 h-3.5" />Save Changes
+                  {isSaving
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saving…</>
+                    : <><Check className="w-3.5 h-3.5" />Save Changes</>
+                  }
                 </button>
               )}
             </>
-          ) : (
+          ) : isOptimizedPreview && viewMode && !hasLocalEdits ? (
+            /* ── Case 2: Opened from "View Optimized Resume" — no pending save ── */
+            /* Left: Close   Right: Edit PDF | Download PDF */
             <>
-              <button onClick={onClose} className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+              >
                 Close
               </button>
               <div className="flex items-center gap-2">
@@ -1239,17 +1279,99 @@ export function ResumePreviewModal({
                   onClick={enterEdit}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
                 >
-                  <FileText className="w-3.5 h-3.5" />Edit Manually
+                  <FileText className="w-3.5 h-3.5" />Edit PDF
                 </button>
                 <button
-                  onClick={handleDownload}
-                  disabled={isDownloading}
+                  onClick={canDownload ? handleDownload : onLockedDownload}
+                  disabled={canDownload && isDownloading}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {canDownload && isDownloading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Download className="w-3.5 h-3.5" />
+                  }
                   Download PDF
                 </button>
-                {onApprove && (
+              </div>
+            </>
+          ) : isOptimizedPreview ? (
+            /* ── Case 1 / Case 2-after-edit: Edit PDF | Download PDF | Save ── */
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={enterEdit}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />Edit PDF
+              </button>
+
+              <button
+                onClick={canDownload ? handleDownload : onLockedDownload}
+                disabled={canDownload && isDownloading}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {canDownload && isDownloading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Download className="w-3.5 h-3.5" />
+                }
+                Download PDF
+              </button>
+
+              {/* Save — closes modal; triggers celebration in Case 1, plain close in Case 2-after-edit */}
+              <button
+                onClick={onClose}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-all hover:scale-[1.02] active:scale-100 shadow-sm"
+              >
+                <Check className="w-3.5 h-3.5" />Save
+              </button>
+            </div>
+          ) : (
+            /* ── Default preview footer (general improvement, resume builder) ── */
+            <>
+              <button onClick={onClose} className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors">
+                Close
+              </button>
+              <div className="flex items-center gap-2">
+                {!isFreePreview && (
+                  <button
+                    onClick={enterEdit}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5" />Edit Manually
+                  </button>
+                )}
+                {canDownload ? (
+                  <button
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    Download PDF
+                  </button>
+                ) : onLockedDownload ? (
+                  <button
+                    onClick={onLockedDownload}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />Download PDF
+                  </button>
+                ) : (
+                  <button
+                    disabled
+                    title="Save this resume to download the version most likely to get interviews"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-medium text-gray-300 dark:text-slate-600 cursor-not-allowed"
+                  >
+                    <Lock className="w-3.5 h-3.5" />Download PDF
+                  </button>
+                )}
+                {isFreePreview && onUnlock ? (
+                  <button
+                    onClick={onUnlock}
+                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[13px] font-bold hover:from-violet-700 hover:to-blue-700 transition-all hover:scale-[1.02] active:scale-100 shadow-sm"
+                  >
+                    <Crown className="w-3.5 h-3.5" />Save &amp; download this resume
+                  </button>
+                ) : onApprove ? (
                   <button
                     onClick={onApprove}
                     disabled={isSaving}
@@ -1260,7 +1382,7 @@ export function ResumePreviewModal({
                       : <><CheckCircle2 className="w-3.5 h-3.5" />{approveLabel}</>
                     }
                   </button>
-                )}
+                ) : null}
               </div>
             </>
           )}

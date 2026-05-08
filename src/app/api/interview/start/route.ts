@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { callClaude } from '@/lib/ai/claude'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { generateLight } from '@/lib/ai/client'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
 import type { ParsedResume } from '@/types'
 
 export const maxDuration = 30
@@ -9,6 +12,27 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin = createAdminClient()
+
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, plan_tier')
+    .eq('user_id', user.id)
+    .single()
+  const effectiveProUntil = await resolveProUntil(admin, user.id, profileRow?.subscription_status, profileRow?.pro_until)
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
+
+  // Credit check: full interview session costs 2 credits
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'interviewSession', isPro, admin, planTier)
+  if (!creditAllowed) {
+    return NextResponse.json(
+      insufficientCreditsResponse('interviewSession', creditBalance.remainingCredits),
+      { status: 402 }
+    )
+  }
 
   const { jobTitle, company, jobDescription } = await req.json()
   if (!jobTitle || !company) {
@@ -37,7 +61,7 @@ export async function POST(req: NextRequest) {
       ].filter(Boolean).join('\n')
     : 'No resume provided.'
 
-  const question = await callClaude(
+  const question = await generateLight(
     `Generate the opening interview question for this candidate and role.
 
 JOB: ${jobTitle} at ${company}
@@ -51,9 +75,16 @@ Rules:
 - Make it conversational and welcoming
 - For Q1, use "Tell me about yourself" style but tailored to the specific role
 - Return ONLY the question text, nothing else`,
-    'You are a professional interviewer conducting a structured mock interview. Generate targeted, thoughtful questions.',
-    300,
+    { task: 'interview_q1', system: 'You are a professional interviewer conducting a structured mock interview. Generate targeted, thoughtful questions.', maxTokens: 150, userId: user.id, isFreeUser: !isPro },
   )
 
-  return NextResponse.json({ question: question.trim(), questionNumber: 1 })
+  const afterCredits = await deductCredits(user.id, 'interviewSession', admin)
+
+  return NextResponse.json({
+    question:         question.trim(),
+    questionNumber:   1,
+    creditCost:       creditCost,
+    creditsUsed:      creditCost,
+    creditsRemaining: afterCredits?.remainingCredits ?? 0,
+  })
 }

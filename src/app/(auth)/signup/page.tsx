@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Eye, EyeOff, X, Mail } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
+import { checkEmail } from '@/lib/email-guard'
 
 function GoogleIcon() {
   return (
@@ -47,6 +48,13 @@ export default function SignupPage() {
       setError('Password must be at least 8 characters.')
       return
     }
+
+    const guard = checkEmail(email.trim())
+    if (guard.blocked) {
+      setError(guard.reason)
+      return
+    }
+
     setLoading(true)
     setError('')
 

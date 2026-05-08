@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { rerankJobs } from '@/lib/ai/reranker'
-import { callClaudeJSON } from '@/lib/ai/claude'
+import { generatePremiumJSON } from '@/lib/ai/client'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { checkRateLimit, userRateLimitKey, rateLimitResponse } from '@/lib/rate-limit'
 import type { ParsedResume, NormalizedJob } from '@/types'
 
 export const maxDuration = 60
@@ -64,19 +68,30 @@ function htmlToText(html: string): string {
 
 // ── AI extraction (best-effort — never throws to caller) ─────────────────────
 
-async function aiExtractJob(text: string, urlMeta: UrlMeta | null): Promise<Partial<NormalizedJob>> {
+async function aiExtractJob(
+  text: string,
+  urlMeta: UrlMeta | null,
+  userId: string,
+  isPro: boolean,
+): Promise<Partial<NormalizedJob>> {
   try {
-    const result = await callClaudeJSON<{
+    const data = await generatePremiumJSON<{
       title?: string; company?: string; location?: string; description?: string; url?: string
     }>(
       `Extract job details from this text. Return only what is explicitly mentioned.
 
 JOB TEXT:
 ${text.slice(0, 4000)}`,
-      'Return JSON with keys: title, company, location, description, url. Use empty string for missing fields.'
+      {
+        task:      'job_manual',
+        system:    'Return JSON with keys: title, company, location, description, url. Use empty string for missing fields.',
+        maxTokens: 600,
+        userId,
+        isFreeUser: !isPro,
+      },
     )
-    console.log('[manual] AI extracted:', { title: result.title, company: result.company, location: result.location })
-    return result
+    console.log('[manual] AI extracted:', { title: data.title, company: data.company, location: data.location })
+    return data
   } catch (err) {
     console.warn('[manual] AI extraction failed (using URL metadata fallback):', err instanceof Error ? err.message : err)
     return {}
@@ -91,18 +106,55 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // ── Plan resolution ──────────────────────────────────────────────────────
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, plan_tier')
+    .eq('user_id', user.id)
+    .single()
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until,
+  )
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
+
+  // ── Rate limit: 5 manual adds / minute / user ────────────────────────────
+  const rlResult = await checkRateLimit(
+    userRateLimitKey(user.id, 'job_manual'),
+    'job_manual',
+    admin,
+  )
+  if (!rlResult.allowed) {
+    console.warn(`[jobs/manual] rate-limited | user=${user.id}`)
+    return NextResponse.json(rateLimitResponse(rlResult), { status: 429 })
+  }
+
+  // ── Credit check (1 credit: AI extraction + scoring) ────────────────────
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'jobManual', isPro, admin, planTier)
+
+  if (!creditAllowed) {
+    console.warn(`[jobs/manual] insufficient credits | user=${user.id} | remaining=${creditBalance.remainingCredits}`)
+    return NextResponse.json(
+      insufficientCreditsResponse('jobManual', creditBalance.remainingCredits),
+      { status: 402 },
+    )
+  }
+
+  // ── Input validation ─────────────────────────────────────────────────────
   const { input } = await request.json()
   if (!input || input.trim().length < 10) {
     return NextResponse.json(
       { error: 'Please paste a job description or URL.' },
-      { status: 400 }
+      { status: 400 },
     )
   }
 
   const raw   = input.trim()
   const isUrl = /^https?:\/\//i.test(raw)
 
-  // ── 1. Collect raw text ────────────────────────────────────────────────────
+  // ── 1. Collect raw text ────────────────────────────────────────────────
   let pageText = ''
   let urlMeta: UrlMeta | null = null
 
@@ -135,44 +187,20 @@ export async function POST(request: NextRequest) {
     pageText = raw
   }
 
-  // ── 2. AI extraction (best-effort) ────────────────────────────────────────
-  const ai = await aiExtractJob(pageText || raw, urlMeta)
+  // ── 2. AI extraction (best-effort) ──────────────────────────────────────
+  const ai = await aiExtractJob(pageText || raw, urlMeta, user.id, isPro)
 
-  // ── 3. Build job with layered fallbacks — NEVER fail due to missing fields ─
+  // ── 3. Build job with layered fallbacks ───────────────────────────────
   const externalId = urlMeta?.externalId ?? `manual-${Date.now()}`
-
-  // Title: AI > URL slug > "External Job Opportunity"
-  const title =
-    (ai.title?.trim())         ||
-    (urlMeta?.title?.trim())   ||
-    'External Job Opportunity'
-
-  // Company: AI > domain name > "Unknown Company"
-  const company =
-    (ai.company?.trim())       ||
-    (urlMeta?.company?.trim()) ||
-    'Unknown Company'
-
-  // Location: AI > URL slug city > ''
-  const location =
-    (ai.location?.trim())       ||
-    (urlMeta?.location?.trim()) ||
-    ''
-
-  // Description: AI > page text > URL as description
-  const description =
-    (ai.description?.trim())           ||
-    (pageText?.trim().slice(0, 3000))   ||
-    `Job posted at: ${raw}`
-
-  // URL: AI > original input (when URL) > ''
-  const url =
-    (ai.url?.trim()) ||
-    (isUrl ? raw : '')
+  const title      = (ai.title?.trim())         || (urlMeta?.title?.trim())   || 'External Job Opportunity'
+  const company    = (ai.company?.trim())        || (urlMeta?.company?.trim()) || 'Unknown Company'
+  const location   = (ai.location?.trim())       || (urlMeta?.location?.trim()) || ''
+  const description = (ai.description?.trim())   || (pageText?.trim().slice(0, 3000)) || `Job posted at: ${raw}`
+  const url        = (ai.url?.trim()) || (isUrl ? raw : '')
 
   console.log('[manual] final job:', { title, company, location, externalId, descLen: description.length })
 
-  // ── 4. Upsert into DB ──────────────────────────────────────────────────────
+  // ── 4. Upsert into DB ──────────────────────────────────────────────────
   const { data: savedJob, error: upsertError } = await admin
     .from('jobs')
     .upsert({
@@ -194,7 +222,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save job to database.' }, { status: 500 })
   }
 
-  // ── 5. Get active resume ───────────────────────────────────────────────────
+  // ── 5. Get active resume ───────────────────────────────────────────────
   const { data: resume } = await supabase
     .from('resumes')
     .select('id, parsed_data')
@@ -206,7 +234,7 @@ export async function POST(request: NextRequest) {
 
   const parsedResume = resume?.parsed_data as ParsedResume | null
 
-  // ── 6. AI scoring (best-effort) ────────────────────────────────────────────
+  // ── 6. AI scoring (best-effort) ────────────────────────────────────────
   let aiScore     = 0
   let aiReasoning = 'Upload and analyze your resume to get a match score.'
   let matchedSkills: string[] = []
@@ -233,7 +261,6 @@ export async function POST(request: NextRequest) {
       console.warn('[manual] scoring failed (non-fatal):', err instanceof Error ? err.message : err)
     }
 
-    // Persist match — best-effort
     try {
       await admin.from('job_matches').upsert({
         user_id:          user.id,
@@ -246,6 +273,9 @@ export async function POST(request: NextRequest) {
       console.warn('[manual] job_matches upsert failed:', err instanceof Error ? err.message : err)
     }
   }
+
+  // ── Deduct 1 credit after all AI work succeeds ─────────────────────────
+  const afterCredits = await deductCredits(user.id, 'jobManual', admin)
 
   return NextResponse.json({
     match: {
@@ -264,7 +294,8 @@ export async function POST(request: NextRequest) {
         description,
       },
     },
-    // Let the client know AI couldn't extract details so it can show a softer message
-    aiExtracted: Boolean(ai.title),
+    aiExtracted:      Boolean(ai.title),
+    creditCost:       creditCost,
+    creditsRemaining: afterCredits?.remainingCredits ?? creditBalance.remainingCredits - creditCost,
   })
 }

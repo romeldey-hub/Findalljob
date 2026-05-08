@@ -5,7 +5,7 @@ import {
   Check, X, Zap, ArrowRight, Clock, TrendingUp, Sparkles,
 } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
-import { getPricingByCountry } from '@/lib/pricing'
+import { getRegionPricing } from '@/lib/pricing'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -59,10 +59,10 @@ const whyPoints = [
 ]
 
 const comparison = [
-  { feature: 'Job Matching',       free: true,  pro: true },
-  { feature: 'Resume per Job',     free: false, pro: true },
-  { feature: 'Mock Interview + AI Feedback', free: false, pro: true },
-  { feature: 'Match Score Boost',  free: false, pro: true },
+  { feature: 'Job Matching',                 free: true,  proLite: true,  proPlus: true  },
+  { feature: 'Resume per Job',               free: false, proLite: true,  proPlus: true  },
+  { feature: 'Mock Interview + AI Feedback', free: false, proLite: true,  proPlus: true  },
+  { feature: 'AI Credits / month',           free: '10',  proLite: '40',  proPlus: '120' },
 ]
 
 const freeFeatures = [
@@ -90,7 +90,7 @@ export default async function LandingPage() {
   const countryCode = isLocal
     ? 'in'
     : (hdrs.get('x-vercel-ip-country') ?? '').toLowerCase()
-  const pricing = getPricingByCountry(countryCode)
+  const region = getRegionPricing(countryCode)
   return (
     <div className="min-h-screen bg-[#040D21] text-white overflow-x-hidden">
 
@@ -240,14 +240,14 @@ export default async function LandingPage() {
         </div>
 
         {/* Cards */}
-        <div className="grid md:grid-cols-2 gap-5 max-w-3xl mx-auto mb-10">
+        <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-10">
 
           {/* Free */}
           <div className="bg-[#0A1628] border border-[#1A2A40] rounded-2xl p-7 flex flex-col">
             <div className="mb-6">
               <p className="text-[12px] font-bold uppercase tracking-widest text-slate-500 mb-2">Free</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-5xl font-black">{pricing.displayFree}</span>
+                <span className="text-5xl font-black">{region.plans.free.displayPrice}</span>
               </div>
               <p className="text-[13px] text-slate-500 mt-1">Everything you need to get started</p>
               <p className="text-[11px] text-slate-600 mt-0.5">Pricing adjusted for your location</p>
@@ -267,18 +267,18 @@ export default async function LandingPage() {
             </Link>
           </div>
 
-          {/* Pro */}
+          {/* Pro Lite */}
           <div className="relative bg-gradient-to-b from-[#0D1F40] to-[#0A1628] border border-blue-500/40 rounded-2xl p-7 shadow-2xl shadow-blue-500/10 flex flex-col">
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-blue-600 text-white text-[12px] font-black tracking-wide whitespace-nowrap shadow-lg shadow-blue-500/30">
               🚀 Most Popular
             </div>
             <div className="mb-6">
-              <p className="text-[12px] font-bold uppercase tracking-widest text-blue-400 mb-2">Pro</p>
+              <p className="text-[12px] font-bold uppercase tracking-widest text-blue-400 mb-2">Pro Lite</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-5xl font-black">{pricing.displayPrice}</span>
+                <span className="text-5xl font-black">{region.plans.proLite.displayPrice}</span>
                 <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
               </div>
-              <p className="text-[13px] text-slate-400 mt-1">Get more interviews with AI-powered applications</p>
+              <p className="text-[13px] text-slate-400 mt-1">{region.plans.proLite.credits} AI credits/month</p>
               <p className="text-[11px] text-blue-400/70 mt-0.5">Pricing adjusted for your location</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
@@ -291,7 +291,37 @@ export default async function LandingPage() {
             </ul>
             <Link href="/signup">
               <button className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all shadow-xl shadow-blue-500/20">
-                Upgrade to Pro
+                Get Pro Lite
+              </button>
+            </Link>
+            <p className="text-center text-[11px] text-slate-600 mt-3">Cancel anytime · No lock-in</p>
+          </div>
+
+          {/* Pro Plus */}
+          <div className="relative bg-gradient-to-b from-[#1A0D3A] to-[#0A1628] border border-purple-500/40 rounded-2xl p-7 shadow-2xl shadow-purple-500/10 flex flex-col">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-purple-600 text-white text-[12px] font-black tracking-wide whitespace-nowrap shadow-lg shadow-purple-500/30">
+              ⚡ Best Value
+            </div>
+            <div className="mb-6">
+              <p className="text-[12px] font-bold uppercase tracking-widest text-purple-400 mb-2">Pro Plus</p>
+              <div className="flex items-end gap-1 mb-1">
+                <span className="text-5xl font-black">{region.plans.proPlus.displayPrice}</span>
+                <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
+              </div>
+              <p className="text-[13px] text-slate-400 mt-1">{region.plans.proPlus.credits} AI credits/month</p>
+              <p className="text-[11px] text-purple-400/70 mt-0.5">Pricing adjusted for your location</p>
+            </div>
+            <ul className="space-y-3 flex-1 mb-8">
+              {proFeatures.map((f) => (
+                <li key={f} className="flex items-center gap-3 text-[13px] text-slate-300">
+                  <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link href="/signup">
+              <button className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[13px] font-bold hover:scale-[1.01] active:scale-100 transition-all shadow-xl shadow-purple-500/20">
+                Get Pro Plus
               </button>
             </Link>
             <p className="text-center text-[11px] text-slate-600 mt-3">Cancel anytime · No lock-in</p>
@@ -299,28 +329,34 @@ export default async function LandingPage() {
         </div>
 
         {/* Comparison table */}
-        <div className="max-w-2xl mx-auto bg-[#0A1628] border border-[#1A2A40] rounded-2xl overflow-hidden">
+        <div className="max-w-3xl mx-auto bg-[#0A1628] border border-[#1A2A40] rounded-2xl overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[#1A2A40]">
                 <th className="text-left px-6 py-4 text-[12px] font-bold uppercase tracking-widest text-slate-500">Feature</th>
-                <th className="px-6 py-4 text-[12px] font-bold uppercase tracking-widest text-slate-500 text-center">Free</th>
-                <th className="px-6 py-4 text-[12px] font-bold uppercase tracking-widest text-blue-400 text-center">Pro</th>
+                <th className="px-4 py-4 text-[12px] font-bold uppercase tracking-widest text-slate-500 text-center">Free</th>
+                <th className="px-4 py-4 text-[12px] font-bold uppercase tracking-widest text-blue-400 text-center">Pro Lite</th>
+                <th className="px-4 py-4 text-[12px] font-bold uppercase tracking-widest text-purple-400 text-center">Pro Plus</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1A2A40]">
-              {comparison.map(({ feature, free, pro }) => (
+              {comparison.map(({ feature, free, proLite, proPlus }) => (
                 <tr key={feature} className="hover:bg-white/[0.02] transition-colors">
                   <td className="px-6 py-3.5 text-[13px] text-slate-300">{feature}</td>
-                  <td className="px-6 py-3.5 text-center">
-                    {free
-                      ? <Check className="w-4 h-4 text-green-400 mx-auto" />
-                      : <X className="w-4 h-4 text-slate-700 mx-auto" />}
+                  <td className="px-4 py-3.5 text-center">
+                    {typeof free === 'boolean'
+                      ? (free ? <Check className="w-4 h-4 text-green-400 mx-auto" /> : <X className="w-4 h-4 text-slate-700 mx-auto" />)
+                      : <span className="text-[13px] text-slate-300">{free}</span>}
                   </td>
-                  <td className="px-6 py-3.5 text-center">
-                    {pro
-                      ? <Check className="w-4 h-4 text-blue-400 mx-auto" />
-                      : <X className="w-4 h-4 text-slate-700 mx-auto" />}
+                  <td className="px-4 py-3.5 text-center">
+                    {typeof proLite === 'boolean'
+                      ? (proLite ? <Check className="w-4 h-4 text-blue-400 mx-auto" /> : <X className="w-4 h-4 text-slate-700 mx-auto" />)
+                      : <span className="text-[13px] text-blue-300">{proLite}</span>}
+                  </td>
+                  <td className="px-4 py-3.5 text-center">
+                    {typeof proPlus === 'boolean'
+                      ? (proPlus ? <Check className="w-4 h-4 text-purple-400 mx-auto" /> : <X className="w-4 h-4 text-slate-700 mx-auto" />)
+                      : <span className="text-[13px] text-purple-300">{proPlus}</span>}
                   </td>
                 </tr>
               ))}

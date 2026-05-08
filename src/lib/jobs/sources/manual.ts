@@ -33,14 +33,15 @@ export class ManualAdapter implements JobSourceAdapter {
       'Return a JSON object with keys: title, company, location, description, url'
     )
 
+    const data = 'data' in result ? result.data : result
     return {
       externalId: `manual-${Date.now()}`,
       source: 'manual',
-      title: result.title ?? '',
-      company: result.company ?? '',
-      location: result.location ?? '',
-      description: result.description ?? text,
-      url: result.url ?? '',
+      title: data.title ?? '',
+      company: data.company ?? '',
+      location: data.location ?? '',
+      description: data.description ?? text,
+      url: data.url ?? '',
     }
   }
 }

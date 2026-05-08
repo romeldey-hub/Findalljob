@@ -107,11 +107,11 @@ const HELP_DATA: HelpSection[] = [
     items: [
       {
         question: 'Why can\'t I use AI features?',
-        answer: 'Full AI features — unlimited optimizations, AI cover letters, and priority matching — are part of the Pro plan. Free users get one preview optimization to try before upgrading.',
+        answer: 'Tailoring your resume to every job, full mock interviews, and higher-priority matching are Pro features. Free users get one optimization preview to see the impact before deciding.',
       },
       {
-        question: 'How do I upgrade to Pro?',
-        answer: 'Click "Upgrade Now" at the bottom of the left sidebar, or go to Settings and find the Billing section. Pro unlocks all AI features instantly.',
+        question: 'How do I get more AI credits?',
+        answer: 'Click "Improve my match rate" at the bottom of the left sidebar, or go to Settings → Billing. Upgrading instantly gives you more credits to keep optimizing and improving your shortlist chances.',
       },
     ],
   },

@@ -1,4 +1,7 @@
-import { callClaude, callClaudeJSON, getClient } from './claude'
+import { getClient } from './claude'
+import { generateLight, generatePremiumJSON } from './client'
+import { logAiEvent } from './usage-logger'
+import { PREMIUM_MODEL } from './models'
 import type { ParsedResume } from '@/types'
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -119,7 +122,7 @@ function validateParsed(rawText: string, parsed: ParsedResume): ParseValidation 
 
 // ── Core parse functions ──────────────────────────────────────────────────────
 
-export async function generateHeadline(resume: ParsedResume): Promise<string> {
+export async function generateHeadline(resume: ParsedResume, userId?: string, isFreeUser?: boolean): Promise<string> {
   const title   = resume.experience?.[0]?.title ?? ''
   const company = resume.experience?.[0]?.company ?? ''
   const skills  = (resume.skills ?? []).slice(0, 8).join(', ')
@@ -142,16 +145,16 @@ Rules:
 Return ONLY the headline text. No quotes, no explanation.`
 
   try {
-    const raw = await callClaude(prompt, undefined, 100)
+    const raw = await generateLight(prompt, { task: 'profile_headline', maxTokens: 60, userId, isFreeUser })
     return raw.trim().replace(/^["']|["']$/g, '')
   } catch {
     return ''
   }
 }
 
-export async function parseResume(rawText: string): Promise<ParsedResume> {
+export async function parseResume(rawText: string, userId?: string, isFreeUser?: boolean): Promise<ParsedResume> {
   const prompt = `${PARSE_SCHEMA_PROMPT}\n\nRESUME TEXT:\n${rawText}`
-  const result = await callClaudeJSON<ParsedResume>(prompt, PARSE_SYSTEM_PROMPT, 8096)
+  const result = await generatePremiumJSON<ParsedResume>(prompt, { task: 'resume_parse', system: PARSE_SYSTEM_PROMPT, maxTokens: 6000, userId, isFreeUser })
 
   // salvageJsonArray can return an array of sub-objects if the response was truncated.
   // That array would be wrongly typed as ParsedResume — detect and reject it.
@@ -171,7 +174,7 @@ CRITICAL — previous parse missed these sections: ${missingSections.join(', ')}
 You MUST include ALL of them in the "sections" array.
 
 RESUME TEXT:\n${rawText}`
-      const retryResult = await callClaudeJSON<ParsedResume>(retryPrompt, PARSE_SYSTEM_PROMPT, 8096)
+      const retryResult = await generatePremiumJSON<ParsedResume>(retryPrompt, { task: 'resume_parse:retry', system: PARSE_SYSTEM_PROMPT, maxTokens: 6000, userId, isFreeUser })
       if (Array.isArray(retryResult) || typeof retryResult !== 'object' || retryResult === null) {
         throw new Error('Resume parsing failed on retry: response was truncated. Please try again.')
       }
@@ -182,12 +185,12 @@ RESUME TEXT:\n${rawText}`
   return result
 }
 
-export async function parseResumeFromPDF(pdfBuffer: Buffer): Promise<ParsedResume> {
+export async function parseResumeFromPDF(pdfBuffer: Buffer, userId?: string, isFreeUser?: boolean): Promise<ParsedResume> {
   const fullSystem = `${PARSE_SYSTEM_PROMPT}\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code fences, no explanation — just the raw JSON object.`
 
   const response = await getClient().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8096,
+    model: PREMIUM_MODEL,
+    max_tokens: 6000,
     system: fullSystem,
     messages: [{
       role: 'user',
@@ -203,6 +206,15 @@ export async function parseResumeFromPDF(pdfBuffer: Buffer): Promise<ParsedResum
         { type: 'text', text: PARSE_SCHEMA_PROMPT },
       ],
     }],
+  })
+
+  logAiEvent({
+    task:         'resume_parse:pdf',
+    model:        PREMIUM_MODEL,
+    inputTokens:  response.usage?.input_tokens  ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    userId,
+    isFreeUser,
   })
 
   const content = response.content[0]

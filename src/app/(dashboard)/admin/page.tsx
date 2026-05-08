@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isAdminUser } from '@/lib/admin'
-import { ShieldCheck, Users, FileText, Wand2, Crown } from 'lucide-react'
+import { ShieldCheck, Users, FileText, Wand2, Crown, DollarSign } from 'lucide-react'
+import { BanButton } from './_ban-button'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -12,6 +14,7 @@ interface ProfileRow {
   subscription_status: string
   role: string
   created_at: string
+  is_banned?: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@ export default async function AdminPage() {
   const admin = createAdminClient()
 
   const [profilesResult, resumesResult, optimizationsResult] = await Promise.all([
-    admin.from('profiles').select('user_id, full_name, email, subscription_status, role, created_at').order('created_at', { ascending: false }),
+    admin.from('profiles').select('user_id, full_name, email, subscription_status, role, created_at, is_banned').order('created_at', { ascending: false }),
     admin.from('resumes').select('user_id'),
     admin.from('optimized_resumes').select('user_id'),
   ])
@@ -103,6 +106,17 @@ export default async function AdminPage() {
         <StatCard icon={Wand2}    label="AI optimizations"    value={optimizations.length}            color="bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400" />
       </div>
 
+      {/* Quick links */}
+      <div className="flex gap-3">
+        <Link
+          href="/admin/usage"
+          className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors text-[13px] font-semibold text-[#0F172A] dark:text-[#F1F5F9]"
+        >
+          <DollarSign className="w-4 h-4 text-green-500" />
+          AI Usage &amp; Cost Dashboard
+        </Link>
+      </div>
+
       {/* Users table */}
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-[#F1F5F9] dark:border-[#334155]">
@@ -114,7 +128,7 @@ export default async function AdminPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-[#F1F5F9] dark:border-[#334155] text-left">
-                {['Name', 'Email', 'Plan', 'Role', 'Resumes', 'Optimizations', 'Joined'].map((h) => (
+                {['Name', 'Email', 'Status', 'Plan', 'Role', 'Resumes', 'Optimizations', 'Joined', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 whitespace-nowrap">
                     {h}
                   </th>
@@ -126,8 +140,8 @@ export default async function AdminPage() {
                 <tr
                   key={p.user_id}
                   className={[
-                    'border-b border-[#F8FAFC] dark:border-[#263549] last:border-0 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors',
-                    p.role === 'admin' ? 'bg-purple-50/30 dark:bg-purple-900/10' : '',
+                    'border-b border-[#F8FAFC] dark:border-[#263549] last:border-0 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors group',
+                    p.is_banned ? 'bg-red-50/40 dark:bg-red-950/10' : p.role === 'admin' ? 'bg-purple-50/30 dark:bg-purple-900/10' : '',
                   ].join(' ')}
                 >
                   <td className="px-4 py-3 font-semibold text-[#0F172A] dark:text-[#F1F5F9] whitespace-nowrap">
@@ -135,6 +149,16 @@ export default async function AdminPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500 dark:text-slate-400 whitespace-nowrap">
                     {p.email}
+                  </td>
+                  {/* Status: banned badge or — */}
+                  <td className="px-4 py-3">
+                    {p.is_banned ? (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700">
+                        Banned
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 dark:text-slate-600 text-[12px]">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={[
@@ -164,6 +188,10 @@ export default async function AdminPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-400 dark:text-slate-500 whitespace-nowrap">
                     {formatDate(p.created_at)}
+                  </td>
+                  {/* Ban / Unban action */}
+                  <td className="px-4 py-3">
+                    <BanButton userId={p.user_id} isBanned={p.is_banned ?? false} />
                   </td>
                 </tr>
               ))}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getPricingByCountry, type Pricing } from '@/lib/pricing'
+import { getRegionPricing, type RegionPricing } from '@/lib/pricing'
 
 const CACHE_KEY = 'geo_country_code'
 
@@ -20,30 +20,24 @@ function setCachedCountry(code: string) {
   try { sessionStorage.setItem(CACHE_KEY, code) } catch {}
 }
 
-export function usePricing(): Pricing {
-  const [pricing, setPricing] = useState<Pricing>(() => {
-    // Immediately return India pricing for local dev — no flash, no fetch needed
-    if (isLocalhost()) return getPricingByCountry('in')
-    return getPricingByCountry(getCachedCountry())
+export function usePricing(): RegionPricing {
+  const [region, setRegion] = useState<RegionPricing>(() => {
+    if (isLocalhost()) return getRegionPricing('in')
+    return getRegionPricing(getCachedCountry())
   })
 
   useEffect(() => {
-    // Local dev: always India, skip geo fetch entirely
     if (isLocalhost()) return
-
-    // Already cached this session — no need to re-fetch
     if (getCachedCountry() !== null) return
 
     fetch('/api/geo')
       .then((r) => r.json())
       .then(({ countryCode }: { countryCode: string }) => {
         setCachedCountry(countryCode ?? '')
-        setPricing(getPricingByCountry(countryCode))
+        setRegion(getRegionPricing(countryCode))
       })
-      .catch(() => {
-        // On failure: default to international pricing (already set as initial state)
-      })
+      .catch(() => {})
   }, [])
 
-  return pricing
+  return region
 }

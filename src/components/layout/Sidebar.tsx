@@ -1,250 +1,202 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import useSWR, { mutate as globalMutate } from 'swr'
+import useSWR from 'swr'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   FileText, Briefcase, Settings,
-  LogOut, ChevronRight, Crown, Bell, HelpCircle,
-  CheckCheck, Loader2, Trash2, AlertTriangle, CheckSquare, X, ShieldCheck,
+  LogOut, ChevronRight, X, ShieldCheck, Zap,
 } from 'lucide-react'
-import { HelpModal } from '@/components/HelpModal'
 import { UpgradeModal } from '@/components/UpgradeModal'
 import { LogoMark } from '@/components/LogoMark'
 import { track } from '@/lib/analytics'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Credits popup ─────────────────────────────────────────────────────────────
 
-type NotifType = 'resume' | 'application' | 'jobs' | 'system'
+interface FeatureUsageRow { label: string; count: number; credits: number }
 
-interface Notification {
-  id: string
-  type: NotifType
-  title: string
-  body: string
-  cta_label: string | null
-  cta_href: string | null
-  is_read: boolean
-  created_at: string
-}
+function CreditsPopup({
+  remaining, total, resetDate, isPro, onClose, onUpgrade,
+}: {
+  remaining: number
+  total: number
+  resetDate: string | null
+  isPro: boolean
+  onClose: () => void
+  onUpgrade: () => void
+}) {
+  const pct      = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0
+  const isLow    = pct <= 30
+  const barColor = pct > 30 ? 'bg-blue-500' : pct > 15 ? 'bg-amber-400' : 'bg-red-500'
+  const resetStr = resetDate
+    ? new Date(resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+  const { data: usageData, isLoading: usageLoading } =
+    useSWR<{ usage: FeatureUsageRow[] }>('/api/credits/usage', fetcher, { revalidateOnFocus: false })
 
-const TYPE_META: Record<NotifType, { bg: string; iconColor: string; icon: React.ElementType }> = {
-  jobs:        { bg: 'bg-green-100 dark:bg-green-900/30',  iconColor: 'text-green-600 dark:text-green-400',  icon: Briefcase },
-  resume:      { bg: 'bg-blue-100 dark:bg-blue-900/30',    iconColor: 'text-blue-600 dark:text-blue-400',    icon: FileText },
-  application: { bg: 'bg-blue-100 dark:bg-blue-900/30',    iconColor: 'text-blue-600 dark:text-blue-400',    icon: CheckSquare },
-  system:      { bg: 'bg-amber-100 dark:bg-amber-900/30',  iconColor: 'text-amber-600 dark:text-amber-400',  icon: AlertTriangle },
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1)  return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 7)  return `${d}d ago`
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-// ── Notifications popup ───────────────────────────────────────────────────────
-
-function NotificationsPopup({ onClose }: { onClose: () => void }) {
-  const router = useRouter()
-  const [tab, setTab]         = useState<'all' | 'unread'>('all')
-  const [marking, setMarking] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
-
-  const { data, isLoading } = useSWR('/api/notifications', fetcher, { refreshInterval: 30000 })
-  const notifications: Notification[] = data?.notifications ?? []
-  const unreadCount: number = data?.unreadCount ?? 0
-
-  const visible = tab === 'unread' ? notifications.filter(n => !n.is_read) : notifications
-
-  const markRead = useCallback(async (id: string, isRead: boolean) => {
-    if (isRead) return
-    await fetch('/api/notifications', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    globalMutate('/api/notifications')
-  }, [])
-
-  const markAllRead = useCallback(async () => {
-    if (unreadCount === 0) return
-    setMarking(true)
-    await fetch('/api/notifications', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ markAll: true }),
-    })
-    globalMutate('/api/notifications')
-    setMarking(false)
-  }, [unreadCount])
-
-  const deleteNotif = useCallback(async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setDeleting(id)
-    await fetch(`/api/notifications?id=${id}`, { method: 'DELETE' })
-    globalMutate('/api/notifications')
-    setDeleting(null)
-  }, [])
-
-  const handleCta = useCallback((n: Notification, e: React.MouseEvent) => {
-    e.stopPropagation()
-    markRead(n.id, n.is_read)
-    if (n.cta_href) { router.push(n.cta_href); onClose() }
-  }, [markRead, router, onClose])
+  const usageRows = usageData?.usage ?? []
 
   return (
-    <div className="absolute bottom-12 left-[calc(100%+8px)] w-[360px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 flex flex-col overflow-hidden"
-      style={{ maxHeight: 480 }}
-    >
+    <div className="absolute bottom-0 left-[calc(100%+8px)] w-[272px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155] flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Notifications</span>
-          {unreadCount > 0 && (
-            <span className="px-1.5 py-px rounded-full text-[10px] font-bold bg-[#2563EB] text-white leading-none">
-              {unreadCount}
+          <Zap className="w-4 h-4 text-blue-500" />
+          <span className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">AI Credits</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Balance */}
+      <div className="px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
+        <div className="flex items-baseline justify-between mb-2.5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[32px] font-black text-[#0F172A] dark:text-[#F1F5F9] leading-none tabular-nums">
+              {Math.floor(remaining)}
             </span>
-          )}
+            <span className="text-[13px] text-gray-400 dark:text-slate-500">remaining</span>
+          </div>
+          <span className="text-[12px] text-gray-400 dark:text-slate-500">of {Math.floor(total)}</span>
         </div>
-        <div className="flex items-center gap-1">
-          {unreadCount > 0 && (
-            <button
-              onClick={markAllRead}
-              disabled={marking}
-              title="Mark all as read"
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
-            >
-              {marking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+        <div className="h-2 rounded-full bg-gray-100 dark:bg-[#263549] overflow-hidden mb-2">
+          <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
         </div>
+        {resetStr && (
+          <p className="text-[11px] text-gray-400 dark:text-slate-500">Resets {resetStr}</p>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-[#F1F5F9] dark:border-[#334155] flex-shrink-0">
-        {(['all', 'unread'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              'px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors capitalize',
-              tab === t
-                ? 'bg-[#0F172A] dark:bg-[#2563EB] text-white'
-                : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-[#334155]'
-            )}
-          >
-            {t === 'unread' && unreadCount > 0 ? `Unread (${unreadCount})` : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* Your AI Usage */}
+      <div className="px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-2.5">
+          Your AI Usage
+        </p>
 
-      {/* List */}
-      <div className="overflow-y-auto flex-1">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="w-4 h-4 animate-spin text-gray-300 dark:text-slate-600" />
+        {usageLoading ? (
+          <div className="space-y-2.5">
+            {[80, 64, 72].map(w => (
+              <div key={w} className="flex items-center justify-between gap-2">
+                <div className={`h-2.5 rounded bg-gray-100 dark:bg-[#263549] animate-pulse`} style={{ width: `${w}%` }} />
+                <div className="h-2.5 w-14 rounded bg-gray-100 dark:bg-[#263549] animate-pulse flex-shrink-0" />
+              </div>
+            ))}
           </div>
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-            <Bell className="w-8 h-8 text-gray-200 dark:text-slate-700 mb-2" />
-            <p className="text-[13px] font-semibold text-gray-500 dark:text-slate-400">
-              {tab === 'unread' ? 'All caught up' : 'No notifications yet'}
-            </p>
-          </div>
+        ) : usageRows.length === 0 ? (
+          <p className="text-[12px] text-gray-400 dark:text-slate-500 text-center py-1">
+            No AI usage yet.
+          </p>
         ) : (
-          <ul className="divide-y divide-[#F1F5F9] dark:divide-[#334155]">
-            {visible.map(n => {
-              const meta = TYPE_META[n.type] ?? TYPE_META.system
-              const Icon = meta.icon
-              return (
-                <li
-                  key={n.id}
-                  onClick={() => markRead(n.id, n.is_read)}
-                  className={cn(
-                    'flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors group',
-                    n.is_read
-                      ? 'hover:bg-[#F8FAFC] dark:hover:bg-[#263549]/50'
-                      : 'bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-                  )}
-                >
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.bg}`}>
-                    <Icon className={`w-3.5 h-3.5 ${meta.iconColor}`} />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={cn(
-                        'text-[13px] leading-snug',
-                        n.is_read ? 'font-medium text-gray-600 dark:text-slate-300' : 'font-bold text-[#0F172A] dark:text-[#F1F5F9]'
-                      )}>
-                        {n.title}
-                      </p>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span className="text-[10px] text-gray-400 dark:text-slate-500 whitespace-nowrap">
-                          {timeAgo(n.created_at)}
-                        </span>
-                        {!n.is_read && <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB] flex-shrink-0" />}
-                      </div>
-                    </div>
-                    {n.body && (
-                      <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5 leading-relaxed line-clamp-2">
-                        {n.body}
-                      </p>
-                    )}
-                    {n.cta_label && n.cta_href && (
-                      <button
-                        onClick={e => handleCta(n, e)}
-                        className="mt-1.5 text-[11px] font-semibold text-[#2563EB] hover:underline"
-                      >
-                        {n.cta_label} →
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={e => deleteNotif(n.id, e)}
-                    disabled={deleting === n.id}
-                    className="p-1 rounded-lg text-transparent group-hover:text-gray-300 dark:group-hover:text-slate-600 hover:!text-gray-500 dark:hover:!text-slate-400 hover:bg-gray-100 dark:hover:bg-[#334155] transition-all flex-shrink-0"
-                  >
-                    {deleting === n.id
-                      ? <Loader2 className="w-3 h-3 animate-spin" />
-                      : <Trash2 className="w-3 h-3" />}
-                  </button>
-                </li>
-              )
-            })}
+          <ul className="space-y-2">
+            {usageRows.slice(0, 7).map(row => (
+              <li key={row.label} className="flex items-center justify-between gap-2">
+                <span className="text-[12px] text-gray-600 dark:text-slate-300 truncate">{row.label}</span>
+                <span className="text-[11px] text-gray-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0 tabular-nums">
+                  {row.count}× · {row.credits} cr
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </div>
+
+      {/* CTA — shown only when low/zero credits (non-Pro) or as reset note (Pro) */}
+      {(isLow && !isPro) || isPro ? (
+        <div className="px-4 py-3">
+          {isLow && !isPro ? (
+            <button
+              onClick={() => { onClose(); onUpgrade() }}
+              className="w-full h-8 rounded-lg bg-[#1a2742] dark:bg-[#2563EB] hover:bg-[#243453] dark:hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
+            >
+              Upgrade for more credits
+            </button>
+          ) : (
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 text-center leading-relaxed">
+              Credits reset monthly with your Pro plan.
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   )
+}
+
+// ── Credits widget ────────────────────────────────────────────────────────────
+
+function CreditsWidget({
+  remaining, total, isPro, onClick,
+}: {
+  remaining: number | null
+  total: number | null
+  isPro: boolean
+  onClick: () => void
+}) {
+  const hasData = remaining != null && total != null
+  const pct     = hasData && total! > 0 ? Math.max(0, Math.min(100, (remaining! / total!) * 100)) : null
+  const isLow   = pct != null && pct <= 30
+  const isCrit  = pct != null && pct <= 15
+  const count   = hasData ? Math.floor(remaining!) : '—'
+
+  const iconColor = isCrit ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-blue-500 dark:text-blue-400'
+  const labelColor = isCrit
+    ? 'text-red-600 dark:text-red-400'
+    : isLow
+    ? 'text-amber-600 dark:text-amber-400'
+    : 'text-[#475569] dark:text-slate-400'
+  const borderColor = isCrit
+    ? 'border-red-200 dark:border-red-800/50'
+    : isLow
+    ? 'border-amber-200 dark:border-amber-800/50'
+    : 'border-[#E9EDF2] dark:border-[#1E293B]'
+  const bgColor = isCrit
+    ? 'bg-red-50/60 dark:bg-red-950/20 hover:bg-red-50 dark:hover:bg-red-950/30'
+    : isLow
+    ? 'bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+    : 'bg-transparent hover:bg-gray-50 dark:hover:bg-[#1E293B]'
+  const glowStyle: React.CSSProperties = isCrit
+    ? { boxShadow: '0 0 0 1px rgba(239,68,68,0.2)' }
+    : isLow
+    ? { boxShadow: '0 0 0 1px rgba(245,158,11,0.2)' }
+    : {}
+
+  return (
+    <button
+      onClick={onClick}
+      title="AI Credits"
+      style={glowStyle}
+      className={cn(
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer',
+        bgColor, borderColor,
+        isCrit && 'animate-pulse',
+      )}
+    >
+      <Zap className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
+      <span className={`text-[12px] font-semibold whitespace-nowrap tabular-nums ${labelColor}`}>
+        {count} AI Credits Left
+      </span>
+    </button>
+  )
+
+  void isPro // available for future Pro-specific styling
 }
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const BASE_NAV = [
-  { href: '/resume',   label: 'My Resume',   icon: FileText },
+  { href: '/resume',   label: 'My Resume',    icon: FileText },
   { href: '/matches',  label: 'Matched Jobs', icon: Briefcase },
-  { href: '/settings', label: 'Settings',    icon: Settings },
+  { href: '/settings', label: 'Settings',     icon: Settings },
 ]
 
 const ADMIN_NAV = { href: '/admin', label: 'Admin', icon: ShieldCheck }
@@ -262,27 +214,30 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const [showNotifs, setShowNotifs]       = useState(false)
-  const [showHelp, setShowHelp]           = useState(false)
+  const [showCredits, setShowCredits]     = useState(false)
   const [showUpgrade, setShowUpgrade]     = useState(false)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
-  const bellRef    = useRef<HTMLDivElement>(null)
+  const creditsRef = useRef<HTMLDivElement>(null)
   const logoutRef  = useRef<HTMLDivElement>(null)
 
-  const { data: notifData } = useSWR('/api/notifications', fetcher, { refreshInterval: 30000 })
-  const unreadCount: number = notifData?.unreadCount ?? 0
+  const { data: profileData } = useSWR('/api/profile', fetcher, { refreshInterval: 120000 })
 
-  // Close notifications popup on outside click
+  const isPro = subscriptionStatus === 'pro'
+  const creditsRemaining: number | null = profileData?.credits_remaining ?? null
+  const creditsTotal:     number | null = profileData?.credits_total     ?? null
+  const creditsResetDate: string | null = profileData?.credits_reset_date ?? null
+
+  // Close credits popup on outside click
   useEffect(() => {
-    if (!showNotifs) return
+    if (!showCredits) return
     function handleClick(e: MouseEvent) {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
-        setShowNotifs(false)
+      if (creditsRef.current && !creditsRef.current.contains(e.target as Node)) {
+        setShowCredits(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showNotifs])
+  }, [showCredits])
 
   // Close logout dropdown on outside click or ESC
   useEffect(() => {
@@ -351,52 +306,31 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
         })}
       </nav>
 
-      {/* ── Upgrade card (free only) ──────────────────────────────── */}
-      {subscriptionStatus === 'free' && (
-        <div className="px-3 pb-3">
-          <div className="rounded-xl border border-gray-100 dark:border-[#1E293B] bg-gray-50 dark:bg-[#1E293B] p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Crown className="w-4 h-4 text-amber-500 flex-shrink-0" />
-              <p className="font-bold text-sm text-[#1a2742] dark:text-white">Upgrade to Pro</p>
-            </div>
-            <p className="text-xs text-gray-500 dark:text-slate-400 leading-snug mb-3">
-              Unlock unlimited optimizations, AI cover letters &amp; more.
-            </p>
-            <button
-              onClick={() => { track.upgradeClick('sidebar'); setShowUpgrade(true) }}
-              className="w-full h-8 rounded-lg bg-[#1a2742] dark:bg-[#2563EB] hover:bg-[#243453] dark:hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-            >
-              Upgrade Now
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Bottom bar: icons + user ──────────────────────────────── */}
+      {/* ── Bottom bar: credits widget + logout ──────────────────── */}
       <div className="border-t border-gray-100 dark:border-[#1E293B]">
         <div className="flex items-center px-3 py-2 gap-1">
 
-          {/* Bell with popup */}
-          <div ref={bellRef} className="relative">
-            <button
-              onClick={() => setShowNotifs(v => !v)}
-              className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
-            >
-              <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#2563EB] ring-2 ring-white dark:ring-[#0F1B2D]" />
-              )}
-            </button>
-            {showNotifs && <NotificationsPopup onClose={() => setShowNotifs(false)} />}
+          {/* AI Credits widget */}
+          <div ref={creditsRef} className="relative">
+            <CreditsWidget
+              remaining={creditsRemaining}
+              total={creditsTotal}
+              isPro={isPro}
+              onClick={() => setShowCredits(v => !v)}
+            />
+            {showCredits && (
+              <CreditsPopup
+                remaining={creditsRemaining ?? 0}
+                total={creditsTotal ?? 0}
+                resetDate={creditsResetDate}
+                isPro={isPro}
+                onClose={() => setShowCredits(false)}
+                onUpgrade={() => { track.upgradeClick('credits_popup'); setShowUpgrade(true) }}
+              />
+            )}
           </div>
 
-          <button
-            onClick={() => setShowHelp(true)}
-            title="Help & Support"
-            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
+          {/* Logout */}
           <div ref={logoutRef} className="relative ml-auto">
             <button
               onClick={() => setShowLogoutMenu(v => !v)}
@@ -468,8 +402,7 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
       </div>
     </nav>
 
-    {showHelp    && <HelpModal    onClose={() => setShowHelp(false)} />}
     {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
-</>
+    </>
   )
 }

@@ -1,4 +1,4 @@
-import { callClaudeJSON } from './claude'
+import { generatePremiumJSON } from './client'
 import type { JobSource, NormalizedJob, ParsedResume } from '@/types'
 
 export interface RankedJob {
@@ -32,6 +32,18 @@ Never inflate scores beyond what the evidence supports. A score of 70 is a good 
 const BATCH_SIZE      = 10
 const MAX_TOKENS      = 6000
 const RETRY_DELAYS_MS = [2500, 7000, 15000]
+const CACHE_TTL_MS    = 5 * 60 * 1000 // 5 minutes
+
+interface CacheEntry { result: RankedJob[]; ts: number }
+const rankCache = new Map<string, CacheEntry>()
+
+function cacheKey(candidateSummary: string, jobIds: string[]): string {
+  const idHash = jobIds.slice().sort().join(',')
+  // Simple cheap hash — good enough for cache keying
+  let h = 0
+  for (let i = 0; i < candidateSummary.length; i++) h = (Math.imul(31, h) + candidateSummary.charCodeAt(i)) | 0
+  return `${h}:${idHash}`
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -92,6 +104,8 @@ export async function rerankJobs(
   jobs: NormalizedJob[],
   rawText?: string,
   competitorCompanies?: string[],  // direct + adjacent competitors — used for scoring boost
+  userId?: string,
+  isFreeUser?: boolean,
 ): Promise<RankedJob[]> {
   const skills     = Array.isArray(resume.skills)     ? resume.skills     : []
   const experience = Array.isArray(resume.experience) ? resume.experience : []
@@ -119,6 +133,15 @@ ${expLines || 'Not specified'}
 Education: ${eduLine || 'Not specified'}`
   }
 
+  // Check in-memory cache before making any AI calls
+  const jobIds = jobs.map(j => `${j.source}:${j.externalId}`)
+  const key    = cacheKey(candidateSummary, jobIds)
+  const cached = rankCache.get(key)
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    console.log(`[reranker] cache hit for ${jobs.length} jobs`)
+    return cached.result
+  }
+
   const batches: NormalizedJob[][] = []
   for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
     batches.push(jobs.slice(i, i + BATCH_SIZE))
@@ -133,10 +156,9 @@ Education: ${eduLine || 'Not specified'}`
     let rankedBatch: RankedJob[] = []
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        const items = await callClaudeJSON<ClaudeRankedItem[]>(
+        const items = await generatePremiumJSON<ClaudeRankedItem[]>(
           buildPrompt(candidateSummary, batch, offset, competitorCompanies),
-          RERANK_SYSTEM_PROMPT,
-          MAX_TOKENS
+          { task: 'job_rerank', system: RERANK_SYSTEM_PROMPT, maxTokens: MAX_TOKENS, userId, isFreeUser }
         )
         const valid = items.filter(
           (r) => typeof r.index === 'number' && r.index >= 0 && r.index < jobs.length
@@ -167,7 +189,14 @@ Education: ${eduLine || 'Not specified'}`
     batchResults.push(rankedBatch)
   }
 
-  const allRanked = batchResults.flat()
+  const allRanked = batchResults.flat().sort((a, b) => b.score - a.score)
   console.log(`[reranker] total ranked: ${allRanked.length} of ${jobs.length} input jobs`)
-  return allRanked.sort((a, b) => b.score - a.score)
+
+  // Store in cache and evict stale entries
+  rankCache.set(key, { result: allRanked, ts: Date.now() })
+  for (const [k, v] of rankCache) {
+    if (Date.now() - v.ts >= CACHE_TTL_MS) rankCache.delete(k)
+  }
+
+  return allRanked
 }

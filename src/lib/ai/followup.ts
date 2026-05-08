@@ -1,4 +1,4 @@
-import { callClaude } from './claude'
+import { generateLight } from './client'
 
 export type MessageType = 'initial_outreach' | 'follow_up' | 'thank_you' | 'networking'
 
@@ -14,6 +14,8 @@ export async function generateFollowUpMessage(params: {
   jobDescription: string
   recruiterName?: string
   daysSinceApplication?: number
+  userId?: string
+  isFreeUser?: boolean
 }): Promise<string> {
   const typeInstructions: Record<MessageType, string> = {
     initial_outreach: 'a cold outreach message to the hiring manager before applying',
@@ -37,5 +39,5 @@ ${params.jobDescription.slice(0, 400)}
 Write the message body only (no subject line). Use first person. Keep it under 150 words.
 Reference one specific thing about the role or company to show genuine interest.`
 
-  return callClaude(prompt, FOLLOWUP_SYSTEM_PROMPT, 512)
+  return generateLight(prompt, { task: 'followup_message', system: FOLLOWUP_SYSTEM_PROMPT, maxTokens: 300, userId: params.userId, isFreeUser: params.isFreeUser })
 }

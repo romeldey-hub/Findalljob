@@ -1,10 +1,28 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { LIGHT_MODEL, PREMIUM_MODEL } from './models'
 
 export function getClient() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 }
 
-export const MODEL = 'claude-sonnet-4-6'
+export const MODEL       = PREMIUM_MODEL
+export const MODEL_HAIKU = LIGHT_MODEL
+
+// ── Internal result types (consumed only by client.ts) ───────────────────────
+
+export interface ClaudeRaw {
+  text: string
+  inputTokens: number
+  outputTokens: number
+  model: string
+}
+
+export interface ClaudeJson<T> {
+  data: T
+  inputTokens: number
+  outputTokens: number
+  model: string
+}
 
 /** Translate Anthropic API errors into user-readable messages. */
 function translateAnthropicError(err: unknown): Error {
@@ -27,15 +45,16 @@ function translateAnthropicError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err))
 }
 
-export async function callClaude(
+async function callClaudeModel(
+  model: string,
   prompt: string,
   systemPrompt?: string,
   maxTokens = 4096
-): Promise<string> {
+): Promise<ClaudeRaw> {
   let response
   try {
     response = await getClient().messages.create({
-      model: MODEL,
+      model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
@@ -46,25 +65,65 @@ export async function callClaude(
 
   const content = response.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from Claude')
-  return content.text
+
+  return {
+    text:         content.text,
+    inputTokens:  response.usage?.input_tokens  ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    model,
+  }
+}
+
+export async function callClaude(
+  prompt: string,
+  systemPrompt?: string,
+  maxTokens = 4096
+): Promise<ClaudeRaw> {
+  return callClaudeModel(MODEL, prompt, systemPrompt, maxTokens)
+}
+
+export async function callClaudeHaiku(
+  prompt: string,
+  systemPrompt?: string,
+  maxTokens = 4096
+): Promise<ClaudeRaw> {
+  return callClaudeModel(MODEL_HAIKU, prompt, systemPrompt, maxTokens)
 }
 
 export async function callClaudeJSON<T>(
   prompt: string,
   systemPrompt?: string,
   maxTokens = 4096
-): Promise<T> {
+): Promise<ClaudeJson<T>> {
   const fullSystem = `${systemPrompt ?? ''}\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code fences, no explanation — just the raw JSON object.`
 
-  const text = await callClaude(prompt, fullSystem, maxTokens)
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  const raw     = await callClaude(prompt, fullSystem, maxTokens)
+  const cleaned = raw.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
 
   try {
-    return JSON.parse(cleaned) as T
+    return { data: JSON.parse(cleaned) as T, inputTokens: raw.inputTokens, outputTokens: raw.outputTokens, model: raw.model }
   } catch {
-    // Response was truncated mid-JSON — try to salvage complete objects from a JSON array
     const salvaged = salvageJsonArray(cleaned)
-    if (salvaged !== null) return salvaged as T
+    if (salvaged !== null) return { data: salvaged as T, inputTokens: raw.inputTokens, outputTokens: raw.outputTokens, model: raw.model }
+    throw new Error(`JSON parse failed. Response may have been truncated. First 200 chars: ${cleaned.slice(0, 200)}`)
+  }
+}
+
+export async function callClaudeJSONHaiku<T>(
+  prompt: string,
+  systemPrompt?: string,
+  maxTokens = 4096
+): Promise<ClaudeJson<T>> {
+  const fullSystem = `${systemPrompt ?? ''}\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code fences, no explanation — just the raw JSON object.`
+
+  const raw     = await callClaudeHaiku(prompt, fullSystem, maxTokens)
+  const cleaned = raw.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+
+  try {
+    return { data: JSON.parse(cleaned) as T, inputTokens: raw.inputTokens, outputTokens: raw.outputTokens, model: raw.model }
+  } catch {
+    const salvaged = salvageJsonArray(cleaned)
+    if (salvaged !== null) return { data: salvaged as T, inputTokens: raw.inputTokens, outputTokens: raw.outputTokens, model: raw.model }
     throw new Error(`JSON parse failed. Response may have been truncated. First 200 chars: ${cleaned.slice(0, 200)}`)
   }
 }

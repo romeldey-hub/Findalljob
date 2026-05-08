@@ -8,6 +8,7 @@ interface BillingModalProps {
   onClose: () => void
   proUntil?: string | null
   cancelAtPeriodEnd?: boolean
+  planTier?: string
 }
 
 const VALUE_BULLETS = [
@@ -21,10 +22,12 @@ function formatDate(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso))
 }
 
-export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd: initialCancelAtPeriodEnd = false }: BillingModalProps) {
+export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd: initialCancelAtPeriodEnd = false, planTier }: BillingModalProps) {
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(initialCancelAtPeriodEnd)
   const [loading, setLoading] = useState(false)
-  const pricing = usePricing()
+  const region = usePricing()
+  const currentPlanKey = planTier === 'pro_plus' ? 'proPlus' : 'proLite'
+  const currentPlan = region.plans[currentPlanKey]
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -77,8 +80,8 @@ export function BillingModal({ onClose, proUntil, cancelAtPeriodEnd: initialCanc
                   <Crown className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
-                  <p className="font-bold text-[15px] text-white leading-tight">Pro Plan</p>
-                  <p className="text-[13px] text-slate-400">{pricing.displayFull}</p>
+                  <p className="font-bold text-[15px] text-white leading-tight">{currentPlan.label}</p>
+                  <p className="text-[13px] text-slate-400">{currentPlan.displayFull}</p>
                 </div>
               </div>
               <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] font-bold whitespace-nowrap">

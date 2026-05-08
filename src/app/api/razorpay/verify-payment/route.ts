@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import crypto from 'crypto'
+import { CREDIT_ALLOCATIONS } from '@/lib/credits'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -35,13 +36,15 @@ export async function POST(request: NextRequest) {
   try {
     const admin = createAdminClient()
 
-    // Read existing pro_until to handle re-purchase before expiry:
+    // Read existing pro_until and pending_plan_tier to handle re-purchase before expiry:
     // new expiry = max(now, existing_pro_until) + 30 days
     const { data: existing } = await admin
       .from('profiles')
-      .select('pro_until')
+      .select('pro_until, pending_plan_tier')
       .eq('user_id', user.id)
       .single()
+
+    const planTier = (existing?.pending_plan_tier as string | null) ?? 'pro_plus'
 
     const base =
       existing?.pro_until && new Date(existing.pro_until) > new Date()
@@ -57,10 +60,18 @@ export async function POST(request: NextRequest) {
         razorpay_order_id,
         pro_until: proUntil.toISOString(),
         cancel_at_period_end: false,
+        plan_tier: planTier,
       })
       .eq('user_id', user.id)
 
     if (error) throw error
+
+    const creditTotal = CREDIT_ALLOCATIONS[planTier] ?? 40
+    void admin.rpc('reset_user_credits', {
+      p_user_id: user.id,
+      p_total:   creditTotal,
+      p_plan:    planTier,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

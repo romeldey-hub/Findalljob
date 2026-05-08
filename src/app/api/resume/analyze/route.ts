@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
 import { FREE_LIMITS } from '@/lib/limits'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { checkRateLimit, userRateLimitKey, rateLimitResponse } from '@/lib/rate-limit'
 import { parseResume, parseResumeFromPDF, generateHeadline } from '@/lib/ai/parser'
 import { rerankJobs } from '@/lib/ai/reranker'
 import { generateCvSuggestions } from '@/lib/ai/suggestions'
@@ -10,6 +13,7 @@ import { generateSearchStrategy } from '@/lib/jobs/strategy'
 import { createNotification } from '@/lib/notifications'
 import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
 import { buildCandidateProfile, applyAdvancedRelevanceFilter } from '@/lib/jobs/relevance'
+import { hashSearchParams, getJobSearchCache, setJobSearchCache } from '@/lib/cache'
 import type { ParsedResume, NormalizedJob } from '@/types'
 import type { RankedJob } from '@/lib/ai/reranker'
 
@@ -262,10 +266,10 @@ export type AnalyzeProgressEvent =
   | { step: 'pool_selected'; count: number }
   | { step: 'ai_ranking' }
   | { step: 'matches_saved' }
-  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string; detectedCountry?: string; detectedCity?: string }
+  | { done: true; matchCount: number; cvSuggestions: string[]; message?: string; detectedCountry?: string; detectedCity?: string; cached?: boolean; creditCost?: number; creditsRemaining?: number }
   | { error: string }
 
-export async function POST() {
+export async function POST(req: Request) {
   // ── 0. Environment sanity check ────────────────────────────────────────────
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
@@ -279,19 +283,42 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // ── Read force flag ───────────────────────────────────────────────────────
+  let force = false
+  try {
+    const body = await req.json().catch(() => ({}))
+    force = Boolean(body?.force)
+  } catch { /* no body — treat as non-forced */ }
+
+  // ── Rate limit: 3 analyze runs / minute / user ───────────────────────────
+  const rlResult = await checkRateLimit(
+    userRateLimitKey(user.id, 'resume_analyze'),
+    'default',
+    admin,
+  )
+  if (!rlResult.allowed) {
+    console.warn(`[analyze] rate-limited | user=${user.id}`)
+    return NextResponse.json(rateLimitResponse(rlResult), { status: 429 })
+  }
+
   // ── Free-plan re-analyze limit (checked before stream starts) ─────────────
   const { data: profileRow } = await admin
     .from('profiles')
-    .select('role, subscription_status, pro_until, ai_reanalyze_count')
+    .select('role, subscription_status, pro_until, plan_tier, ai_reanalyze_count, last_analyzed_resume_hash')
     .eq('user_id', user.id)
     .single()
 
-  const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, profileRow?.pro_until)
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until,
+  )
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
   const currentReanalyzeCount = profileRow?.ai_reanalyze_count ?? 0
+  const lastAnalyzedHash = profileRow?.last_analyzed_resume_hash ?? ''
 
   if (!isPro && currentReanalyzeCount >= FREE_LIMITS.aiReanalyze) {
     return NextResponse.json({
-      error: `You've used all ${FREE_LIMITS.aiReanalyze} free AI re-analyses. Upgrade to Pro to continue.`,
+      error: `You've used all ${FREE_LIMITS.aiReanalyze} free AI re-analyses. Upgrade to keep finding better job matches.`,
       limitReached: true,
     }, { status: 403 })
   }
@@ -299,7 +326,7 @@ export async function POST() {
   // ── 1. Fetch active resume (early exit before stream starts) ───────────────
   const { data: resume, error: resumeError } = await supabase
     .from('resumes')
-    .select('id, raw_text, parsed_data, file_url')
+    .select('id, raw_text, parsed_data, file_url, resume_hash')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -310,6 +337,38 @@ export async function POST() {
     return NextResponse.json(
       { error: 'No active resume found. Please upload one first.' },
       { status: 404 }
+    )
+  }
+
+  // ── Cache check: skip AI pipeline if resume unchanged and matches exist ────
+  const currentHash = (resume as Record<string, unknown>).resume_hash as string | null
+  if (!force && currentHash && currentHash === lastAnalyzedHash) {
+    const { count } = await admin
+      .from('job_matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+    if ((count ?? 0) > 0) {
+      const encoder = new TextEncoder()
+      const cachedStream = new ReadableStream({
+        start(ctrl) {
+          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ step: 'resume_loaded' })}\n\n`))
+          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, matchCount: count, cvSuggestions: [], cached: true })}\n\n`))
+          ctrl.close()
+        },
+      })
+      return new Response(cachedStream, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
+      })
+    }
+  }
+
+  // ── Credit check: deep job rerank costs 1 credit (skip for cached responses) ─
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'jobRerank', isPro, admin, planTier)
+  if (!creditAllowed) {
+    return NextResponse.json(
+      insufficientCreditsResponse('jobRerank', creditBalance.remainingCredits),
+      { status: 402 }
     )
   }
 
@@ -334,12 +393,12 @@ export async function POST() {
         if (!parsedResume?.name) {
           try {
             if (resume.raw_text && resume.raw_text.length >= 50) {
-              parsedResume = await parseResume(resume.raw_text)
+              parsedResume = await parseResume(resume.raw_text, user.id, !isPro)
             } else if (resume.file_url) {
               const fileRes = await fetch(resume.file_url)
               if (!fileRes.ok) throw new Error('Could not download resume file from storage')
               const buffer = Buffer.from(await fileRes.arrayBuffer())
-              parsedResume = await parseResumeFromPDF(buffer)
+              parsedResume = await parseResumeFromPDF(buffer, user.id, !isPro)
             } else {
               throw new Error('No resume text or file found. Please upload your resume again.')
             }
@@ -383,7 +442,7 @@ export async function POST() {
             .single()
 
           if (!profileRow?.headline) {
-            const headline = await generateHeadline(parsedResume)
+            const headline = await generateHeadline(parsedResume, user.id, !isPro)
             console.log('[analyze] Generated Headline:', headline)
             if (headline) {
               await admin.from('profiles').update({ headline }).eq('user_id', user.id)
@@ -469,6 +528,20 @@ export async function POST() {
         // Emit initial jobs_fetching to signal search has started
         emit({ step: 'jobs_fetching', count: 0, sources: [] })
 
+        // ── Job search cache check — skip external API calls on recent hit ────
+        const searchCacheHash = hashSearchParams(searchQueries, profileLocation)
+        let fromJobSearchCache = false
+        if (!force) {
+          const cachedJobs = await getJobSearchCache(admin, user.id, searchCacheHash)
+          if (cachedJobs && cachedJobs.length > 0) {
+            addUnique(cachedJobs)
+            fromJobSearchCache = true
+            console.log('[analyze] job search cache hit:', jobs.length, 'cached jobs')
+            emit({ step: 'jobs_fetching', count: jobs.length, sources: currentSourceNames(jobs) })
+          }
+        }
+
+        if (!fromJobSearchCache) {
         console.log('[analyze] competitor intelligence — direct:', strategy.competitors?.direct ?? [], '| adjacent:', strategy.competitors?.adjacent ?? [])
 
         // 4a. Fetch every configured source — run all strategy queries (up to 8)
@@ -580,6 +653,9 @@ export async function POST() {
           console.log('[analyze] Apify skipped — standard sources produced enough candidates and not an India profile')
         }
 
+        if (jobs.length > 0) void setJobSearchCache(admin, user.id, searchCacheHash, jobs)
+        } // end !fromJobSearchCache
+
         console.log('[analyze] total jobs fetched:', jobs.length, '| by source:', sourceSummary(jobs))
         if (sourceErrors.length) {
           console.warn('[analyze] source errors:', sourceErrors)
@@ -680,7 +756,7 @@ export async function POST() {
 
         let ranked
         try {
-          ranked = await rerankJobs(parsedResume, jobsForScoring, resume.raw_text ?? undefined, allCompetitors)
+          ranked = await rerankJobs(parsedResume, jobsForScoring, resume.raw_text ?? undefined, allCompetitors, user.id, !isPro)
           console.log('[analyze] rerank complete, top score:', ranked[0]?.score, '| ranked by source:', sourceSummary(ranked))
         } catch (err) {
           const msg = apiErrMsg(err)
@@ -739,7 +815,9 @@ export async function POST() {
               title:          jobMap.get(rankedKey(r))?.title ?? '',
               matched_skills: r.matched_skills ?? [],
               missing_skills: r.missing_skills ?? [],
-            }))
+            })),
+            user.id,
+            !isPro,
           ),
         ])
 
@@ -761,6 +839,9 @@ export async function POST() {
 
         emit({ step: 'matches_saved' })
 
+        // Deduct credits after successful rerank + match save
+        const afterCredits = await deductCredits(user.id, 'jobRerank', admin)
+
         await createNotification({
           userId: user.id,
           type: 'jobs',
@@ -772,11 +853,20 @@ export async function POST() {
 
         emit({
           done: true,
-          matchCount: matchRows.length,
+          matchCount:       matchRows.length,
           cvSuggestions,
-          detectedCountry: detectedLocation.countryName || undefined,
-          detectedCity:    detectedLocation.city        || undefined,
+          detectedCountry:  detectedLocation.countryName || undefined,
+          detectedCity:     detectedLocation.city        || undefined,
+          creditCost,
+          creditsRemaining: afterCredits?.remainingCredits,
         })
+
+        // Persist resume hash so subsequent identical-resume runs hit the cache
+        if (currentHash) {
+          void admin.from('profiles')
+            .update({ last_analyzed_resume_hash: currentHash })
+            .eq('user_id', user.id)
+        }
 
         // Increment re-analyze count for free users (non-fatal)
         if (!isPro) {

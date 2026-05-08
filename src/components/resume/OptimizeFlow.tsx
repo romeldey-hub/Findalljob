@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { ProgressModal, STEPS_JOB, STEPS_GENERAL } from '@/components/resume/ProgressModal'
 import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
+import { PaywallModal } from '@/components/PaywallModal'
 
 type Props = {
   mode: 'general' | 'job'
@@ -15,15 +16,24 @@ type Props = {
   onClose: () => void
   redirectTo?: string
   onSaved?: () => void
+  canDownload?: boolean
+  onUpgradeRequired?: () => void
+  onLocalSaved?: (jobId: string, data: OptimizedResumeData) => void
 }
 
-export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSaved }: Props) {
+export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSaved, canDownload = true, onUpgradeRequired, onLocalSaved }: Props) {
   const router = useRouter()
-  const [step, setStep]         = useState(1)
-  const [error, setError]       = useState<string | null>(null)
-  const [result, setResult]     = useState<OptimizedResumeData | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [mounted, setMounted]   = useState(false)
+  const [step, setStep]                         = useState(1)
+  const [error, setError]                       = useState<string | null>(null)
+  const [upgradeRequired, setUpgradeReq]        = useState(false)
+  const [result, setResult]                     = useState<OptimizedResumeData | null>(null)
+  const [isFreePreview, setIsFreePreview]       = useState(false)
+  const [fromCache, setFromCache]               = useState(false)
+  const [isSaving, setIsSaving]                 = useState(false)
+  const [mounted, setMounted]                   = useState(false)
+  const [isSaved, setIsSaved]                   = useState(false)
+  // Internal upgrade overlay — shown without closing the preview (keeps optimization state visible)
+  const [showDownloadUpgrade, setShowDownloadUpgrade] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 0)
@@ -33,9 +43,9 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
   useEffect(() => { void run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
-    setStep(1); setError(null); setResult(null)
+    setStep(1); setError(null); setResult(null); setUpgradeReq(false)
+    setIsFreePreview(false); setFromCache(false); setIsSaved(false); setShowDownloadUpgrade(false)
 
-    // Abort the request if it takes longer than 150 s (3 Claude calls × ~45 s each)
     const controller = new AbortController()
     const abortTimer = setTimeout(() => controller.abort(), 250_000)
 
@@ -57,13 +67,25 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
 
       let optData: Record<string, unknown> = {}
       try { optData = await optRes.json() } catch {
-        // Non-JSON body (e.g. Vercel 504 HTML)
         setError('Optimization timed out. Please click Retry — it usually succeeds on the second attempt.')
         return
       }
 
       if (!optRes.ok) {
-        setError(optData.error as string ?? 'Optimization failed. Please try again.')
+        if (optData.requiresUpgrade) {
+          setUpgradeReq(true)
+          setError(optData.error as string ?? 'You\'re out of AI credits. Upgrade to keep tailoring your resume for more jobs.')
+        } else {
+          setError(optData.error as string ?? 'Optimization failed. Please try again.')
+        }
+        return
+      }
+
+      // Cache hit: skip animation, go straight to result
+      if (optData.fromCache) {
+        setFromCache(true)
+        setIsFreePreview(false)
+        setResult(optData.optimizedData as OptimizedResumeData)
         return
       }
 
@@ -71,6 +93,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
       setStep(3)
       await new Promise(r => setTimeout(r, 600))
 
+      setIsFreePreview(!!optData.isFreePreview)
       setResult(optData.optimizedData as OptimizedResumeData)
     } catch (err) {
       clearTimeout(abortTimer)
@@ -83,6 +106,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
     }
   }
 
+  // Persist edits to DB for all users (free + Pro), then transition to optimized preview
   async function handleApprove(editedData?: OptimizedResumeData) {
     const dataToSave = editedData ?? result
     if (!dataToSave) return
@@ -103,9 +127,17 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
       }
       toast.success(mode === 'general' ? 'Resume improved! Re-analyzing your matches…' : 'Resume optimized for this job!')
       if (typeof window !== 'undefined') localStorage.removeItem('lastAnalyzedAt')
+      if (mode === 'job') {
+        setResult(dataToSave)
+        setIsSaved(true)
+        // Optimistic card update — fires before SWR re-fetch resolves
+        if (jobId) onLocalSaved?.(jobId, dataToSave)
+      }
       onSaved?.()
-      onClose()
-      if (mode === 'general') router.push(redirectTo ?? '/matches')
+      if (mode === 'general') {
+        onClose()
+        router.push(redirectTo ?? '/matches')
+      }
     } catch {
       toast.error('Something went wrong. Please try again.')
     } finally {
@@ -121,15 +153,23 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
     <ResumePreviewModal
       data={result}
       onClose={onClose}
-      onSaveEdits={handleApprove}
+      onSaveEdits={isJob ? handleApprove : (isFreePreview ? undefined : handleApprove)}
       isSaving={isSaving}
       avatarUrl={avatarUrl}
       heading={isJob ? 'Optimized Resume for This Job' : 'Preview Improved Resume'}
       previewSubtitle={isJob
-        ? 'Review and edit your AI-optimized resume before saving.'
+        ? (fromCache
+            ? 'Loaded from your saved optimization — no credits charged.'
+            : isSaved
+              ? 'See how AI tailored your resume for this role.'
+              : 'Review and edit your AI-optimized resume before saving.')
         : 'Enhancing clarity, impact, and ATS performance'}
-      startInEditMode={isJob}
-      {...(!isJob && { onApprove: () => handleApprove(), approveLabel: 'Accept & Done' })}
+      startInEditMode={isJob && !isSaved}
+      canDownload={canDownload && !isFreePreview}
+      isFreePreview={isFreePreview}
+      isOptimizedPreview={isJob && isSaved}
+      onLockedDownload={isJob && isFreePreview && isSaved ? () => setShowDownloadUpgrade(true) : undefined}
+      {...(!isJob && !isFreePreview && { onApprove: () => handleApprove(), approveLabel: 'Accept & Done' })}
     />
   ) : (
     <ProgressModal
@@ -139,8 +179,20 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
       subtitle={isJob ? 'AI is tailoring your resume to this role' : 'Improving your resume'}
       onRetry={run}
       onClose={onClose}
+      onUpgrade={upgradeRequired ? () => { onClose(); onUpgradeRequired?.() } : undefined}
     />
   )
 
-  return createPortal(content, document.body)
+  return createPortal(
+    <>
+      {content}
+      {showDownloadUpgrade && (
+        <PaywallModal
+          onClose={() => setShowDownloadUpgrade(false)}
+          onMaybeLater={() => setShowDownloadUpgrade(false)}
+        />
+      )}
+    </>,
+    document.body
+  )
 }

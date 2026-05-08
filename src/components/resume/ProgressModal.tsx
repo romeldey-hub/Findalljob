@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, Sparkles, Check, X, RefreshCw } from 'lucide-react'
+import { Loader2, Sparkles, Check, X, RefreshCw, Zap } from 'lucide-react'
 
 export const STEPS_JOB     = ['Analyzing Job',    'Optimizing Resume',  'Generating Output']
 export const STEPS_GENERAL = ['Analyzing Resume', 'Improving Content',  'Generating Output']
@@ -10,6 +10,7 @@ export function ProgressModal({
   error,
   onRetry,
   onClose,
+  onUpgrade,
   steps = STEPS_JOB,
   subtitle = 'AI is tailoring your resume to this role',
 }: {
@@ -17,6 +18,7 @@ export function ProgressModal({
   error: string | null
   onRetry: () => void
   onClose: () => void
+  onUpgrade?: () => void
   steps?: string[]
   subtitle?: string
 }) {
@@ -28,15 +30,22 @@ export function ProgressModal({
         {error ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-                <X className="w-5 h-5 text-red-500" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${onUpgrade ? 'bg-amber-50 dark:bg-amber-900/30' : 'bg-red-50 dark:bg-red-900/30'}`}>
+                {onUpgrade
+                  ? <Zap className="w-5 h-5 text-amber-500" />
+                  : <X className="w-5 h-5 text-red-500" />
+                }
               </div>
               <div>
-                <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Optimization Failed</p>
-                <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">Something went wrong</p>
+                <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">
+                  {onUpgrade ? 'Keep your momentum going' : 'Optimization Failed'}
+                </p>
+                <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">
+                  {onUpgrade ? 'You\'ve run out of AI credits' : 'Something went wrong'}
+                </p>
               </div>
             </div>
-            <p className="text-[13px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 leading-relaxed">
+            <p className={`text-[13px] rounded-xl p-3 leading-relaxed border ${onUpgrade ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
               {error}
             </p>
             <div className="flex items-center gap-2 pt-1">
@@ -46,12 +55,21 @@ export function ProgressModal({
               >
                 Close
               </button>
-              <button
-                onClick={onRetry}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />Retry
-              </button>
+              {onUpgrade ? (
+                <button
+                  onClick={onUpgrade}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[13px] font-bold transition-colors"
+                >
+                  <Zap className="w-3.5 h-3.5" />Get more interview chances
+                </button>
+              ) : (
+                <button
+                  onClick={onRetry}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />Retry
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -97,7 +115,7 @@ export function ProgressModal({
               })}
             </div>
             <p className="text-[12px] text-center text-gray-400 dark:text-slate-500 mt-5">
-              This takes about 20–30 seconds…
+              This takes about 1–3 minutes…
             </p>
           </>
         )}

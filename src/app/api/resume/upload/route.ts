@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     if (!isPro && currentUploadCount >= FREE_LIMITS.resumeUploads) {
       return NextResponse.json({
-        error: `You've used all ${FREE_LIMITS.resumeUploads} free resume uploads. Upgrade to Pro to continue.`,
+        error: `You've used all ${FREE_LIMITS.resumeUploads} free resume uploads. Upgrade to keep refining and submitting your best resume.`,
         limitReached: true,
       }, { status: 403 })
     }

@@ -1,6 +1,10 @@
-import { NextResponse }      from 'next/server'
-import { createClient }      from '@/lib/supabase/server'
-import { callClaudeJSON }    from '@/lib/ai/claude'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { generatePremiumJSON } from '@/lib/ai/client'
+import { isProUser } from '@/lib/admin'
+import { resolveProUntil } from '@/lib/billing'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { checkRateLimit, userRateLimitKey, rateLimitResponse } from '@/lib/rate-limit'
 import type { ParsedResume } from '@/types'
 
 export interface QuickFix {
@@ -24,11 +28,50 @@ function reconstructText(p: ParsedResume): string {
   return lines.join('\n')
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const admin = createAdminClient()
+
+  // ── Plan resolution ────────────────────────────────────────────────────────
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('role, subscription_status, pro_until, plan_tier')
+    .eq('user_id', user.id)
+    .single()
+
+  const effectiveProUntil = await resolveProUntil(
+    admin, user.id, profileRow?.subscription_status, profileRow?.pro_until,
+  )
+  const isPro    = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
+  const planTier = (profileRow?.plan_tier as string | null) ?? (isPro ? 'pro' : 'free')
+
+  // ── Rate limit: 6 quick-fixes / minute / user ──────────────────────────────
+  const rlResult = await checkRateLimit(
+    userRateLimitKey(user.id, 'quick_fix'),
+    'quick_fix',
+    admin,
+  )
+  if (!rlResult.allowed) {
+    console.warn(`[resume/quick-fixes] rate-limited | user=${user.id}`)
+    return NextResponse.json(rateLimitResponse(rlResult), { status: 429 })
+  }
+
+  // ── Credit check (1 credit per quick-fix) ─────────────────────────────────
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'quickFix', isPro, admin, planTier)
+
+  if (!creditAllowed) {
+    console.warn(`[resume/quick-fixes] insufficient credits | user=${user.id} | remaining=${creditBalance.remainingCredits}`)
+    return NextResponse.json(
+      insufficientCreditsResponse('quickFix', creditBalance.remainingCredits),
+      { status: 402 },
+    )
+  }
+
+  // ── Input validation ───────────────────────────────────────────────────────
   const body = await req.json().catch(() => ({}))
   const { jobId } = body
   if (!jobId) return NextResponse.json({ error: 'jobId required' }, { status: 400 })
@@ -87,11 +130,28 @@ Return a JSON array:
 Return 3–5 items only.`
 
   try {
-    const fixes = await callClaudeJSON<QuickFix[]>(prompt, SYSTEM, 1200)
-    const valid  = (Array.isArray(fixes) ? fixes : [])
+    // ── AI call ──────────────────────────────────────────────────────────────
+    const fixes = await generatePremiumJSON<QuickFix[]>(prompt, {
+      task:      'quick_fix',
+      system:    SYSTEM,
+      maxTokens: 1200,
+      userId:    user.id,
+      isFreeUser: !isPro,
+    })
+
+    const valid = (Array.isArray(fixes) ? fixes : [])
       .filter(f => f.area && f.reason && f.rewrite)
       .slice(0, 5)
-    return NextResponse.json({ fixes: valid })
+
+    // ── Deduct credits after successful AI call ────────────────────────────
+    const afterCredits = await deductCredits(user.id, 'quickFix', admin)
+
+    return NextResponse.json({
+      fixes,
+      valid,
+      creditCost:       creditCost,
+      creditsRemaining: afterCredits?.remainingCredits ?? creditBalance.remainingCredits - creditCost,
+    })
   } catch (err) {
     const msg    = err instanceof Error ? err.message : String(err)
     const isLoad = /overload|rate.?limit|529|429|too many/i.test(msg)
@@ -100,7 +160,7 @@ Return 3–5 items only.`
       { error: isLoad
           ? 'Anthropic API is temporarily overloaded. Please wait a few seconds and try again.'
           : 'Could not generate suggestions. Please try again.' },
-      { status: isLoad ? 503 : 500 }
+      { status: isLoad ? 503 : 500 },
     )
   }
 }

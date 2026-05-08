@@ -1,16 +1,67 @@
 'use client'
 
-import { X, Crown, Wand2, Sparkles, Mic, TrendingUp } from 'lucide-react'
+import { X, Crown, Wand2, Sparkles, Mic, TrendingUp, MessageSquare, Zap, Download } from 'lucide-react'
 import Link from 'next/link'
 
 interface PaywallModalProps {
   onClose: () => void
   /** Called when the user dismisses without upgrading. Defaults to onClose. */
   onMaybeLater?: () => void
+  variant?: 'resume' | 'interview' | 'download'
 }
 
-export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
+const VARIANTS = {
+  resume: {
+    iconWrap: 'bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20',
+    Icon:     Crown,
+    iconColor: 'text-amber-500',
+    title:    "Don't stop now — you've started strong",
+    subtitle: 'Complete all 5 questions and get AI feedback on every answer',
+    benefits: [
+      { Icon: Wand2,      text: 'Tailor your resume to every job with one click' },
+      { Icon: Mic,        text: 'Complete full mock interviews with AI coaching' },
+      { Icon: TrendingUp, text: 'Get AI feedback on every answer you give' },
+      { Icon: Sparkles,   text: "See which jobs you're most likely to get hired for" },
+    ],
+    primaryCta:   'Unlock full interview practice',
+    secondaryCta: 'Skip for now',
+  },
+  interview: {
+    iconWrap: 'bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20',
+    Icon:     Mic,
+    iconColor: 'text-blue-500 dark:text-blue-400',
+    title:    'Unlock full interview practice',
+    subtitle: 'Practice with questions tailored to this job and your resume.',
+    benefits: [
+      { Icon: MessageSquare, text: 'Complete the full mock interview' },
+      { Icon: Sparkles,      text: 'Get AI feedback on every answer' },
+      { Icon: TrendingUp,    text: 'Improve weak answers before applying' },
+      { Icon: Zap,           text: 'Build confidence for this role' },
+    ],
+    primaryCta:   'Unlock interview practice',
+    secondaryCta: 'Maybe later',
+  },
+  download: {
+    iconWrap: 'bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20',
+    Icon:     Download,
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    title:    'Download your optimized resume',
+    subtitle: 'Upgrade to download and use this optimized resume.',
+    benefits: [
+      { Icon: Download,   text: 'Download your AI-tailored resume as a PDF' },
+      { Icon: Wand2,      text: 'Tailor your resume to every job with one click' },
+      { Icon: TrendingUp, text: 'Stand out with job-matched resume content' },
+      { Icon: Sparkles,   text: 'Unlock all AI features across the platform' },
+    ],
+    primaryCta:   'Upgrade to download',
+    secondaryCta: 'Maybe later',
+  },
+} as const
+
+export function PaywallModal({ onClose, onMaybeLater, variant = 'resume' }: PaywallModalProps) {
   const handleMaybeLater = onMaybeLater ?? onClose
+  const v = VARIANTS[variant]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -27,32 +78,27 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
 
         {/* Icon */}
         <div className="flex items-center justify-center mb-5">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20 flex items-center justify-center">
-            <Crown className="w-7 h-7 text-amber-500" />
+          <div className={`w-14 h-14 rounded-2xl ${v.iconWrap} flex items-center justify-center`}>
+            <v.Icon className={`w-7 h-7 ${v.iconColor}`} />
           </div>
         </div>
 
         {/* Copy */}
         <div className="text-center mb-6">
           <h3 className="font-bold text-[18px] text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">
-            Unlock full interview access
+            {v.title}
           </h3>
           <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed">
-            Get hired faster with AI-powered tools
+            {v.subtitle}
           </p>
         </div>
 
         {/* Feature bullets */}
         <div className="space-y-2.5 mb-6">
-          {[
-            { icon: Wand2,       text: 'Customize your resume for every job' },
-            { icon: Mic,         text: 'Practice mock interviews with AI feedback' },
-            { icon: TrendingUp,  text: 'Increase your match score instantly' },
-            { icon: Sparkles,    text: 'Discover jobs you\'re more likely to get' },
-          ].map(({ icon: Icon, text }) => (
+          {v.benefits.map(({ Icon: BulletIcon, text }) => (
             <div key={text} className="flex items-center gap-3 text-[13px] text-gray-600 dark:text-slate-400">
               <div className="w-6 h-6 rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] flex items-center justify-center flex-shrink-0">
-                <Icon className="w-3.5 h-3.5 text-[#2563EB]" />
+                <BulletIcon className="w-3.5 h-3.5 text-[#2563EB]" />
               </div>
               {text}
             </div>
@@ -65,11 +111,11 @@ export function PaywallModal({ onClose, onMaybeLater }: PaywallModalProps) {
             onClick={handleMaybeLater}
             className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-all"
           >
-            Maybe Later
+            {v.secondaryCta}
           </button>
           <Link href="/settings" className="flex-[1.25]">
             <button className="w-full py-2.5 px-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] hover:bg-[#1E293B] dark:hover:bg-blue-700 text-white text-[13px] font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap">
-              <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />Start Getting Interview-Ready
+              <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />{v.primaryCta}
             </button>
           </Link>
         </div>

@@ -1,4 +1,4 @@
-import { callClaudeJSON } from './claude'
+import { generatePremiumJSON } from './client'
 import type { ResumeSection } from '@/types'
 
 export interface ResumeImprovement {
@@ -465,7 +465,10 @@ async function optimizeWithValidation(
   originalText: string,
   originalExperienceCount: number,
   originalSkillCount: number,
-  maxRetries = 0
+  maxRetries = 0,
+  task = 'resume_optimize',
+  userId?: string,
+  isFreeUser?: boolean,
 ): Promise<OptimizedResumeData> {
   // STEP 1 & 2: extract structure ONCE before any AI calls
   const structure     = extractStructure(originalText)
@@ -479,7 +482,7 @@ async function optimizeWithValidation(
       : undefined
 
     // Same buildPrompt function is always called — no fallback or simplification
-    const result = await callClaudeJSON<OptimizedResumeData>(buildPrompt(structureLock, retryContext), SYSTEM, 8000)
+    const result = await generatePremiumJSON<OptimizedResumeData>(buildPrompt(structureLock, retryContext), { task: attempt > 0 ? `${task}:retry` : task, system: SYSTEM, maxTokens: 6000, userId, isFreeUser })
     const { valid, issues } = validateOutput(originalText, result, originalExperienceCount, originalSkillCount, structure)
 
     if (valid) return result
@@ -489,10 +492,10 @@ async function optimizeWithValidation(
   }
 
   // Final attempt: still the SAME optimization prompt — never a fallback
-  const finalResult = await callClaudeJSON<OptimizedResumeData>(buildPrompt(
+  const finalResult = await generatePremiumJSON<OptimizedResumeData>(buildPrompt(
     structureLock,
     `\n\nFINAL ATTEMPT — CRITICAL: Fix ALL of these issues:\n${lastIssues.map(i => `- ${i}`).join('\n')}\n`
-  ), SYSTEM, 8000)
+  ), { task: `${task}:final`, system: SYSTEM, maxTokens: 6000, userId, isFreeUser })
   return finalResult
 }
 
@@ -540,7 +543,7 @@ const JSON_SCHEMA = `{
 
 // ── General optimization ──────────────────────────────────────────────────────
 
-export async function optimizeResumeGeneral(resumeText: string): Promise<OptimizedResumeData> {
+export async function optimizeResumeGeneral(resumeText: string, userId?: string, isFreeUser?: boolean): Promise<OptimizedResumeData> {
   const originalExpCount   = countExperiences(resumeText)
   const originalSkillCount = countSkills(resumeText)
 
@@ -605,7 +608,7 @@ Return EXACTLY this JSON structure:
 ${JSON_SCHEMA}`
   }
 
-  return optimizeWithValidation(buildPrompt, resumeText, originalExpCount, originalSkillCount)
+  return optimizeWithValidation(buildPrompt, resumeText, originalExpCount, originalSkillCount, 0, 'resume_optimize_general', userId, isFreeUser)
 }
 
 // ── Job-specific optimization ─────────────────────────────────────────────────
@@ -615,7 +618,9 @@ export async function optimizeResume(
   jobTitle: string,
   jobDescription: string,
   company: string,
-  originalScore = 0
+  originalScore = 0,
+  userId?: string,
+  isFreeUser?: boolean,
 ): Promise<OptimizedResumeData> {
   const originalExpCount   = countExperiences(resumeText)
   const originalSkillCount = countSkills(resumeText)
@@ -711,7 +716,7 @@ Return EXACTLY this JSON structure:
 ${JSON_SCHEMA}`
   }
 
-  const result = await optimizeWithValidation(buildPrompt, resumeText, originalExpCount, originalSkillCount)
+  const result = await optimizeWithValidation(buildPrompt, resumeText, originalExpCount, originalSkillCount, 0, 'resume_optimize_job', userId, isFreeUser)
 
   // Apply score calculation
   if (originalScore > 0 && result.score_improvements) {

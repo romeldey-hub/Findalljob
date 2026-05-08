@@ -13,7 +13,8 @@ import {
   RemoteOkAdapter,
 } from './sources/public-free'
 
-const MIN_ACCEPTABLE_RESULTS = 10
+const MIN_ACCEPTABLE_RESULTS  = 10
+const APIFY_FALLBACK_THRESHOLD = 5  // only use Apify when free sources return fewer than this
 
 export type SearchStage = 'primary' | 'fallback'
 
@@ -148,7 +149,7 @@ export class JobSourceRouter {
       await this.collectFromSources(params, this.fallbackSources, stage, jobs, sourcesUsed, errors)
 
       const standardDedupedCount = this.dedupeByCanonical(this.dedupeByUrl(jobs)).length
-      if (standardDedupedCount < MIN_ACCEPTABLE_RESULTS) {
+      if (standardDedupedCount < APIFY_FALLBACK_THRESHOLD) {
         console.log(`[router:${stage}] standard fallback returned ${standardDedupedCount} usable jobs; trying Apify as final fallback`)
         await this.collectFromSources(params, this.apifySources, 'apify-final', jobs, sourcesUsed, errors)
       } else {

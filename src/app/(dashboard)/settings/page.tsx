@@ -46,6 +46,13 @@ export default async function SettingsPage() {
     .eq('user_id', user!.id)
     .single()
 
+  // plan_tier (023) — isolated query for null-safety
+  const { data: planTierRow } = await admin
+    .from('profiles')
+    .select('plan_tier')
+    .eq('user_id', user!.id)
+    .single()
+
   const effectiveProUntil = await resolveProUntil(
     admin, user!.id, profile?.subscription_status, billingRow?.pro_until
   )
@@ -104,6 +111,7 @@ export default async function SettingsPage() {
         <div className="w-full xl:w-[300px] xl:flex-shrink-0">
           <SubscriptionCard
             isPro={isPro}
+            planTier={planTierRow?.plan_tier ?? 'free'}
             proUntil={effectiveProUntil}
             cancelAtPeriodEnd={billingRow?.cancel_at_period_end ?? false}
           />

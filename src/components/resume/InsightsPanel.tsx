@@ -114,47 +114,30 @@ function ScoreBar({ label, value, index = 0 }: { label: string; value: number; i
 // ── ActionCard ────────────────────────────────────────────────────────────────
 
 function ActionCard({
-  icon, label, subtext, onClick, disabled = false, primary = false,
+  icon, label, subtext, onClick, disabled = false, iconBg = 'bg-slate-100 dark:bg-[#263549]', iconColor = 'text-slate-400 dark:text-slate-500',
 }: {
   icon: React.ReactNode
   label: string
   subtext: string
   onClick: () => void
   disabled?: boolean
-  primary?: boolean
+  iconBg?: string
+  iconColor?: string
 }) {
-  if (primary) {
-    return (
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-left transition-all hover:scale-[1.01] active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-[13px] leading-tight">{label}</p>
-          <p className="text-[11px] text-blue-200 mt-0.5">{subtext}</p>
-        </div>
-        <ChevronRight className="w-4 h-4 text-blue-300 flex-shrink-0" />
-      </button>
-    )
-  }
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-left hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:scale-[1.01] active:scale-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full group flex items-center gap-3 px-3.5 py-3 rounded-xl border border-[#E5E7EB] dark:border-[#2D3D55] bg-transparent hover:bg-[#F8FAFC] dark:hover:bg-[#1C2E45] hover:border-[#CBD5E1] dark:hover:border-[#3D5170] transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      <div className="w-7 h-7 rounded-lg bg-[#F1F5F9] dark:bg-[#263549] flex items-center justify-center flex-shrink-0">
-        <span className="text-gray-400 dark:text-slate-500">{icon}</span>
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <span className={iconColor}>{icon}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] leading-tight">{label}</p>
+        <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#CBD5E1] leading-tight">{label}</p>
         <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">{subtext}</p>
       </div>
-      <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0" />
+      <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
     </button>
   )
 }
@@ -253,28 +236,30 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
 
       {/* ── Next Steps ───────────────────────────────────────────── */}
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
-        <h3 className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] mb-3 tracking-tight">
-          Next Steps to Get Hired Faster
+        <h3 className="font-semibold text-[12px] uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500 mb-3">
+          Next Steps
         </h3>
         <div className="space-y-2">
           <ActionCard
-            icon={<Wand2 className="w-4 h-4 text-white" />}
+            icon={<Wand2 className="w-[15px] h-[15px]" />}
             label="Fix Resume for This Job"
-            subtext="Boost your chances"
+            subtext="Tailored to a specific role"
             onClick={() => router.push('/matches')}
-            primary
+            iconBg="bg-blue-50 dark:bg-blue-950/50"
+            iconColor="text-blue-500 dark:text-blue-400"
           />
           <ActionCard
-            icon={<Mic className="w-4 h-4 text-white" />}
+            icon={<Mic className="w-[15px] h-[15px]" />}
             label="Start Mock Interview"
             subtext="Practice before you apply"
             onClick={() => router.push('/matches')}
-            primary
+            iconBg="bg-violet-50 dark:bg-violet-950/50"
+            iconColor="text-violet-500 dark:text-violet-400"
           />
           <ActionCard
             icon={pdfBusy
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Download className="w-3.5 h-3.5" />}
+              ? <Loader2 className="w-[15px] h-[15px] animate-spin" />
+              : <Download className="w-[15px] h-[15px]" />}
             label={pdfBusy ? 'Generating PDF…' : 'Download Resume'}
             subtext="Ready to submit"
             onClick={handleDownloadPDF}
