@@ -13,11 +13,11 @@ export interface UsageEvent {
 
 /** Fire-and-forget: never awaited, never blocks a request. */
 export function logAiEvent(evt: UsageEvent): void {
-  try {
-    const admin    = createAdminClient()
-    const costUsd  = calcCostUsd(evt.model, evt.inputTokens, evt.outputTokens)
-    const tier     = evt.model === LIGHT_MODEL ? 'light' : 'premium'
-    void admin.from('ai_usage_events').insert({
+  const admin   = createAdminClient()
+  const costUsd = calcCostUsd(evt.model, evt.inputTokens, evt.outputTokens)
+  const tier    = evt.model === LIGHT_MODEL ? 'light' : 'premium'
+  void (async () => {
+    const { error } = await admin.from('ai_usage_events').insert({
       user_id:       evt.userId ?? null,
       feature:       evt.task,
       model_tier:    tier,
@@ -27,7 +27,6 @@ export function logAiEvent(evt: UsageEvent): void {
       cost_usd:      costUsd,
       is_free_user:  evt.isFreeUser ?? false,
     })
-  } catch (err) {
-    console.error('[usage-logger] log failed:', err)
-  }
+    if (error) console.error(`[usage-logger] insert failed | task=${evt.task} | model=${evt.model}`, error)
+  })()
 }
