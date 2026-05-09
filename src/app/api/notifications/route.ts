@@ -14,10 +14,10 @@ export async function GET() {
     .limit(50)
 
   if (error) {
-    // Table not yet created (migration pending) — return empty rather than crash
-    const missing = error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')
-    if (missing) return NextResponse.json({ notifications: [], unreadCount: 0 })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Notifications are non-critical — return empty on any error (table missing,
+    // RLS issue, PGRST 404, etc.) rather than surfacing a 500 to the client.
+    console.warn('[notifications] GET error (returning empty):', error.code, error.message)
+    return NextResponse.json({ notifications: [], unreadCount: 0 })
   }
 
   const unreadCount = (data ?? []).filter(n => !n.is_read).length
