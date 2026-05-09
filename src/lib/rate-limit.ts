@@ -21,6 +21,7 @@ import type { NextRequest } from 'next/server'
 
 export const RATE_LIMITS: Record<string, number> = {
   quick_fix:        6,
+  follow_up:        6,
   interview_eval:   10,
   job_manual:       5,
   job_expand:       3,

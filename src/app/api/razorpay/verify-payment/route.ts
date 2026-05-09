@@ -67,11 +67,14 @@ export async function POST(request: NextRequest) {
     if (error) throw error
 
     const creditTotal = CREDIT_ALLOCATIONS[planTier] ?? 40
-    void admin.rpc('reset_user_credits', {
+    const { error: creditsError } = await admin.rpc('reset_user_credits', {
       p_user_id: user.id,
       p_total:   creditTotal,
       p_plan:    planTier,
     })
+    if (creditsError) {
+      console.error('[verify-payment] reset_user_credits failed | user=%s | plan=%s', user.id, planTier, creditsError)
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

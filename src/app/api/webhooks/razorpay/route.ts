@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { CREDIT_ALLOCATIONS } from '@/lib/credits'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -44,6 +45,8 @@ export async function POST(request: NextRequest) {
             : new Date()
         const proUntil = new Date(base.getTime() + 30 * 24 * 60 * 60 * 1000)
 
+        const planTier = (order.notes?.plan_tier as string | null) ?? 'pro_lite'
+
         await supabase
           .from('profiles')
           .update({
@@ -52,8 +55,19 @@ export async function POST(request: NextRequest) {
             razorpay_order_id: order.id,
             pro_until: proUntil.toISOString(),
             cancel_at_period_end: false,
+            plan_tier: planTier,
           })
           .eq('user_id', userId)
+
+        const creditTotal = CREDIT_ALLOCATIONS[planTier] ?? 40
+        const { error: creditsError } = await supabase.rpc('reset_user_credits', {
+          p_user_id: userId,
+          p_total:   creditTotal,
+          p_plan:    planTier,
+        })
+        if (creditsError) {
+          console.error('[webhook/razorpay] reset_user_credits failed | user=%s | plan=%s', userId, planTier, creditsError)
+        }
         break
       }
 

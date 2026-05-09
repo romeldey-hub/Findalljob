@@ -162,7 +162,7 @@ export async function POST(_req: NextRequest) {
   }
 
   const extToDbId = new Map((dbJobs ?? []).map((j) => [`${j.source}:${j.external_id}`, j.id as string]))
-  const ranked = await rerankJobs(parsed, jobs, resume.raw_text ?? undefined)
+  const ranked = await rerankJobs(parsed, jobs, resume.raw_text ?? undefined, [], user.id, !isPro)
   const jobMap = new Map(jobs.map((j) => [`${j.source}:${j.externalId}`, j]))
 
   const matchRows = ranked.slice(0, 12)

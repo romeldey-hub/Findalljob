@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isAdminUser, isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
+import { CREDIT_ALLOCATIONS } from '@/lib/credits'
 
 export async function GET() {
   const supabase = await createClient()
@@ -63,11 +64,33 @@ export async function GET() {
   const isPro = isProUser(user.email, ext?.role, base?.subscription_status, effectiveProUntil)
 
   // AI credits — null-safe if migration not yet applied or row not yet created
-  const { data: creditsRow } = await adminClient
+  let { data: creditsRow } = await adminClient
     .from('ai_credits')
     .select('remaining_credits, total_credits, reset_date')
     .eq('user_id', user.id)
     .maybeSingle()
+
+  // Self-heal: if a Pro user's credit total is below their plan allocation (e.g. payment
+  // webhook fired but reset_user_credits didn't complete), reset it now so the UI reflects
+  // the correct balance without requiring a support intervention.
+  if (isPro && creditsRow) {
+    const planTier = planTierRow?.plan_tier ?? 'pro'
+    const expectedTotal = CREDIT_ALLOCATIONS[planTier] ?? CREDIT_ALLOCATIONS.pro_lite
+    if (Number(creditsRow.total_credits) < expectedTotal) {
+      console.log(`[profile] self-healing credits | user=${user.id} | plan=${planTier} | had=${creditsRow.total_credits} | expected=${expectedTotal}`)
+      await adminClient.rpc('reset_user_credits', {
+        p_user_id: user.id,
+        p_total:   expectedTotal,
+        p_plan:    planTier,
+      })
+      const { data: healed } = await adminClient
+        .from('ai_credits')
+        .select('remaining_credits, total_credits, reset_date')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (healed) creditsRow = healed
+    }
+  }
 
   return NextResponse.json({
     user_id: user.id,

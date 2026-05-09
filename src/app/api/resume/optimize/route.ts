@@ -5,6 +5,7 @@ import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
 import { parseResumeFromPDF } from '@/lib/ai/parser'
 import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
+import { FREE_LIMITS } from '@/lib/limits'
 import { getOptimizedResumeCache } from '@/lib/cache'
 import type { ParsedResume } from '@/types'
 
@@ -108,24 +109,24 @@ export async function POST(request: NextRequest) {
 
   // ── GENERAL MODE ─────────────────────────────────────────────────────────────
   if (mode === 'general') {
+    let generalFreeToday = ''
+    let generalUsedToday = 0
     // Free users: 1 general optimization preview per day
     if (!isPro) {
-      const today = new Date().toISOString().slice(0, 10)
+      generalFreeToday = new Date().toISOString().slice(0, 10)
       const { data: freeQuota } = await adminClient
         .from('profiles')
         .select('optimize_free_daily_count, optimize_free_date')
         .eq('user_id', user.id)
         .single()
-      const isToday   = freeQuota?.optimize_free_date === today
-      const usedToday = isToday ? (freeQuota?.optimize_free_daily_count ?? 0) : 0
-      if (usedToday >= 1) {
+      const isToday = freeQuota?.optimize_free_date === generalFreeToday
+      generalUsedToday = isToday ? (freeQuota?.optimize_free_daily_count ?? 0) : 0
+      if (generalUsedToday >= FREE_LIMITS.optimizationsPerDay) {
         return NextResponse.json(
           { requiresUpgrade: true, error: 'You\'ve used your free optimization preview for today. Upgrade to keep tailoring your resume and improve your shortlist chances.' },
           { status: 429 }
         )
       }
-      // Increment after success — stored in a closure and called below
-      void adminClient.from('profiles').update({ optimize_free_daily_count: usedToday + 1, optimize_free_date: today }).eq('user_id', user.id)
     }
     const resumeResult = await supabase
       .from('resumes')
@@ -170,6 +171,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `AI optimization failed: ${msg}` }, { status: 500 })
     }
 
+    if (!isPro) {
+      void adminClient.from('profiles').update({ optimize_free_daily_count: generalUsedToday + 1, optimize_free_date: generalFreeToday }).eq('user_id', user.id)
+    }
+
     return NextResponse.json({ optimizedData, mode: 'general', isFreePreview: false })
   }
 
@@ -193,7 +198,7 @@ export async function POST(request: NextRequest) {
       .single()
     const isToday = freeQuota?.optimize_free_date === freeToday
     freeUsedToday = isToday ? (freeQuota?.optimize_free_daily_count ?? 0) : 0
-    if (freeUsedToday >= 1) {
+    if (freeUsedToday >= FREE_LIMITS.optimizationsPerDay) {
       return NextResponse.json(
         { requiresUpgrade: true, error: "You've used your free optimization preview for today. Upgrade to keep tailoring your resume for every job." },
         { status: 402 }

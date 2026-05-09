@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
 
   // ── Rate limit: 6 follow-ups / minute / user ───────────────────────────────
   const rlResult = await checkRateLimit(
-    userRateLimitKey(user.id, 'quick_fix'),
-    'quick_fix',
+    userRateLimitKey(user.id, 'follow_up'),
+    'follow_up',
     admin,
   )
   if (!rlResult.allowed) {
@@ -46,12 +46,12 @@ export async function POST(request: NextRequest) {
 
   // ── Credit check (0.5 credits: AI message generation) ─────────────────────
   const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
-    await checkCredits(user.id, 'aiAssist', isPro, admin, planTier)
+    await checkCredits(user.id, 'followUpMessage', isPro, admin, planTier)
 
   if (!creditAllowed) {
     console.warn(`[followup/generate] insufficient credits | user=${user.id} | remaining=${creditBalance.remainingCredits}`)
     return NextResponse.json(
-      insufficientCreditsResponse('aiAssist', creditBalance.remainingCredits),
+      insufficientCreditsResponse('followUpMessage', creditBalance.remainingCredits),
       { status: 402 },
     )
   }
@@ -102,18 +102,28 @@ export async function POST(request: NextRequest) {
     { type, content: message, generated_at: new Date().toISOString() },
   ]
 
-  await supabase
+  const { error: saveError } = await supabase
     .from('applications')
     .update({ follow_up_messages: updated })
     .eq('id', applicationId)
     .eq('user_id', user.id)
 
+  if (saveError) {
+    console.error(`[followup/generate] DB save failed | user=${user.id}`, saveError)
+    return NextResponse.json({ error: 'Failed to save message. Please try again.' }, { status: 500 })
+  }
+
   // ── Deduct credits after successful AI call + DB save ──────────────────────
-  const afterCredits = await deductCredits(user.id, 'aiAssist', admin)
+  const afterCredits = await deductCredits(user.id, 'followUpMessage', admin)
+
+  if (!afterCredits) {
+    console.error(`[followup/generate] credit deduction failed | user=${user.id}`)
+    return NextResponse.json({ error: 'Credit deduction failed. Please try again.' }, { status: 500 })
+  }
 
   return NextResponse.json({
     message,
     creditCost,
-    creditsRemaining: afterCredits?.remainingCredits ?? creditBalance.remainingCredits - creditCost,
+    creditsRemaining: afterCredits.remainingCredits,
   })
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { mutate } from 'swr'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { track } from '@/lib/analytics'
@@ -115,6 +116,8 @@ export function RazorpayPaymentWidget({ isLoading = false, label = 'Upgrade to P
               })
               if (verifyResponse.ok) {
                 toast.success('Payment successful! You now have Pro access.')
+                // Invalidate SWR profile cache so the credits widget updates immediately
+                await mutate('/api/profile')
                 router.refresh()
                 router.push('/matches')
               } else {
