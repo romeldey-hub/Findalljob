@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const mode = (body.mode as string | undefined) ?? 'job-specific'
+  const bodyCurrentScore = typeof body.currentScore === 'number' ? Math.max(0, Math.min(100, body.currentScore)) : 0
 
   // ── GENERAL MODE ─────────────────────────────────────────────────────────────
   if (mode === 'general') {
@@ -169,6 +170,13 @@ export async function POST(request: NextRequest) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[optimize:general] Claude failed:', msg)
       return NextResponse.json({ error: `AI optimization failed: ${msg}` }, { status: 500 })
+    }
+
+    // Score floor: optimized score must never be lower than the user's current score.
+    // bodyCurrentScore is the heuristic score shown on the Resume page before optimization.
+    if (bodyCurrentScore > 0 && optimizedData.ats_score < bodyCurrentScore) {
+      console.log(`[optimize:general] score floor applied | user=${user.id} | ai_score=${optimizedData.ats_score} → ${bodyCurrentScore}`)
+      optimizedData.ats_score = bodyCurrentScore
     }
 
     if (!isPro) {

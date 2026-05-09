@@ -298,6 +298,7 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
           mode="general"
           userId={userId}
           avatarUrl={avatarUrl}
+          currentScore={overall}
           onClose={() => setShowOptimize(false)}
           redirectTo="/resume"
           onSaved={() => router.refresh()}

@@ -14,6 +14,7 @@ type Props = {
   jobId?: string
   userId?: string
   avatarUrl?: string | null
+  currentScore?: number
   onClose: () => void
   redirectTo?: string
   onSaved?: () => void
@@ -22,7 +23,7 @@ type Props = {
   onLocalSaved?: (jobId: string, data: OptimizedResumeData) => void
 }
 
-export function OptimizeFlow({ mode, jobId, userId, avatarUrl, onClose, redirectTo, onSaved, canDownload = true, onUpgradeRequired, onLocalSaved }: Props) {
+export function OptimizeFlow({ mode, jobId, userId, avatarUrl, currentScore, onClose, redirectTo, onSaved, canDownload = true, onUpgradeRequired, onLocalSaved }: Props) {
   const router = useRouter()
   const [step, setStep]                         = useState(1)
   const [error, setError]                       = useState<string | null>(null)
@@ -56,7 +57,7 @@ export function OptimizeFlow({ mode, jobId, userId, avatarUrl, onClose, redirect
 
       const body = mode === 'job' && jobId
         ? { jobId }
-        : { mode: 'general' }
+        : { mode: 'general', currentScore: currentScore ?? 0 }
 
       const optRes = await fetch('/api/resume/optimize', {
         method: 'POST',
