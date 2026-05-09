@@ -14,6 +14,7 @@ import { createNotification } from '@/lib/notifications'
 import { detectLocation, filterJobsByCountry } from '@/lib/jobs/location'
 import { buildCandidateProfile, applyAdvancedRelevanceFilter } from '@/lib/jobs/relevance'
 import { hashSearchParams, getJobSearchCache, setJobSearchCache } from '@/lib/cache'
+import { computeParsedResumeHash } from '@/lib/resume-hash'
 import type { ParsedResume, NormalizedJob } from '@/types'
 import type { RankedJob } from '@/lib/ai/reranker'
 
@@ -283,13 +284,23 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // ── Read force flag ───────────────────────────────────────────────────────
+  // ── Read request body ─────────────────────────────────────────────────────
   let force = false
+  let selectedSearchCountry: string | null = null  // country code e.g. "in", "us" — provided after user confirms
+  let searchMode: 'country' | 'international_remote' | null = null
+  let wasDetected = false
+  // parse_resume: upload/reanalyze flows — skip country gate, auto-detect from resume.
+  // job_search (or no mode): matched-jobs flow — apply country gate.
+  let mode: 'parse_resume' | 'job_search' | null = null
   try {
     const body = await req.json().catch(() => ({}))
     force = Boolean(body?.force)
+    selectedSearchCountry = (body?.selectedSearchCountry as string | null | undefined) ?? null
+    searchMode = (body?.searchMode as 'country' | 'international_remote' | undefined) ?? null
+    wasDetected = Boolean(body?.wasDetected)
+    mode = (body?.mode as 'parse_resume' | 'job_search' | undefined) ?? null
   } catch { /* no body — treat as non-forced */ }
-  console.log(`[analyze] request | user=${user.id} | force=${force}`)
+  console.log(`[analyze] request | user=${user.id} | mode=${mode ?? 'job_search'} | force=${force} | searchMode=${searchMode ?? 'precheck'} | country=${selectedSearchCountry ?? 'none'}`)
 
   // ── Rate limit: 3 analyze runs / minute / user ───────────────────────────
   const rlResult = await checkRateLimit(
@@ -341,13 +352,88 @@ export async function POST(req: Request) {
     )
   }
 
-  // ── Cache check: skip AI pipeline if resume unchanged and matches are recent ──
-  // force=true bypasses this entirely so A/B tests and manual re-analyzes always
-  // get a fresh pipeline run regardless of cached state.
-  const MATCH_CACHE_VALID_MS = 24 * 60 * 60 * 1000 // 24 hours
+  // ── Country confirmation gate ──────────────────────────────────────────────
+  // Only fires for job_search mode (matched-jobs page). parse_resume callers
+  // (upload, reanalyze, AI-create) skip this gate and auto-detect country below.
   const currentHash = (resume as Record<string, unknown>).resume_hash as string | null
-  console.log(`[analyze] resume_hash=${currentHash ?? 'none'} | last_analyzed_hash=${lastAnalyzedHash || 'none'} | hash_match=${currentHash === lastAnalyzedHash}`)
-  if (!force && currentHash && currentHash === lastAnalyzedHash) {
+  if (mode !== 'parse_resume' && !selectedSearchCountry && searchMode !== 'international_remote') {
+    const pd = resume.parsed_data as ParsedResume | null
+    const resumeLocation = pd?.location?.trim() ?? ''
+    const loc = detectLocation(resumeLocation)
+    console.log(`[analyze] country_confirmation_required | user=${user.id} | detected=${loc.countryName || 'none'} (${loc.countryCode || 'none'})`)
+    return NextResponse.json({
+      status: 'country_confirmation_required',
+      detectedCountry: loc.countryName || null,
+      detectedCountryCode: loc.countryCode || null,
+    })
+  }
+
+  // ── parse_resume mode: parse only, save, return country confirmation ─────────
+  // No credits charged, no job search. Frontend calls again with selectedSearchCountry
+  // after the user confirms their target country.
+  if (mode === 'parse_resume') {
+    let parsedData = resume.parsed_data as ParsedResume | null
+
+    if (!parsedData?.name) {
+      try {
+        if (resume.raw_text && resume.raw_text.length >= 50) {
+          parsedData = await parseResume(resume.raw_text, user.id, !isPro)
+        } else if (resume.file_url) {
+          const fileRes = await fetch(resume.file_url)
+          if (!fileRes.ok) throw new Error('Could not download resume file from storage')
+          const buffer = Buffer.from(await fileRes.arrayBuffer())
+          parsedData = await parseResumeFromPDF(buffer, user.id, !isPro)
+        } else {
+          throw new Error('No resume text or file found. Please upload your resume again.')
+        }
+        await Promise.all([
+          admin.from('resumes').update({ parsed_data: parsedData }).eq('id', resume.id),
+          admin.from('profiles').update({
+            full_name: parsedData.name || undefined,
+            phone:     parsedData.phone || undefined,
+            location:  parsedData.location || undefined,
+            summary:   parsedData.summary || undefined,
+            skills:    parsedData.skills || [],
+          }).eq('user_id', user.id),
+        ])
+        console.log(`[analyze] parse_resume: parsed and saved | user=${user.id}`)
+      } catch (err) {
+        const msg = apiErrMsg(err)
+        console.error('[analyze] parse_resume: parsing failed:', msg)
+        return NextResponse.json({ error: `Resume parsing failed: ${msg}` }, { status: 500 })
+      }
+    }
+
+    const loc = detectLocation((parsedData?.location ?? '').trim())
+    console.log(`[analyze] parse_resume complete — country confirmation | user=${user.id} | detected=${loc.countryName || 'none'} (${loc.countryCode || 'none'})`)
+    return NextResponse.json({
+      status: 'country_confirmation_required',
+      detectedCountry:     loc.countryName  || null,
+      detectedCountryCode: loc.countryCode  || null,
+    })
+  }
+
+  // ── Credit check: deep job rerank costs 1 credit (skip for cached responses) ─
+  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
+    await checkCredits(user.id, 'jobRerank', isPro, admin, planTier)
+  if (!creditAllowed) {
+    return NextResponse.json(
+      insufficientCreditsResponse('jobRerank', creditBalance.remainingCredits),
+      { status: 402 }
+    )
+  }
+
+  // ── Cache check: composite key = resumeHash + searchCountry + searchMode ──────
+  // A resume searched for India and the same resume searched for US must produce
+  // separate cache entries. force=true bypasses entirely.
+  const MATCH_CACHE_VALID_MS = 24 * 60 * 60 * 1000 // 24 hours
+  const cacheSearchKey = searchMode === 'international_remote'
+    ? 'international_remote'
+    : (selectedSearchCountry ?? 'unknown')
+  const compositeAnalysisKey = currentHash ? `${currentHash}:${cacheSearchKey}` : null
+  console.log(`[analyze] resume_hash=${currentHash ?? 'none'} | cache_key=${compositeAnalysisKey ?? 'none'} | last_analyzed_hash=${lastAnalyzedHash || 'none'} | key_match=${compositeAnalysisKey === lastAnalyzedHash}`)
+
+  if (!force && compositeAnalysisKey && compositeAnalysisKey === lastAnalyzedHash) {
     const { data: latestMatch } = await admin
       .from('job_matches')
       .select('created_at')
@@ -360,7 +446,7 @@ export async function POST(req: Request) {
       const matchAgeMs    = Date.now() - new Date(latestMatch.created_at).getTime()
       const matchAgeHours = matchAgeMs / (1000 * 60 * 60)
       if (matchAgeMs <= MATCH_CACHE_VALID_MS) {
-        console.log(`[analyze] resume hash match — cached response | user=${user.id} | match_age=${matchAgeHours.toFixed(1)}h`)
+        console.log(`[analyze] composite cache hit — cached response | user=${user.id} | country=${cacheSearchKey} | match_age=${matchAgeHours.toFixed(1)}h`)
         const { count } = await admin
           .from('job_matches')
           .select('id', { count: 'exact', head: true })
@@ -377,20 +463,10 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
         })
       }
-      console.log(`[analyze] resume hash match but matches are stale (${matchAgeHours.toFixed(1)}h > 24h) — running fresh pipeline | user=${user.id}`)
+      console.log(`[analyze] composite key matches but matches are stale (${matchAgeHours.toFixed(1)}h > 24h) — running fresh pipeline | user=${user.id}`)
     } else {
-      console.log(`[analyze] resume hash match but no existing matches — running fresh pipeline | user=${user.id}`)
+      console.log(`[analyze] composite key matches but no existing matches — running fresh pipeline | user=${user.id}`)
     }
-  }
-
-  // ── Credit check: deep job rerank costs 1 credit (skip for cached responses) ─
-  const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
-    await checkCredits(user.id, 'jobRerank', isPro, admin, planTier)
-  if (!creditAllowed) {
-    return NextResponse.json(
-      insufficientCreditsResponse('jobRerank', creditBalance.remainingCredits),
-      { status: 402 }
-    )
   }
 
   // ── Start SSE stream — all progress events flow through this ───────────────
@@ -406,6 +482,7 @@ export async function POST(req: Request) {
         }
       }
 
+      let runId: string | null = null
       try {
         emit({ step: 'resume_loaded' })
 
@@ -454,6 +531,28 @@ export async function POST(req: Request) {
 
         emit({ step: 'profile_parsed' })
 
+        // ── 2a-run. Create a job_search_runs row for this analysis ────────────
+        // Mark any stuck "running" runs (>30 min old) as failed first.
+        const stuckCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+        void admin
+          .from('job_search_runs')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('user_id', user.id)
+          .eq('status', 'running')
+          .lt('created_at', stuckCutoff)
+
+        const parsedResumeHash = computeParsedResumeHash(parsedResume)
+        const { data: runRow } = await admin
+          .from('job_search_runs')
+          .insert({
+            user_id:  user.id,
+            resume_hash: parsedResumeHash,
+            status:   'running',
+          })
+          .select('id')
+          .single()
+        runId = runRow?.id ?? null
+
         // ── 2b. Generate headline if profile has none ─────────────────────────
         try {
           const { data: profileRow } = await admin
@@ -476,7 +575,37 @@ export async function POST(req: Request) {
         }
 
         // ── 3. Generate AI search strategy ────────────────────────────────────
-        const profileLocation = parsedResume.location?.trim() || 'India'
+
+        // Resolve search country from user's confirmed choice (never silently default to India).
+        // resumeCountry = what's on the resume (display/info only, never drives job search).
+        // searchCountry = what the user chose → drives all fetching, filtering, and Apify logic.
+        const COUNTRY_CODE_TO_NAME: Record<string, string> = {
+          in: 'India', us: 'United States', gb: 'United Kingdom',
+          ca: 'Canada', au: 'Australia', de: 'Germany',
+          fr: 'France', nl: 'Netherlands', sg: 'Singapore',
+          ae: 'UAE', nz: 'New Zealand', za: 'South Africa',
+        }
+        // Pipeline counts — populated as each stage completes, written to the run on success
+        let jobsFetchedCount           = 0
+        let jobsAfterCountryFilter     = 0
+        let jobsAfterRelevanceFilter   = 0
+        let jobsScoredCount            = 0
+
+        const resumeCountry = parsedResume.location?.trim() ?? ''
+        const isInternational = searchMode === 'international_remote'
+        const searchCountryCode = (!isInternational && selectedSearchCountry) ? selectedSearchCountry : ''
+        const profileLocation = isInternational ? '' : (COUNTRY_CODE_TO_NAME[searchCountryCode] ?? '')
+        const countryCode: string | undefined = isInternational ? undefined : (searchCountryCode || undefined)
+        const isIndiaProfile = !isInternational && searchCountryCode === 'in'
+
+        // Log user's confirmed country choice
+        if (isInternational) {
+          console.log(`[analyze] user selected international/remote search | user=${user.id}`)
+        } else if (wasDetected) {
+          console.log(`[analyze] user confirmed detected country: ${profileLocation} | user=${user.id}`)
+        } else {
+          console.log(`[analyze] user selected different search country: ${profileLocation} | user=${user.id}`)
+        }
 
         let strategy
         try {
@@ -501,12 +630,10 @@ export async function POST(req: Request) {
 
         const primaryQuery = cleanedQueries[0] ?? (parsedResume.experience?.[0]?.title?.trim().replace(/[/\\|&"'()]/g, ' ').trim() || 'software engineer')
 
-        const detectedLocation = detectLocation(profileLocation)
-        const countryCode: string | undefined = detectedLocation.countryCode || undefined
-        const isIndiaProfile = detectedLocation.countryCode === 'in'
-        console.log('[analyze] profile location:', profileLocation, '| detected country:', detectedLocation.countryName, '(', countryCode ?? 'unknown', ') | source mode: all-sources-top20')
+        const detectedLocation = { countryCode: searchCountryCode, countryName: profileLocation, city: '' }
+        console.log('[analyze] resume location:', resumeCountry, '| search country:', profileLocation || 'international/remote', '(', countryCode ?? 'none', ') | source mode: all-sources-top20')
         console.log('[analyze] cleaned queries:', cleanedQueries)
-        console.log(`[PIPELINE] Resume country: ${detectedLocation.countryName || 'Unknown'} (${countryCode ?? 'none'})`)
+        console.log(`[PIPELINE] Resume country: ${resumeCountry || 'Unknown'} | Search country: ${profileLocation || 'international/remote'} (${countryCode ?? 'none'})`)
 
         emit({ step: 'strategy_ready' })
 
@@ -551,7 +678,8 @@ export async function POST(req: Request) {
 
         // ── Job search cache check — skip external API calls on recent hit ────
         // force=true bypasses this so a forced re-analyze always fetches fresh jobs.
-        const searchCacheHash = hashSearchParams(searchQueries, profileLocation)
+        // Include searchMode in cache key so country vs international searches don't collide.
+        const searchCacheHash = hashSearchParams(searchQueries, isInternational ? '__international__' : profileLocation)
         let fromJobSearchCache = false
         if (!force) {
           const cachedJobs = await getJobSearchCache(admin, user.id, searchCacheHash)
@@ -678,6 +806,7 @@ export async function POST(req: Request) {
         if (jobs.length > 0) void setJobSearchCache(admin, user.id, searchCacheHash, jobs)
         } // end !fromJobSearchCache
 
+        jobsFetchedCount = jobs.length
         console.log('[analyze] total jobs fetched:', jobs.length, '| by source:', sourceSummary(jobs))
         if (sourceErrors.length) {
           console.warn('[analyze] source errors:', sourceErrors)
@@ -690,14 +819,17 @@ export async function POST(req: Request) {
         if (countryCode) {
           const { kept, removed } = filterJobsByCountry(jobs, countryCode)
           jobs.splice(0, jobs.length, ...kept)
+          jobsAfterCountryFilter = jobs.length
           console.log(`[PIPELINE] Removed by country filter: ${removed} → ${jobs.length} remaining (filter: ${countryCode})`)
         } else {
+          jobsAfterCountryFilter = jobs.length
           console.log(`[PIPELINE] Removed by country filter: 0 (no country detected — filter skipped)`)
         }
 
         // ── Advanced relevance filter — role family + seniority + function + industry ─
         const relevanceResult = applyAdvancedRelevanceFilter(jobs, candidateProfile, competitorSet)
         jobs.splice(0, jobs.length, ...relevanceResult.filtered)
+        jobsAfterRelevanceFilter = jobs.length
         const reasonStr = Object.entries(relevanceResult.removalReasons).map(([k, v]) => `${k}=${v}`).join(', ')
         console.log(`[PIPELINE] Advanced relevance filter: removed ${relevanceResult.removedCount} → ${jobs.length} remaining (threshold: ${relevanceResult.thresholdUsed || 'fallback'}${relevanceResult.usedFallback ? ', token-overlap fallback' : ''})`)
         console.log(`[PIPELINE] Removal reasons: ${reasonStr || 'none'}`)
@@ -716,6 +848,16 @@ export async function POST(req: Request) {
         console.log(`[PIPELINE] Competitor jobs found: ${competitorJobsFound.length}${competitorBreakdownStr ? ` (${competitorBreakdownStr})` : ''}`)
 
         if (!jobs.length) {
+          if (runId) {
+            void admin.from('job_search_runs').update({
+              status: 'failed',
+              completed_at: new Date().toISOString(),
+              jobs_fetched_count:          jobsFetchedCount,
+              jobs_after_country_filter:   jobsAfterCountryFilter,
+              jobs_after_relevance_filter: jobsAfterRelevanceFilter,
+              failure_reason: 'no_jobs_found',
+            }).eq('id', runId)
+          }
           emit({
             done: true,
             matchCount: 0,
@@ -768,6 +910,7 @@ export async function POST(req: Request) {
 
         // ── 6. Select scoring pool ────────────────────────────────────────────
         const jobsForScoring = selectScoringPool(jobs, parsedResume, searchQueries, 60)
+        jobsScoredCount = jobsForScoring.length
         console.log('[analyze] scoring candidate pool:', jobsForScoring.length, 'of', jobs.length, 'stored jobs | by source:', sourceSummary(jobsForScoring))
         console.log(`[PIPELINE] Jobs sent to reranker: ${jobsForScoring.length} (competitor boost active for ${allCompetitors.length} companies)`)
 
@@ -799,15 +942,10 @@ export async function POST(req: Request) {
         console.log(`[PIPELINE] Top saved companies: ${topCompanies || 'none'}`)
         console.log(`[PIPELINE] Lowest saved score: ${lowestScore}`)
 
-        // ── 8. Hard-delete ALL previous matches for this user ─────────────────
-        const { error: deleteError } = await admin
-          .from('job_matches')
-          .delete()
-          .eq('user_id', user.id)
-        if (deleteError) console.error('[analyze] stale match delete error:', deleteError.message)
-        else console.log('[analyze] cleared previous matches for user', user.id)
-
-        // ── 9. Build fresh match rows ─────────────────────────────────────────
+        // ── 8. Build fresh match rows (tagged with runId) ─────────────────────
+        // No hard delete — the matches API will filter by the latest successful
+        // run, so previous runs' matches are naturally superseded. Old matches
+        // are cleaned up by periodic maintenance (migration 030 cleanup logic).
         const matchRows = top20
           .map((r) => {
             const job = jobMap.get(rankedKey(r))
@@ -820,16 +958,20 @@ export async function POST(req: Request) {
               similarity_score: r.score / 100,
               ai_score:         r.score,
               ai_reasoning:     JSON.stringify({ r: r.reasoning, bridge: r.bridge_advice ?? '', mr: r.match_reasons ?? [], ms: r.matched_skills ?? [], miss: r.missing_skills ?? [] }),
+              ...(runId ? { search_run_id: runId } : {}),
             }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
 
         console.log(`[PIPELINE] Final saved jobs: ${matchRows.length}`)
-        console.log(`[analyze] inserting ${matchRows.length} fresh match rows (score >= filter applied client-side)`)
+        console.log(`[analyze] inserting ${matchRows.length} fresh match rows | run_id=${runId ?? 'none'}`)
 
         const [matchResult, cvSuggestions] = await Promise.all([
           matchRows.length > 0
-            ? admin.from('job_matches').insert(matchRows)
+            ? admin.from('job_matches').upsert(matchRows, {
+                onConflict: 'search_run_id,job_id',
+                ignoreDuplicates: false,
+              })
             : Promise.resolve({ error: null }),
           generateCvSuggestions(
             parsedResume,
@@ -843,8 +985,35 @@ export async function POST(req: Request) {
           ),
         ])
 
+        const runCounts = {
+          detected_location:           isInternational ? 'international_remote' : (detectedLocation.countryName || null),
+          jobs_fetched_count:          jobsFetchedCount,
+          jobs_after_country_filter:   jobsAfterCountryFilter,
+          jobs_after_relevance_filter: jobsAfterRelevanceFilter,
+          jobs_scored_count:           jobsScoredCount,
+          completed_at:                new Date().toISOString(),
+        }
+
         if (matchResult.error) {
           console.error('[analyze] match insert error:', matchResult.error.message)
+          if (runId) {
+            void admin.from('job_search_runs').update({
+              status: 'failed', ...runCounts,
+            }).eq('id', runId)
+          }
+        } else if (matchRows.length === 0 && jobsFetchedCount > 0) {
+          // Jobs were fetched but none survived scoring/mapping — bad UX to call this success
+          console.warn(`[analyze] run completed with zero saved matches (fetched=${jobsFetchedCount}) — marking failed/no_relevant_matches | run=${runId}`)
+          if (runId) {
+            void admin.from('job_search_runs').update({
+              status: 'failed', failure_reason: 'no_relevant_matches', ...runCounts,
+            }).eq('id', runId)
+          }
+        } else if (runId) {
+          // Only mark success after confirming matches are saved
+          void admin.from('job_search_runs').update({
+            status: 'success', ...runCounts,
+          }).eq('id', runId)
         }
 
         if (cvSuggestions.length > 0) {
@@ -877,16 +1046,18 @@ export async function POST(req: Request) {
           done: true,
           matchCount:       matchRows.length,
           cvSuggestions,
-          detectedCountry:  detectedLocation.countryName || undefined,
-          detectedCity:     detectedLocation.city        || undefined,
+          detectedCountry:  isInternational ? 'International / Remote' : (detectedLocation.countryName || undefined),
+          detectedCity:     undefined,  // city not relevant when user chose at country level
           creditCost,
           creditsRemaining: afterCredits?.remainingCredits,
         })
 
-        // Persist resume hash so subsequent identical-resume runs hit the cache
-        if (currentHash) {
+        // Persist composite analysis key (resume hash + search country) so subsequent
+        // identical resume+country combinations hit the cache, while a different country
+        // on the same resume correctly misses and triggers a fresh pipeline.
+        if (compositeAnalysisKey) {
           void admin.from('profiles')
-            .update({ last_analyzed_resume_hash: currentHash })
+            .update({ last_analyzed_resume_hash: compositeAnalysisKey })
             .eq('user_id', user.id)
         }
 
@@ -901,6 +1072,13 @@ export async function POST(req: Request) {
         const msg = apiErrMsg(err)
         console.error('[analyze] stream error:', msg)
         emit({ error: msg })
+        // Mark the run as failed so it is never returned by the matches API
+        if (runId) {
+          void admin.from('job_search_runs').update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+          }).eq('id', runId)
+        }
       } finally {
         controller.close()
       }

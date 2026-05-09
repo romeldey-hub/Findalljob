@@ -11,6 +11,7 @@ import {
 import { track } from '@/lib/analytics'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
+import { CountryConfirmStep, type CountryChoice } from '@/components/resume/CountryConfirmStep'
 
 // ── Progress configuration (outside component — never recreated) ──────────────
 
@@ -45,7 +46,7 @@ interface ResumeUploadZoneProps {
   userId?: string
 }
 
-type UploadState = 'idle' | 'uploading' | 'analyzing' | 'success' | 'no-text'
+type UploadState = 'idle' | 'uploading' | 'analyzing' | 'country_confirm' | 'success' | 'no-text'
 
 export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId }: ResumeUploadZoneProps) {
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
@@ -55,6 +56,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
   const [showConfirm, setShowConfirm]   = useState(false)
   const [deleting, setDeleting]         = useState(false)
   const [activityFailed, setActivityFailed] = useState(false)
+  const [countryConfirmPending, setCountryConfirmPending] = useState<{
+    detectedCountry: string | null
+    detectedCountryCode: string | null
+  } | null>(null)
 
   const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
     useAnalyzeProgress({ stepDefs: UPLOAD_STEP_DEFS, stepMap: UPLOAD_STEP_MAP })
@@ -98,20 +103,89 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
       return
     }
 
+    // Phase 1: parse resume only — no job search yet
     setUploadState('analyzing')
     resetProgress(1)
-    toast.info('Analyzing your profile and matching jobs…')
+    toast.info('Parsing your resume…')
+
+    const parseController = new AbortController()
+    const parseTimer = setTimeout(() => parseController.abort(), 5 * 60 * 1000)
+
+    try {
+      const parseRes = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'parse_resume' }),
+        signal: parseController.signal,
+      })
+
+      if (!parseRes.ok) {
+        let errMsg = 'Resume parsing failed. Your file is saved — try again or search on Matches.'
+        try { const d = await parseRes.json(); if (d.error) errMsg = d.error } catch { /* non-JSON */ }
+        setActivityFailed(true)
+        stopProgress()
+        if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
+        toast.warning(errMsg)
+        setUploadState('idle')
+        resetProgress()
+        return
+      }
+
+      const parseData = await parseRes.json().catch(() => ({})) as Record<string, unknown>
+      if (parseData.status !== 'country_confirmation_required') {
+        toast.error('Unexpected server response. Please try again.')
+        setUploadState('idle')
+        stopProgress()
+        return
+      }
+
+      // Pause: show country confirmation before starting job search
+      stopProgress()
+      setCountryConfirmPending({
+        detectedCountry:     (parseData.detectedCountry     as string | null) ?? null,
+        detectedCountryCode: (parseData.detectedCountryCode as string | null) ?? null,
+      })
+      setUploadState('country_confirm')
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError'
+      toast.warning(isTimeout
+        ? 'Parsing timed out. Your resume is saved — try again.'
+        : 'Parsing failed. Your resume is saved — try again.')
+      setUploadState('idle')
+      stopProgress()
+    } finally {
+      clearTimeout(parseTimer)
+    }
+  }, [router, resetProgress, stopProgress])
+
+  // Phase 2: job search — called after user confirms their target country
+  async function handleCountryConfirmed(choice: CountryChoice) {
+    setCountryConfirmPending(null)
+    setUploadState('analyzing')
+    setActivityFailed(false)
+    resetProgress(1)
+
+    // Save preferred country for future Matches page visits
+    if (choice.searchMode === 'country' && userId && typeof window !== 'undefined') {
+      localStorage.setItem(`preferredSearchCountry:${userId}`, choice.selectedSearchCountry)
+    }
 
     let analyzeFailed = false
     let matchCount    = 0
 
-    const abortController = new AbortController()
-    const abortTimer = setTimeout(() => abortController.abort(), 10 * 60 * 1000)
+    const controller = new AbortController()
+    const abortTimer = setTimeout(() => controller.abort(), 10 * 60 * 1000)
 
     try {
       const analyzeRes = await fetch('/api/resume/analyze', {
         method: 'POST',
-        signal: abortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedSearchCountry: choice.selectedSearchCountry,
+          searchMode:            choice.searchMode,
+          wasDetected:           choice.wasDetected,
+        }),
+        signal: controller.signal,
       })
 
       if (!analyzeRes.ok) {
@@ -184,7 +258,9 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
 
     setUploadState('success')
     setTimeout(() => router.push('/matches'), 2000)
-  }, [router, resetProgress, stopProgress, onSSEEvent])
+  }
+
+  const isCountryConfirmation = uploadState === 'country_confirm'
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
@@ -194,7 +270,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxFiles: 1,
-    disabled: uploadState !== 'idle' || uploadLimitReached,
+    disabled: uploadState !== 'idle' || uploadLimitReached || isCountryConfirmation,
   })
 
   async function handleDelete() {
@@ -319,6 +395,14 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                 </>
               )}
 
+              {uploadState === 'country_confirm' && (
+                <>
+                  <CheckCircle2 className="w-10 h-10 text-green-500 mb-3" />
+                  <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Resume analyzed</p>
+                  <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-1">Select your job search location to continue</p>
+                </>
+              )}
+
               {uploadState === 'success' && (
                 <>
                   <CheckCircle2 className="w-10 h-10 text-green-500 mb-3" />
@@ -417,7 +501,22 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
         </div>
       </div>
 
-      {/* ── Progress strip ───────────────────────────────────────────────────── */}
+      {/* ── Country confirmation modal — centered overlay, appears after parsing ── */}
+      {isCountryConfirmation && countryConfirmPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm">
+            <CountryConfirmStep
+              detectedCountryCode={countryConfirmPending.detectedCountryCode}
+              detectedCountryName={countryConfirmPending.detectedCountry}
+              savedPreferredCode={null}
+              onConfirm={handleCountryConfirmed}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Progress strip — shown during job search and on success ─────────── */}
       {busy || uploadState === 'success' ? (
         <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
           <ProgressiveActivity

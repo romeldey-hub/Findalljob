@@ -101,7 +101,7 @@ export default async function SettingsPage() {
 
           <AppearanceCard />
 
-          <PublicProfileCard />
+          <div id="public-profile"><PublicProfileCard /></div>
 
           <DeleteAccountCard />
 

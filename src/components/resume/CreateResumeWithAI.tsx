@@ -6,11 +6,12 @@ import { Loader2, Sparkles, CheckCircle2, BriefcaseBusiness } from 'lucide-react
 import { toast } from 'sonner'
 import { AIResumeBuilder } from './AIResumeBuilder'
 import { ResumePreviewModal } from './ResumePreviewModal'
+import { CountryConfirmStep, type CountryChoice } from './CountryConfirmStep'
 import type { QAAnswers } from './AIResumeBuilder'
 import type { ParsedResume } from '@/types'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 
-type Phase = 'idle' | 'qa' | 'generating' | 'editing' | 'saving' | 'analyzing' | 'done'
+type Phase = 'idle' | 'qa' | 'generating' | 'editing' | 'saving' | 'analyzing' | 'country_confirm' | 'done'
 
 function toOptimized(pd: ParsedResume): OptimizedResumeData {
   return {
@@ -91,10 +92,14 @@ const SSE_STEP_MAP: Record<string, number> = {
 }
 
 export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null }) {
-  const [phase,        setPhase]        = useState<Phase>('idle')
-  const [generatedPD,  setGeneratedPD]  = useState<ParsedResume | null>(null)
-  const [analyzeStep,  setAnalyzeStep]  = useState(0)
-  const [matchCount,   setMatchCount]   = useState(0)
+  const [phase,                  setPhase]                  = useState<Phase>('idle')
+  const [generatedPD,            setGeneratedPD]            = useState<ParsedResume | null>(null)
+  const [analyzeStep,            setAnalyzeStep]            = useState(0)
+  const [matchCount,             setMatchCount]             = useState(0)
+  const [countryConfirmPending,  setCountryConfirmPending]  = useState<{
+    detectedCountry: string | null
+    detectedCountryCode: string | null
+  } | null>(null)
   const router = useRouter()
 
   // ── Q&A complete → call generate API ──────────────────────────────────────
@@ -137,7 +142,53 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
       return
     }
 
-    // Step 2: run analyze SSE stream
+    // Step 2: parse resume only — get country confirmation before job search
+    setPhase('analyzing')
+    setAnalyzeStep(0)
+
+    const parseController = new AbortController()
+    const parseTimer = setTimeout(() => parseController.abort(), 5 * 60 * 1000)
+
+    try {
+      const parseRes = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'parse_resume' }),
+        signal: parseController.signal,
+      })
+
+      if (!parseRes.ok) {
+        toast.warning('Analysis had an issue. Your resume is saved — try finding jobs from the Matches page.')
+        setPhase('done')
+        setTimeout(() => router.push('/matches'), 1500)
+        return
+      }
+
+      const parseData = await parseRes.json().catch(() => ({})) as Record<string, unknown>
+      if (parseData.status !== 'country_confirmation_required') {
+        toast.warning('Resume saved! Head to Matches to search for jobs.')
+        setPhase('done')
+        setTimeout(() => router.push('/matches'), 1500)
+        return
+      }
+
+      setCountryConfirmPending({
+        detectedCountry:     (parseData.detectedCountry     as string | null) ?? null,
+        detectedCountryCode: (parseData.detectedCountryCode as string | null) ?? null,
+      })
+      setPhase('country_confirm')
+    } catch {
+      toast.warning('Resume saved! Head to Matches to search for jobs.')
+      setPhase('done')
+      setTimeout(() => router.push('/matches'), 1500)
+    } finally {
+      clearTimeout(parseTimer)
+    }
+  }
+
+  // Step 3: job search after user confirms country
+  async function handleCountryConfirmed(choice: CountryChoice) {
+    setCountryConfirmPending(null)
     setPhase('analyzing')
     setAnalyzeStep(0)
 
@@ -150,6 +201,12 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
     try {
       const analyzeRes = await fetch('/api/resume/analyze', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedSearchCountry: choice.selectedSearchCountry,
+          searchMode:            choice.searchMode,
+          wasDetected:           choice.wasDetected,
+        }),
         signal: abortController.signal,
       })
 
@@ -317,6 +374,21 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Country confirmation overlay — pause before job search */}
+      {phase === 'country_confirm' && countryConfirmPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm">
+            <CountryConfirmStep
+              detectedCountryCode={countryConfirmPending.detectedCountryCode}
+              detectedCountryName={countryConfirmPending.detectedCountry}
+              savedPreferredCode={null}
+              onConfirm={handleCountryConfirmed}
+            />
           </div>
         </div>
       )}

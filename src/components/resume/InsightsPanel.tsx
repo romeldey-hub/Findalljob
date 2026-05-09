@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  Wand2, Download, Mic, Lightbulb,
-  ChevronRight, Loader2,
+  Wand2, Download, Lightbulb,
+  ChevronRight, Loader2, Globe,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { ParsedResume } from '@/types'
 import { toDataUri } from '@/lib/utils'
 import { useCountUp, useAnimate } from '@/lib/useAnimations'
 import { ResumePrintView } from '@/components/resume/ResumePrintView'
+import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 
@@ -144,11 +145,12 @@ function ActionCard({
 
 // ── InsightsPanel ─────────────────────────────────────────────────────────────
 
-export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedResume; avatarUrl?: string | null }) {
+export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: ParsedResume; avatarUrl?: string | null; userId?: string }) {
   const router       = useRouter()
   const printRef     = useRef<HTMLDivElement>(null)
   const [pdfBusy, setPdfBusy]             = useState(false)
   const [avatarDataUri, setAvatarDataUri] = useState<string | null>(null)
+  const [showOptimize, setShowOptimize]   = useState(false)
 
   useEffect(() => {
     if (!avatarUrl) {
@@ -241,18 +243,18 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
         </h3>
         <div className="space-y-2">
           <ActionCard
-            icon={<Wand2 className="w-[15px] h-[15px]" />}
-            label="Fix Resume for This Job"
-            subtext="Tailored to a specific role"
-            onClick={() => router.push('/matches')}
+            icon={<Globe className="w-[15px] h-[15px]" />}
+            label="Create Public Profile"
+            subtext="Get discovered by recruiters online"
+            onClick={() => router.push('/settings#public-profile')}
             iconBg="bg-blue-50 dark:bg-blue-950/50"
             iconColor="text-blue-500 dark:text-blue-400"
           />
           <ActionCard
-            icon={<Mic className="w-[15px] h-[15px]" />}
-            label="Start Mock Interview"
-            subtext="Practice before you apply"
-            onClick={() => router.push('/matches')}
+            icon={<Wand2 className="w-[15px] h-[15px]" />}
+            label="Improve Resume with AI"
+            subtext="Upgrade your resume with AI suggestions"
+            onClick={() => setShowOptimize(true)}
             iconBg="bg-violet-50 dark:bg-violet-950/50"
             iconColor="text-violet-500 dark:text-violet-400"
           />
@@ -289,6 +291,18 @@ export function InsightsPanel({ parsedData, avatarUrl }: { parsedData: ParsedRes
           <ResumePrintView data={parsedData} avatarUrl={avatarDataUri} />
         </div>
       </div>
+
+      {/* AI resume improvement — reuses the full existing general optimize flow */}
+      {showOptimize && (
+        <OptimizeFlow
+          mode="general"
+          userId={userId}
+          avatarUrl={avatarUrl}
+          onClose={() => setShowOptimize(false)}
+          redirectTo="/resume"
+          onSaved={() => router.refresh()}
+        />
+      )}
 
     </aside>
   )

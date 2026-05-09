@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Zap, Lock } from 'lucide-react'
 import { toast } from 'sonner'
+import { CountryConfirmStep, type CountryChoice } from '@/components/resume/CountryConfirmStep'
 
 interface ReanalyzeButtonProps {
   isPro?: boolean
@@ -14,13 +15,61 @@ interface ReanalyzeButtonProps {
 export function ReanalyzeButton({ isPro = true, reanalyzeCount = 0, reanalyzeLimit = 3 }: ReanalyzeButtonProps) {
   const router = useRouter()
   const [running, setRunning] = useState(false)
+  const [countryConfirmPending, setCountryConfirmPending] = useState<{
+    detectedCountry: string | null
+    detectedCountryCode: string | null
+  } | null>(null)
 
   const limitReached = !isPro && reanalyzeCount >= reanalyzeLimit
 
+  // Phase 1: parse resume only, then pause for country confirmation
   async function handleClick() {
     if (limitReached) return
     setRunning(true)
-    toast.info('Analyzing your resume — this takes 3–5 minutes…')
+    toast.info('Parsing your resume…')
+
+    const abortController = new AbortController()
+    const abortTimer = setTimeout(() => abortController.abort(), 5 * 60 * 1000)
+
+    try {
+      const res = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'parse_resume' }),
+        signal: abortController.signal,
+      })
+
+      if (!res.ok) {
+        let msg = 'Parsing failed. Please try again.'
+        try { const d = await res.json(); if (d.error) msg = d.error } catch { /* non-JSON */ }
+        toast.error(msg)
+        return
+      }
+
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (data.status !== 'country_confirmation_required') {
+        toast.error('Unexpected server response. Please try again.')
+        return
+      }
+
+      setCountryConfirmPending({
+        detectedCountry:     (data.detectedCountry     as string | null) ?? null,
+        detectedCountryCode: (data.detectedCountryCode as string | null) ?? null,
+      })
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError'
+      toast.error(isTimeout ? 'Parsing timed out. Please try again.' : 'Parsing failed. Please try again.')
+    } finally {
+      clearTimeout(abortTimer)
+      setRunning(false)
+    }
+  }
+
+  // Phase 2: job search after user confirms country
+  async function handleCountryConfirmed(choice: CountryChoice) {
+    setCountryConfirmPending(null)
+    setRunning(true)
+    toast.info('Finding job matches — this takes 3–5 minutes…')
 
     const abortController = new AbortController()
     const abortTimer = setTimeout(() => abortController.abort(), 10 * 60 * 1000)
@@ -28,6 +77,12 @@ export function ReanalyzeButton({ isPro = true, reanalyzeCount = 0, reanalyzeLim
     try {
       const res = await fetch('/api/resume/analyze', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedSearchCountry: choice.selectedSearchCountry,
+          searchMode:            choice.searchMode,
+          wasDetected:           choice.wasDetected,
+        }),
         signal: abortController.signal,
       })
 
@@ -116,6 +171,21 @@ export function ReanalyzeButton({ isPro = true, reanalyzeCount = 0, reanalyzeLim
         <p className="text-[11px] text-gray-400 dark:text-slate-500">
           {reanalyzeLimit - reanalyzeCount} of {reanalyzeLimit} free re-analyses remaining
         </p>
+      )}
+
+      {/* Country confirmation modal — centered overlay after parsing completes */}
+      {countryConfirmPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm">
+            <CountryConfirmStep
+              detectedCountryCode={countryConfirmPending.detectedCountryCode}
+              detectedCountryName={countryConfirmPending.detectedCountry}
+              savedPreferredCode={null}
+              onConfirm={handleCountryConfirmed}
+            />
+          </div>
+        </div>
       )}
     </div>
   )

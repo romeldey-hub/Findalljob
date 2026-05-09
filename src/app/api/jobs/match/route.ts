@@ -4,7 +4,8 @@ import { computeVerifiedLabel }  from '@/types'
 import { isProUser }             from '@/lib/admin'
 import { resolveProUntil }       from '@/lib/billing'
 import { FREE_LIMITS }           from '@/lib/limits'
-import type { ApplyStatus }      from '@/types'
+import { computeParsedResumeHash } from '@/lib/resume-hash'
+import type { ApplyStatus, ParsedResume } from '@/types'
 
 function decodeReasoning(raw: string): {
   reasoning:      string
@@ -52,36 +53,66 @@ export async function GET() {
   const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
   const matchLimit = isPro ? 20 : FREE_LIMITS.matchesPerDay
 
-  const [matchesResult, resumeResult] = await Promise.all([
-    supabase
-      .from('job_matches')
-      .select(`
-        id, similarity_score, ai_score, ai_reasoning, created_at,
-        job:jobs (
-          id, title, company, location, description,
-          url, apply_url, apply_status, last_verified_at,
-          salary, source, created_at
-        )
-      `)
+  // Fetch active resume first so we can compute the resume hash for run lookup
+  const resumeResult = await supabase
+    .from('resumes')
+    .select('id, raw_text, parsed_data')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  // Compute the parsed resume hash so we can find the matching run
+  const parsedData = resumeResult.data?.parsed_data as Record<string, unknown> | null
+  const parsedResumeForHash = parsedData as ParsedResume | null
+  const resumeHash = parsedResumeForHash?.name
+    ? computeParsedResumeHash(parsedResumeForHash as ParsedResume)
+    : null
+
+  // Find the latest successful search run for this user+resume combination.
+  // Falls back to null (no run filter) so existing users without runs still see matches.
+  let latestRunId: string | null = null
+  if (resumeHash) {
+    const { data: runRow } = await admin
+      .from('job_search_runs')
+      .select('id')
       .eq('user_id', user.id)
-      .order('ai_score', { ascending: false })
-      .limit(20),
-    supabase
-      .from('resumes')
-      .select('id, raw_text, parsed_data')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
+      .eq('resume_hash', resumeHash)
+      .eq('status', 'success')
       .order('created_at', { ascending: false })
       .limit(1)
-      .maybeSingle(),
-  ])
+      .maybeSingle()
+    latestRunId = runRow?.id ?? null
+  }
+
+  // Build the matches query — scoped to the latest run when available,
+  // otherwise fall back to all matches for this user (safe for pre-migration data).
+  let matchesQuery = supabase
+    .from('job_matches')
+    .select(`
+      id, similarity_score, ai_score, ai_reasoning, created_at,
+      job:jobs (
+        id, title, company, location, description,
+        url, apply_url, apply_status, last_verified_at,
+        salary, source, created_at
+      )
+    `)
+    .eq('user_id', user.id)
+    .order('ai_score', { ascending: false })
+    .limit(20)
+
+  if (latestRunId) {
+    matchesQuery = matchesQuery.eq('search_run_id', latestRunId)
+  }
+
+  const matchesResult = await matchesQuery
 
   // hasResume = true whenever an active resume row exists in the DB.
   // raw_text may be empty if Inngest is still parsing, or if text extraction
   // failed silently — but the resume file IS uploaded. The analyze endpoint
   // handles missing text on its own; don't block the UI here.
   const hasResume = Boolean(resumeResult.data?.id)
-  const parsedData    = resumeResult.data?.parsed_data as Record<string, unknown> | null
   const cvSuggestions = Array.isArray(parsedData?.cv_suggestions)
     ? (parsedData!.cv_suggestions as string[])
     : []
@@ -92,7 +123,7 @@ export async function GET() {
   if (matchesResult.error) {
     if (isColumnError(matchesResult.error.code, matchesResult.error.message)) {
       console.warn('[jobs/match] migration pending — retrying without new columns')
-      const fallback = await supabase
+      let fallbackQuery = supabase
         .from('job_matches')
         .select(`
           id, similarity_score, ai_score, ai_reasoning, created_at,
@@ -104,6 +135,8 @@ export async function GET() {
         .eq('user_id', user.id)
         .order('ai_score', { ascending: false })
         .limit(20)
+      if (latestRunId) fallbackQuery = fallbackQuery.eq('search_run_id', latestRunId)
+      const fallback = await fallbackQuery
 
       if (fallback.error) {
         console.error('[jobs/match] fallback select failed:', fallback.error.message)

@@ -17,7 +17,7 @@ export const CREDIT_COSTS = {
 export type CreditFeature = keyof typeof CREDIT_COSTS
 
 export const CREDIT_ALLOCATIONS: Record<string, number> = {
-  free:     10,
+  free:     5,
   pro_lite: 40,
   pro_plus: 120,
   pro:      120,   // backward compat — old 'pro' rows get pro_plus allocation

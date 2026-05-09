@@ -11,7 +11,7 @@ import {
   CheckCircle2, RefreshCw,
   Clock, Sparkles,
   SlidersHorizontal, ChevronDown, User, UserCheck, Mic, Lock,
-  Download, Trash2,
+  Download, Trash2, X,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { track } from '@/lib/analytics'
@@ -25,6 +25,7 @@ import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { FREE_LIMITS } from '@/lib/limits'
+import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from '@/components/resume/CountryConfirmStep'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -864,6 +865,25 @@ export default function MatchesPage() {
   )
   const [analyzing, setAnalyzing]       = useState(false)
   const [analyzeError, setAnalyzeError] = useState('')
+  // Country confirmation pause state — set when the server asks the user to confirm
+  // their target job search country before fetching begins.
+  const [countryConfirmPending, setCountryConfirmPending] = useState<{
+    detectedCountry: string | null
+    detectedCountryCode: string | null
+    context: 'initial_analysis' | 'change_search_location'
+  } | null>(null)
+  const [pendingForce, setPendingForce]                 = useState(false)
+  const [preferredSearchCountry, setPreferredSearchCountry] = useState<string | null>(null)
+  // Country actively being used in the current analysis — shown as "Searching in X · Change" chip.
+  const [activeSearchCountry, setActiveSearchCountry] = useState<{
+    code: string | null    // null = international_remote
+    name: string           // display name e.g. "India" or "International / Remote"
+    mode: 'country' | 'international_remote'
+  } | null>(null)
+  // AbortController for the current in-flight analysis fetch — used by "Change" to cancel mid-analysis.
+  const currentAnalysisAbortRef  = useRef<AbortController | null>(null)
+  // Last precheck result — stored so "Change" mid-analysis can restore the full confirmation UI.
+  const lastPrecheckInfoRef = useRef<{ detectedCountry: string | null; detectedCountryCode: string | null } | null>(null)
   const [searchMessage, setSearchMessage] = useState('')
   const [searchHadError, setSearchHadError] = useState(false)
   const [searchStage, setSearchStage]       = useState<'primary' | 'fallback' | null>(null)
@@ -888,6 +908,17 @@ export default function MatchesPage() {
     const city    = localStorage.getItem(lsKey('detectedCity', userId))
     if (country !== null) setDetectedCountry(country)
     if (city    !== null) setDetectedCity(city)
+    // Load saved preferred search country for pre-selecting in the confirmation UI
+    const preferred = localStorage.getItem(lsKey('preferredSearchCountry', userId))
+    if (preferred) {
+      setPreferredSearchCountry(preferred)
+      // Restore the chip so "Showing jobs in X · Change" is visible on page load with existing matches
+      setActiveSearchCountry({
+        code: preferred,
+        name: COUNTRY_CODE_TO_NAME[preferred] ?? preferred,
+        mode: 'country',
+      })
+    }
   }, [userId])
 
   const savedJobIds = useMemo(() => {
@@ -984,45 +1015,54 @@ export default function MatchesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
-  async function triggerAnalyze(reanalyze: boolean) {
-    // Block free users who have exhausted their re-analyze quota
-    const isPro = profileData?.plan === 'pro'
-    if (!isPro && (profileData?.ai_reanalyze_count ?? 0) >= FREE_LIMITS.aiReanalyze) {
-      setShowPaywall(true)
-      return
-    }
+  // ── Shared SSE analysis runner ────────────────────────────────────────────
+  // Called after country is confirmed (either from CountryConfirmStep or from saved preference).
+  // Handles the full SSE fetch, stream reading, and post-processing.
+  async function runAnalysis(isReanalyze: boolean, choice: CountryChoice) {
+    const countryName = choice.searchMode === 'international_remote'
+      ? 'International / Remote'
+      : (COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry ?? ''] ?? choice.selectedSearchCountry ?? '')
 
-    track.aiAnalyzeClick()
     setMode('ai')
     setAiJobs([])
     setSuggestions([])
     setAnalyzing(true)
+    setActiveSearchCountry({
+      code: choice.searchMode === 'international_remote' ? null : choice.selectedSearchCountry,
+      name: countryName,
+      mode: choice.searchMode,
+    })
     setAnalyzeError('')
     setTierFilter('all')
     resetProgress()
+
+    const controller = new AbortController()
+    currentAnalysisAbortRef.current = controller
 
     let matchCount    = 0
     let cvSuggestions: string[] = []
     let hadError      = false
     let errorMessage  = ''
     let noJobsMessage = ''
+    let succeeded     = false
 
     try {
       const res = await fetch('/api/resume/analyze', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: reanalyze }),
+        signal:  controller.signal,
+        body: JSON.stringify({
+          force:                 isReanalyze,
+          selectedSearchCountry: choice.selectedSearchCountry,
+          searchMode:            choice.searchMode,
+          wasDetected:           choice.wasDetected,
+        }),
       })
 
-      // Early JSON errors (401, 404, 500 before the stream starts)
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        if (data.requiresUpgrade) {
-          stopProgress()
-          setShowPaywall(true)
-          return
-        }
-        const message = userFacingError(data.error ?? 'Analysis failed.')
+        const d = await res.json().catch(() => ({}))
+        if (d.requiresUpgrade) { stopProgress(); setShowPaywall(true); return }
+        const message = userFacingError(d.error ?? 'Analysis failed.')
         localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
         setAnalyzeError(message)
         toast.error(message)
@@ -1097,17 +1137,125 @@ export default function MatchesPage() {
       const allFresh: MatchRecord[] = fresh?.matches ?? []
       const newAi    = allFresh
         .filter((m) => m.job?.source !== 'manual')
-        .filter((m) => !reanalyze || (m.ai_score >= 40 && m.ai_score <= 100))
+        .filter((m) => !isReanalyze || (m.ai_score >= 40 && m.ai_score <= 100))
       setAiJobs(newAi)
       if (cvSuggestions.length > 0) setSuggestions(cvSuggestions)
-      // Refresh profile so ai_reanalyze_count reflects the increment from the server
       void globalMutate('/api/profile')
+      succeeded = true
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return  // user clicked "Change"
+      setAnalyzeError('Analysis failed. Check the terminal for errors.')
+      stopProgress()
+    } finally {
+      currentAnalysisAbortRef.current = null
+      setAnalyzing(false)
+      if (!succeeded) setActiveSearchCountry(null)
+    }
+  }
+
+  // ── triggerAnalyze ────────────────────────────────────────────────────────
+  // Entry point for both auto-trigger and "Re-analyze by AI" button.
+  // If a preferred search country is saved in localStorage, uses it immediately
+  // (no precheck round-trip, no full confirmation UI).
+  // Otherwise sends a precheck request and waits for country_confirmation_required.
+  async function triggerAnalyze(reanalyze: boolean) {
+    const isPro = profileData?.plan === 'pro'
+    if (!isPro && (profileData?.ai_reanalyze_count ?? 0) >= FREE_LIMITS.aiReanalyze) {
+      setShowPaywall(true)
+      return
+    }
+
+    track.aiAnalyzeClick()
+
+    // Read saved preference directly from localStorage (state may not be loaded yet on auto-trigger)
+    const savedPreferred = typeof window !== 'undefined' && userId
+      ? localStorage.getItem(lsKey('preferredSearchCountry', userId))
+      : null
+
+    if (savedPreferred) {
+      // Known country — skip precheck, go straight to analysis
+      await runAnalysis(reanalyze, {
+        searchMode: 'country',
+        selectedSearchCountry: savedPreferred,
+        wasDetected: false,
+      })
+      return
+    }
+
+    // No saved preference — run precheck to detect country from resume, then show confirmation UI
+    setMode('ai')
+    setAiJobs([])
+    setSuggestions([])
+    setAnalyzing(true)
+    setAnalyzeError('')
+    setTierFilter('all')
+    resetProgress()
+
+    try {
+      const res = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: reanalyze }),
+      })
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        if (d.requiresUpgrade) { stopProgress(); setShowPaywall(true); return }
+        const message = userFacingError(d.error ?? 'Analysis failed.')
+        localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
+        setAnalyzeError(message)
+        toast.error(message)
+        stopProgress()
+        return
+      }
+
+      const jsonData = await res.json().catch(() => ({}))
+      if (jsonData.status === 'country_confirmation_required') {
+        const base = {
+          detectedCountry:     (jsonData.detectedCountry     as string | null) ?? null,
+          detectedCountryCode: (jsonData.detectedCountryCode as string | null) ?? null,
+        }
+        lastPrecheckInfoRef.current = base
+        setCountryConfirmPending({ ...base, context: 'initial_analysis' })
+        setPendingForce(reanalyze)
+        setAnalyzing(false)
+        return
+      }
+
+      setAnalyzeError('Unexpected response. Please try again.')
+      stopProgress()
     } catch {
       setAnalyzeError('Analysis failed. Check the terminal for errors.')
       stopProgress()
     } finally {
       setAnalyzing(false)
     }
+  }
+
+  // ── handleCountryConfirmed ────────────────────────────────────────────────
+  // Called by CountryConfirmStep when user picks a country or international mode.
+  function handleCountryConfirmed(choice: CountryChoice) {
+    if (choice.searchMode === 'country' && userId) {
+      localStorage.setItem(lsKey('preferredSearchCountry', userId), choice.selectedSearchCountry)
+      setPreferredSearchCountry(choice.selectedSearchCountry)
+    }
+    setCountryConfirmPending(null)
+    void runAnalysis(pendingForce, choice)
+  }
+
+  // ── handleChangeCountry ───────────────────────────────────────────────────
+  // Called by the "Searching in X · Change" chip while analysis is running.
+  // Aborts the current fetch, clears active country, and restores the confirmation UI.
+  function handleChangeCountry() {
+    if (currentAnalysisAbortRef.current) {
+      currentAnalysisAbortRef.current.abort()
+      currentAnalysisAbortRef.current = null
+    }
+    setAnalyzing(false)
+    setActiveSearchCountry(null)
+    // Restore confirmation UI — use last precheck info if available, otherwise show plain picker
+    const base = lastPrecheckInfoRef.current ?? { detectedCountry: null, detectedCountryCode: null }
+    setCountryConfirmPending({ ...base, context: 'change_search_location' })
   }
 
   async function handleSearch(e: React.FormEvent) {
@@ -1466,11 +1614,6 @@ export default function MatchesPage() {
                       ? <><Loader2 className="w-3 h-3 animate-spin" />Re-analyzing…</>
                       : <><RefreshCw className="w-3 h-3" />Re-analyze by AI</>}
                   </button>
-                  {!isPro && !reanalyzeLimitHit && (
-                    <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                      {FREE_LIMITS.aiReanalyze - reanalyzeUsed}/{FREE_LIMITS.aiReanalyze} left
-                    </span>
-                  )}
                   {reanalyzeLimitHit && (
                     <button
                       onClick={() => setShowPaywall(true)}
@@ -1499,7 +1642,7 @@ export default function MatchesPage() {
             </p>
           )}
 
-          {/* Tier tabs + inline location context — visible when there are jobs to show */}
+          {/* Tier tabs + country chip — visible when there are jobs to show */}
           {sortedJobs.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
               {([
@@ -1525,18 +1668,26 @@ export default function MatchesPage() {
                 </button>
               ))}
 
-              {/* Location context — right-aligned on desktop, wraps below filters on mobile */}
-              {detectedCountry && (
-                <span className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 font-medium">
-                  <MapPin className="w-3 h-3 flex-shrink-0" />
-                  Showing jobs in{' '}
-                  <span className="font-semibold text-gray-500 dark:text-slate-400">{detectedCountry}</span>
-                  {detectedCity && (
-                    <> · Resume location:{' '}
-                      <span className="font-semibold text-gray-500 dark:text-slate-400">{detectedCity}</span>
+              {/* Country/search chip — right-aligned on desktop, wraps below pills on mobile */}
+              {activeSearchCountry && !countryConfirmPending && (
+                <div className="ml-auto flex items-center gap-0.5 text-[11px]">
+                  <MapPin className="w-3 h-3 text-[#2563EB] flex-shrink-0 mr-0.5" />
+                  {activeSearchCountry.mode === 'international_remote' ? (
+                    <span className="text-gray-400 dark:text-slate-500 font-normal">Showing international / remote jobs</span>
+                  ) : (
+                    <>
+                      <span className="text-gray-400 dark:text-slate-500 font-normal">Showing jobs in</span>
+                      <span className="text-gray-600 dark:text-slate-300 font-medium ml-0.5">{activeSearchCountry.name}</span>
                     </>
                   )}
-                </span>
+                  <span className="text-gray-300 dark:text-slate-600 mx-0.5">·</span>
+                  <button
+                    onClick={handleChangeCountry}
+                    className="text-[10px] text-gray-400 dark:text-slate-500 font-normal hover:underline underline-offset-2 hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1562,7 +1713,54 @@ export default function MatchesPage() {
             </div>
           )}
 
-          {/* Activity view */}
+          {/* Country confirmation modal — centered overlay */}
+          {countryConfirmPending && !analyzing && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCountryConfirmPending(null)} />
+              <div className="relative w-full max-w-sm">
+                <button
+                  onClick={() => setCountryConfirmPending(null)}
+                  className="absolute -top-3 -right-3 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 shadow-sm transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+                <CountryConfirmStep
+                  detectedCountryCode={countryConfirmPending.detectedCountryCode}
+                  detectedCountryName={countryConfirmPending.detectedCountry}
+                  savedPreferredCode={preferredSearchCountry}
+                  onConfirm={handleCountryConfirmed}
+                  context={countryConfirmPending.context}
+                  activeCountryName={activeSearchCountry?.name ?? null}
+                  activeCountryMode={activeSearchCountry?.mode ?? null}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Search intent chip — while analysis is running (moves into tier row once results load) */}
+          {activeSearchCountry && !countryConfirmPending && analyzing && (
+            <div className="flex items-center gap-0.5 text-[11px]">
+              <MapPin className="w-3 h-3 text-[#2563EB] flex-shrink-0 mr-0.5" />
+              {activeSearchCountry.mode === 'international_remote' ? (
+                <span className="text-gray-400 dark:text-slate-500 font-normal">Searching international / remote jobs</span>
+              ) : (
+                <>
+                  <span className="text-gray-400 dark:text-slate-500 font-normal">Searching in</span>
+                  <span className="text-gray-600 dark:text-slate-300 font-medium ml-0.5">{activeSearchCountry.name}</span>
+                </>
+              )}
+              <span className="text-gray-300 dark:text-slate-600 mx-0.5">·</span>
+              <button
+                onClick={handleChangeCountry}
+                className="text-[10px] text-gray-400 dark:text-slate-500 font-normal hover:underline underline-offset-2 hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
+              >
+                Change
+              </button>
+            </div>
+          )}
+
+          {/* Activity view — shown while analysis is running */}
           {analyzing && (
             <ProgressiveActivity title="Updating your matches" steps={activitySteps} />
           )}

@@ -118,7 +118,7 @@ export default async function ResumePage() {
 
           {/* Insights panel — fixed width on xl+ */}
           <div className="w-full xl:w-[300px] xl:flex-shrink-0">
-            <InsightsPanel parsedData={resume.parsed_data as ParsedResume} avatarUrl={avatarUrl} />
+            <InsightsPanel parsedData={resume.parsed_data as ParsedResume} avatarUrl={avatarUrl} userId={user!.id} />
           </div>
 
         </div>

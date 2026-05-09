@@ -62,7 +62,7 @@ const comparison = [
   { feature: 'Job Matching',                 free: true,  proLite: true,  proPlus: true  },
   { feature: 'Resume per Job',               free: false, proLite: true,  proPlus: true  },
   { feature: 'Mock Interview + AI Feedback', free: false, proLite: true,  proPlus: true  },
-  { feature: 'AI Credits / month',           free: '10',  proLite: '40',  proPlus: '120' },
+  { feature: 'AI Credits / month',           free: '5',   proLite: '40',  proPlus: '120' },
 ]
 
 const freeFeatures = [

@@ -39,7 +39,7 @@ const INDIA: RegionPricing = {
   currency:    'INR',
   symbol:      '₹',
   plans: {
-    free:    { planId: 'free',     label: 'Free',     amount: 0,      currency: 'INR', symbol: '₹', displayPrice: '₹0',   displayFull: '₹0/month',   credits: 10 },
+    free:    { planId: 'free',     label: 'Free',     amount: 0,      currency: 'INR', symbol: '₹', displayPrice: '₹0',   displayFull: '₹0/month',   credits: 5 },
     proLite: { planId: 'pro_lite', label: 'Pro Lite', amount: 29_900, currency: 'INR', symbol: '₹', displayPrice: '₹299', displayFull: '₹299/month', credits: 40,  isPopular: true },
     proPlus: { planId: 'pro_plus', label: 'Pro Plus', amount: 59_900, currency: 'INR', symbol: '₹', displayPrice: '₹599', displayFull: '₹599/month', credits: 120 },
   },
@@ -50,7 +50,7 @@ const DEFAULT: RegionPricing = {
   currency:    'USD',
   symbol:      '$',
   plans: {
-    free:    { planId: 'free',     label: 'Free',     amount: 0,    currency: 'USD', symbol: '$', displayPrice: '$0',  displayFull: '$0/month',  credits: 10 },
+    free:    { planId: 'free',     label: 'Free',     amount: 0,    currency: 'USD', symbol: '$', displayPrice: '$0',  displayFull: '$0/month',  credits: 5 },
     proLite: { planId: 'pro_lite', label: 'Pro Lite', amount: 500,  currency: 'USD', symbol: '$', displayPrice: '$5',  displayFull: '$5/month',  credits: 40,  isPopular: true },
     proPlus: { planId: 'pro_plus', label: 'Pro Plus', amount: 1200, currency: 'USD', symbol: '$', displayPrice: '$12', displayFull: '$12/month', credits: 120 },
   },
