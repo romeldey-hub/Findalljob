@@ -289,6 +289,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     force = Boolean(body?.force)
   } catch { /* no body — treat as non-forced */ }
+  console.log(`[analyze] request | user=${user.id} | force=${force}`)
 
   // ── Rate limit: 3 analyze runs / minute / user ───────────────────────────
   const rlResult = await checkRateLimit(
@@ -340,25 +341,45 @@ export async function POST(req: Request) {
     )
   }
 
-  // ── Cache check: skip AI pipeline if resume unchanged and matches exist ────
+  // ── Cache check: skip AI pipeline if resume unchanged and matches are recent ──
+  // force=true bypasses this entirely so A/B tests and manual re-analyzes always
+  // get a fresh pipeline run regardless of cached state.
+  const MATCH_CACHE_VALID_MS = 24 * 60 * 60 * 1000 // 24 hours
   const currentHash = (resume as Record<string, unknown>).resume_hash as string | null
+  console.log(`[analyze] resume_hash=${currentHash ?? 'none'} | last_analyzed_hash=${lastAnalyzedHash || 'none'} | hash_match=${currentHash === lastAnalyzedHash}`)
   if (!force && currentHash && currentHash === lastAnalyzedHash) {
-    const { count } = await admin
+    const { data: latestMatch } = await admin
       .from('job_matches')
-      .select('id', { count: 'exact', head: true })
+      .select('created_at')
       .eq('user_id', user.id)
-    if ((count ?? 0) > 0) {
-      const encoder = new TextEncoder()
-      const cachedStream = new ReadableStream({
-        start(ctrl) {
-          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ step: 'resume_loaded' })}\n\n`))
-          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, matchCount: count, cvSuggestions: [], cached: true })}\n\n`))
-          ctrl.close()
-        },
-      })
-      return new Response(cachedStream, {
-        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
-      })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latestMatch) {
+      const matchAgeMs    = Date.now() - new Date(latestMatch.created_at).getTime()
+      const matchAgeHours = matchAgeMs / (1000 * 60 * 60)
+      if (matchAgeMs <= MATCH_CACHE_VALID_MS) {
+        console.log(`[analyze] resume hash match — cached response | user=${user.id} | match_age=${matchAgeHours.toFixed(1)}h`)
+        const { count } = await admin
+          .from('job_matches')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+        const encoder = new TextEncoder()
+        const cachedStream = new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ step: 'resume_loaded' })}\n\n`))
+            ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, matchCount: count ?? 0, cvSuggestions: [], cached: true })}\n\n`))
+            ctrl.close()
+          },
+        })
+        return new Response(cachedStream, {
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
+        })
+      }
+      console.log(`[analyze] resume hash match but matches are stale (${matchAgeHours.toFixed(1)}h > 24h) — running fresh pipeline | user=${user.id}`)
+    } else {
+      console.log(`[analyze] resume hash match but no existing matches — running fresh pipeline | user=${user.id}`)
     }
   }
 
@@ -529,6 +550,7 @@ export async function POST(req: Request) {
         emit({ step: 'jobs_fetching', count: 0, sources: [] })
 
         // ── Job search cache check — skip external API calls on recent hit ────
+        // force=true bypasses this so a forced re-analyze always fetches fresh jobs.
         const searchCacheHash = hashSearchParams(searchQueries, profileLocation)
         let fromJobSearchCache = false
         if (!force) {
@@ -536,7 +558,7 @@ export async function POST(req: Request) {
           if (cachedJobs && cachedJobs.length > 0) {
             addUnique(cachedJobs)
             fromJobSearchCache = true
-            console.log('[analyze] job search cache hit:', jobs.length, 'cached jobs')
+            console.log(`[analyze] job search cache hit | user=${user.id} | jobs=${jobs.length} | cache_hash=${searchCacheHash}`)
             emit({ step: 'jobs_fetching', count: jobs.length, sources: currentSourceNames(jobs) })
           }
         }

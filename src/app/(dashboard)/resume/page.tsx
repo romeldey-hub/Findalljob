@@ -80,6 +80,7 @@ export default async function ResumePage() {
         isPro={isPro}
         uploadCount={uploadCount}
         uploadLimit={FREE_LIMITS.resumeUploads}
+        userId={user!.id}
       />
 
       {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}

@@ -12,6 +12,7 @@ import { PaywallModal } from '@/components/PaywallModal'
 type Props = {
   mode: 'general' | 'job'
   jobId?: string
+  userId?: string
   avatarUrl?: string | null
   onClose: () => void
   redirectTo?: string
@@ -21,7 +22,7 @@ type Props = {
   onLocalSaved?: (jobId: string, data: OptimizedResumeData) => void
 }
 
-export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSaved, canDownload = true, onUpgradeRequired, onLocalSaved }: Props) {
+export function OptimizeFlow({ mode, jobId, userId, avatarUrl, onClose, redirectTo, onSaved, canDownload = true, onUpgradeRequired, onLocalSaved }: Props) {
   const router = useRouter()
   const [step, setStep]                         = useState(1)
   const [error, setError]                       = useState<string | null>(null)
@@ -126,7 +127,7 @@ export function OptimizeFlow({ mode, jobId, avatarUrl, onClose, redirectTo, onSa
         return
       }
       toast.success(mode === 'general' ? 'Resume improved! Re-analyzing your matches…' : 'Resume optimized for this job!')
-      if (typeof window !== 'undefined') localStorage.removeItem('lastAnalyzedAt')
+      if (typeof window !== 'undefined') localStorage.removeItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt')
       if (mode === 'job') {
         setResult(dataToSave)
         setIsSaved(true)

@@ -28,6 +28,12 @@ import { FREE_LIMITS } from '@/lib/limits'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
+// Scope localStorage keys to the logged-in user so switching accounts in the
+// same browser never leaks one user's guard timestamps or location into another's.
+function lsKey(base: string, uid: string | undefined): string {
+  return uid ? `${base}:${uid}` : base
+}
+
 function userFacingError(message: unknown): string {
   const text = typeof message === 'string' ? message : 'Analysis failed.'
   const lower = text.toLowerCase()
@@ -848,6 +854,8 @@ export default function MatchesPage() {
   const [manualJobs, setManualJobs]     = useState<MatchRecord[]>([])
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
   const [suggestions, setSuggestions]       = useState<string[]>([])
+  // Initialise from bare key as a safe fallback (user_id not yet known at mount time).
+  // A useEffect below re-reads from the user-scoped key once profileData arrives.
   const [detectedCountry, setDetectedCountry] = useState<string>(() =>
     typeof window !== 'undefined' ? (localStorage.getItem('detectedCountry') ?? '') : ''
   )
@@ -869,6 +877,18 @@ export default function MatchesPage() {
   const { data: appsData }                = useSWR('/api/applications', fetcher)
   const { data: optimizedData }           = useSWR('/api/resume/optimize', fetcher)
   const { data: profileData }             = useSWR('/api/profile', fetcher)
+
+  const userId: string | undefined = profileData?.user_id as string | undefined
+
+  // Once we know which user is logged in, re-read location from their scoped key so
+  // switching accounts in the same browser doesn't show the previous user's location.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userId) return
+    const country = localStorage.getItem(lsKey('detectedCountry', userId))
+    const city    = localStorage.getItem(lsKey('detectedCity', userId))
+    if (country !== null) setDetectedCountry(country)
+    if (city    !== null) setDetectedCity(city)
+  }, [userId])
 
   const savedJobIds = useMemo(() => {
     const ids = new Set<string>()
@@ -949,11 +969,13 @@ export default function MatchesPage() {
   // Auto-trigger on first load when user has a resume but no AI matches yet.
   // Skip if an analysis was completed in the last 10 minutes (localStorage guard)
   // to prevent double-analyze when navigating here right after the resume page runs one.
+  // Guard key is user-scoped so switching accounts in the same browser doesn't
+  // suppress the new user's first analysis.
   useEffect(() => {
-    if (!data || autoTriggered.current || analyzing) return
+    if (!data || !profileData || autoTriggered.current || analyzing) return
     const hasAiMatches = savedAiJobs.length > 0 || aiJobs !== null
     if (!hasAiMatches && hasResume) {
-      const lastAnalyzed = Number(localStorage.getItem('lastAnalyzedAt') ?? 0)
+      const lastAnalyzed = Number(localStorage.getItem(lsKey('lastAnalyzedAt', userId)) ?? 0)
       const tenMinutesAgo = Date.now() - 10 * 60 * 1000
       if (lastAnalyzed > tenMinutesAgo) return   // recently analyzed — skip auto-trigger
       autoTriggered.current = true
@@ -1001,7 +1023,7 @@ export default function MatchesPage() {
           return
         }
         const message = userFacingError(data.error ?? 'Analysis failed.')
-        localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
         setAnalyzeError(message)
         toast.error(message)
         stopProgress()
@@ -1037,12 +1059,12 @@ export default function MatchesPage() {
                   if (event.detectedCountry) {
                     const country = event.detectedCountry as string
                     setDetectedCountry(country)
-                    localStorage.setItem('detectedCountry', country)
+                    localStorage.setItem(lsKey('detectedCountry', userId), country)
                   }
                   if (event.detectedCity) {
                     const city = event.detectedCity as string
                     setDetectedCity(city)
-                    localStorage.setItem('detectedCity', city)
+                    localStorage.setItem(lsKey('detectedCity', userId), city)
                   }
                 }
                 if (event.error) {
@@ -1058,7 +1080,7 @@ export default function MatchesPage() {
       }
 
       if (hadError) {
-        localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
         setAnalyzeError(errorMessage)
         toast.error(errorMessage)
         return
@@ -1069,7 +1091,7 @@ export default function MatchesPage() {
         return
       }
 
-      localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+      localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
       toast.success(`Found ${matchCount} AI-ranked matches!`)
       const fresh    = await mutate()
       const allFresh: MatchRecord[] = fresh?.matches ?? []
@@ -1737,6 +1759,7 @@ export default function MatchesPage() {
         <OptimizeFlow
           mode="job"
           jobId={optimizeJobId}
+          userId={userId}
           onClose={() => {
             const jobId = pendingCelebrationRef.current
             pendingCelebrationRef.current = null

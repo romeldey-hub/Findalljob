@@ -42,11 +42,12 @@ interface ResumeUploadZoneProps {
   isPro?: boolean
   uploadCount?: number
   uploadLimit?: number
+  userId?: string
 }
 
 type UploadState = 'idle' | 'uploading' | 'analyzing' | 'success' | 'no-text'
 
-export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3 }: ResumeUploadZoneProps) {
+export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId }: ResumeUploadZoneProps) {
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
@@ -119,7 +120,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
         analyzeFailed = true
         setActivityFailed(true)
         stopProgress()
-        if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+        if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
         toast.warning(errMsg)
       } else if (analyzeRes.body) {
         const reader  = analyzeRes.body.getReader()
@@ -153,10 +154,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
 
         if (!analyzeFailed) {
           track.resumeUpload()
-          if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+          if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
           toast.success(`Found ${matchCount} job matches! Redirecting…`)
         } else {
-          if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+          if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
           toast.warning('Analysis encountered an issue. Your resume is saved — search for jobs on the Matches page.')
         }
       }
@@ -164,7 +165,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
       analyzeFailed = true
       setActivityFailed(true)
       stopProgress()
-      if (typeof window !== 'undefined') localStorage.setItem('lastAnalyzedAt', String(Date.now()))
+      if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
       const isTimeout = err instanceof Error && err.name === 'AbortError'
       toast.warning(
         isTimeout

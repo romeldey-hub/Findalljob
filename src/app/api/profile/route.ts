@@ -70,6 +70,7 @@ export async function GET() {
     .maybeSingle()
 
   return NextResponse.json({
+    user_id: user.id,
     plan: isPro ? 'pro' : 'free',
     has_used_free_preview: isAdmin ? false : (ext?.has_used_free_preview ?? false),
     subscription_status: base?.subscription_status ?? 'free',
