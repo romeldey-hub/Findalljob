@@ -525,14 +525,13 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
           />
           <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
             <div className="aspect-video w-full">
-              <iframe
-                className="h-full w-full"
-                src="https://www.youtube.com/embed/6HPs3i2Nth0?si=l8ARqLm0UI9RKA9L"
-                title="YouTube video player"
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerPolicy="strict-origin-when-cross-origin"
-                allowFullScreen
+              <video
+                className="h-full w-full object-cover"
+                src="/coffee.mp4"
+                autoPlay
+                muted
+                loop
+                playsInline
               />
             </div>
           </div>
