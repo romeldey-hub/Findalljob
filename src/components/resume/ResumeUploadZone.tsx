@@ -534,6 +534,9 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                 playsInline
               />
             </div>
+            <p className="text-center text-[13px] text-slate-400 dark:text-slate-500 py-2 px-4 tracking-wide">
+              ☕ <span className="text-slate-500 dark:text-slate-400 font-medium">Grab a coffee</span> while AI finds your best-fit jobs.
+            </p>
           </div>
         </div>
       ) : null}
