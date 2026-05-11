@@ -362,7 +362,7 @@ export function ResumePDF({ data, avatarUrl }: { data: ParsedResume & Record<str
   const currentTitle = data.experience?.[0]?.title ?? null
 
   return (
-    <Document title={`${data.name ?? 'Resume'}`} creator="Find All Job">
+    <Document title={`${data.name ?? 'Resume'}`} creator="FindAllJob">
       <Page size="A4" style={s.page}>
 
         {/* Dark background strip — fixed, visual only, never overlaps text */}

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import {
-  FileText, Briefcase, Wand2, Kanban, Bookmark, Mic,
+  FileText, Briefcase, Wand2, Mic, Globe, LayoutTemplate,
   Check, X, Zap, ArrowRight, Clock, TrendingUp, Sparkles,
 } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
@@ -13,40 +13,41 @@ const features = [
   {
     icon: FileText,
     title: 'AI Resume Parsing',
-    description: 'Turn your resume into structured, searchable data instantly.',
+    description: 'Upload your resume and let AI understand your skills, experience, education, and job preferences instantly.',
     hero: false,
   },
   {
     icon: Briefcase,
     title: 'Smart Job Matching',
-    description: 'See only relevant jobs ranked by your actual fit score.',
+    description: 'See relevant jobs ranked by how well they match your resume, skills, seniority, and location.',
     hero: false,
   },
   {
     icon: Wand2,
     title: 'Resume Optimization',
-    description: 'One click to customize your resume for every job—no manual effort.',
+    description: 'Customize your resume for a specific job and improve your chances of getting shortlisted.',
     hero: true,
     tag: '🔥 Most Powerful',
   },
   {
     icon: Mic,
     title: 'Mock Interview',
-    description: 'Practice real interview questions based on your resume and job role — get instant feedback and improve with every answer.',
+    description: 'Practice interview questions based on your resume and target role, with instant AI feedback.',
     hero: false,
     tag: '⚡ Interview Ready',
   },
   {
-    icon: Kanban,
-    title: 'Application Tracker',
-    description: 'Track your applications from applied → interview → offer.',
+    icon: LayoutTemplate,
+    title: 'AI Resume Builder',
+    description: 'Create a clean, professional resume online with AI-assisted content suggestions.',
     hero: false,
   },
   {
-    icon: Bookmark,
-    title: 'Save & Organize Jobs',
-    description: 'Bookmark jobs and manage everything in one place.',
+    icon: Globe,
+    title: 'Public Profile',
+    description: 'Build an online resume profile that recruiters can view and discover.',
     hero: false,
+    tag: '🌐 Get Discovered',
   },
 ]
 
@@ -59,26 +60,48 @@ const whyPoints = [
 ]
 
 const comparison = [
-  { feature: 'Job Matching',                 free: true,  proLite: true,  proPlus: true  },
-  { feature: 'Resume per Job',               free: false, proLite: true,  proPlus: true  },
-  { feature: 'Mock Interview + AI Feedback', free: false, proLite: true,  proPlus: true  },
-  { feature: 'AI Credits / month',           free: '5',   proLite: '40',  proPlus: '120' },
+  { feature: 'AI Credits',                        free: '5 one-time',  proLite: '40 / month',  proPlus: '120 / month' },
+  { feature: 'Job Matching & Reranking',          free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'Resume Optimization for Jobs',      free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'AI Resume Builder',                 free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'Mock Interview',                    free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'Interview Answer Feedback',         free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'AI Resume Suggestions / Quick Fix', free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'AI Bullet Writing Assist',          free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'Follow-up Message Assist',          free: 'Limited',     proLite: 'Included',    proPlus: 'Included'    },
+  { feature: 'Public Profile',                    free: 'Included',    proLite: 'Included',    proPlus: 'Included'    },
 ]
 
 const freeFeatures = [
   'Resume upload & management',
   'Job search & matching',
   'Application tracking',
-  'Save & organize jobs',
+  'View up to 15 AI-ranked matches/day',
+  '3 AI re-analyze runs',
+  '1 resume upload',
+  '1 resume optimization preview/day',
 ]
 
-const proFeatures = [
-  'Customize your resume for every job',
-  'Increase your job match score instantly',
-  'Mock interview practice with AI feedback',
-  'Get AI insights to improve applications',
-  'Discover more relevant job opportunities',
+const proLiteFeatures = [
+  'Everything in Free',
+  'Optimize resumes for specific jobs',
+  'Build resumes with AI',
+  'Practice AI mock interviews',
+  'Get resume improvement suggestions',
+  'AI bullet writing assistant',
+  'Expand and refresh job matches',
+  'AI follow-up messages',
   'Faster AI processing',
+]
+
+const proPlusFeatures = [
+  'Everything in Pro Lite',
+  '3× more AI credits than Pro Lite',
+  'More resume optimizations',
+  'More mock interview practice',
+  'More AI resume writing help',
+  'More job match expansion',
+  'More follow-up message support',
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -121,7 +144,7 @@ export default async function LandingPage() {
         </div>
 
         <h1 className="text-4xl sm:text-5xl md:text-[64px] font-extrabold tracking-[-0.02em] max-w-3xl mx-auto leading-[1.1] mb-6">
-          <span className="text-white">Stop applying blindly.</span>
+          <span className="text-white">Stop sending the same resume everywhere.</span>
           <br />
           <span style={{
             backgroundImage: 'linear-gradient(90deg, #4F9CF9 0%, #38BDF8 40%, #22D3EE 70%, #60A5FA 100%)',
@@ -130,12 +153,12 @@ export default async function LandingPage() {
             WebkitTextFillColor: 'transparent',
             color: 'transparent',
           }}>
-            Start getting interview-ready.
+            Start applying smarter.
           </span>
         </h1>
 
         <p className="text-[17px] max-w-xl mx-auto leading-relaxed mb-10" style={{ color: '#94A3B8' }}>
-          Upload your resume, get matched with the right jobs, optimize your resume, and practice real interviews — all in one place.
+          Upload your resume, find better-fit jobs, optimize your resume for each role, and practice interviews before they happen.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center mb-5">
@@ -160,7 +183,7 @@ export default async function LandingPage() {
             Stop guessing. Start getting shortlisted.
           </h2>
           <p className="text-slate-400 text-[15px] max-w-md mx-auto">
-            Six tools that work together to put you ahead of every other applicant.
+            AI tools that help you find relevant jobs, improve your resume, and prepare for interviews faster.
           </p>
         </div>
 
@@ -232,15 +255,15 @@ export default async function LandingPage() {
       <section className="px-6 py-20 max-w-5xl mx-auto">
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-[42px] font-black tracking-tight mb-3">
-            Simple pricing. Real results.
+            Simple pricing. Smarter job search.
           </h2>
-          <p className="text-slate-400 text-[15px]">
-            Start free. Upgrade to practice interviews and get hired faster.
+          <p className="text-slate-400 text-[15px] max-w-xl mx-auto">
+            Start free. Upgrade when you need more AI power to improve resumes, practice interviews, and apply faster.
           </p>
         </div>
 
         {/* Cards */}
-        <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-10">
+        <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-6">
 
           {/* Free */}
           <div className="bg-[#0A1628] border border-[#1A2A40] rounded-2xl p-7 flex flex-col">
@@ -249,10 +272,10 @@ export default async function LandingPage() {
               <div className="flex items-end gap-1 mb-1">
                 <span className="text-5xl font-black">{region.plans.free.displayPrice}</span>
               </div>
-              <p className="text-[13px] text-slate-500 mt-1">Everything you need to get started</p>
-              <p className="text-[11px] text-slate-600 mt-0.5">Pricing adjusted for your location</p>
+              <p className="text-[13px] text-slate-400 mt-1">5 one-time AI credits</p>
+              <p className="text-[12px] text-slate-500 mt-1 leading-snug">Best for trying FindAllJob before upgrading.</p>
             </div>
-            <ul className="space-y-3 flex-1 mb-8">
+            <ul className="space-y-3 flex-1 mb-6">
               {freeFeatures.map((f) => (
                 <li key={f} className="flex items-center gap-3 text-[13px] text-slate-300">
                   <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
@@ -262,9 +285,10 @@ export default async function LandingPage() {
             </ul>
             <Link href="/signup">
               <button className="w-full py-3 rounded-xl border border-[#1A2A40] hover:border-blue-500/40 text-[13px] font-semibold text-white hover:bg-blue-500/5 transition-all">
-                Get Started Free
+                Start Free
               </button>
             </Link>
+            <p className="text-[11px] text-slate-600 mt-3 leading-snug text-center">5 credits are one-time only. Upgrade when credits are used.</p>
           </div>
 
           {/* Pro Lite */}
@@ -279,10 +303,10 @@ export default async function LandingPage() {
                 <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
               </div>
               <p className="text-[13px] text-slate-400 mt-1">{region.plans.proLite.credits} AI credits/month</p>
-              <p className="text-[11px] text-blue-400/70 mt-0.5">Pricing adjusted for your location</p>
+              <p className="text-[12px] text-slate-500 mt-1 leading-snug">Best for active job seekers applying regularly.</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
-              {proFeatures.map((f) => (
+              {proLiteFeatures.map((f) => (
                 <li key={f} className="flex items-center gap-3 text-[13px] text-slate-300">
                   <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
                   {f}
@@ -309,10 +333,10 @@ export default async function LandingPage() {
                 <span className="text-slate-400 text-[15px] mb-1.5">/month</span>
               </div>
               <p className="text-[13px] text-slate-400 mt-1">{region.plans.proPlus.credits} AI credits/month</p>
-              <p className="text-[11px] text-purple-400/70 mt-0.5">Pricing adjusted for your location</p>
+              <p className="text-[12px] text-slate-500 mt-1 leading-snug">Best for serious job seekers applying to many roles.</p>
             </div>
             <ul className="space-y-3 flex-1 mb-8">
-              {proFeatures.map((f) => (
+              {proPlusFeatures.map((f) => (
                 <li key={f} className="flex items-center gap-3 text-[13px] text-slate-300">
                   <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
                   {f}
@@ -327,6 +351,11 @@ export default async function LandingPage() {
             <p className="text-center text-[11px] text-slate-600 mt-3">Cancel anytime · No lock-in</p>
           </div>
         </div>
+
+        {/* AI credits explainer */}
+        <p className="text-center text-[12px] text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <span className="font-semibold text-slate-500">How AI credits are used:</span> Resume optimization, AI resume generation, mock interview sessions, job reranking, resume suggestions, bullet writing, and follow-up messages use AI credits. Free users get 5 one-time credits. Pro plan credits refresh monthly.
+        </p>
 
         {/* Comparison table */}
         <div className="max-w-3xl mx-auto bg-[#0A1628] border border-[#1A2A40] rounded-2xl overflow-hidden">
@@ -390,7 +419,7 @@ export default async function LandingPage() {
         <div className="flex items-center gap-2">
           <LogoMark href="/" size="sm" onDark />
         </div>
-        <span>© {new Date().getFullYear()} Find All Job · Powered by <a href="https://bestin-e.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">bestin-e.com</a></span>
+        <span>© {new Date().getFullYear()} FindAllJob · Powered by <a href="https://bestin-e.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">bestin-e.com</a></span>
         <div className="flex gap-4">
           <Link href="/login" className="hover:text-slate-400 transition-colors">Sign In</Link>
           <Link href="/signup" className="hover:text-slate-400 transition-colors">Sign Up</Link>

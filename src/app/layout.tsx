@@ -18,19 +18,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://findalljob.com'),
-  title: "Find All Job — Land your next job with AI",
+  title: "FindAllJob — Land your next job with AI",
   description: "AI-powered job matching, resume optimization, and application tracking.",
   alternates: { canonical: '/' },
   openGraph: {
-    title: "Find All Job — Land your next job with AI",
+    title: "FindAllJob — Land your next job with AI",
     description: "AI-powered job matching, resume optimization, and application tracking.",
     type: "website",
     url: "https://findalljob.com",
-    siteName: "Find All Job",
+    siteName: "FindAllJob",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Find All Job — Land your next job with AI",
+    title: "FindAllJob — Land your next job with AI",
     description: "AI-powered job matching, resume optimization, and application tracking.",
   },
 };
@@ -71,7 +71,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebSite",
-            "name": "Find All Job",
+            "name": "FindAllJob",
             "url": "https://findalljob.com",
           }) }}
         />
@@ -80,7 +80,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            "name": "Find All Job",
+            "name": "FindAllJob",
             "applicationCategory": "BusinessApplication",
             "operatingSystem": "Web",
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },

@@ -276,7 +276,7 @@ export function HelpModal({ onClose }: HelpModalProps) {
                 Help &amp; Support
               </h2>
               <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">
-                Find answers and get the most out of Find All Job
+                Find answers and get the most out of FindAllJob
               </p>
             </div>
           </div>
