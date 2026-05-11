@@ -292,6 +292,68 @@ function LocationPickerInput({
   )
 }
 
+function ContactPickerInput({
+  value,
+  onChange,
+}: {
+  value:    string
+  onChange: (v: string) => void
+}) {
+  const parts = value ? value.split(' · ') : []
+  const [name,  setName]  = useState(parts[0] ?? '')
+  const [email, setEmail] = useState(parts[1] ?? '')
+  const [phone, setPhone] = useState(parts[2] ?? '')
+
+  function sync(n: string, e: string, p: string) {
+    onChange([n, e, p].filter(Boolean).join(' · '))
+  }
+
+  const inputCls = [
+    'w-full px-4 py-3 text-[13px] border border-[#E5E7EB] dark:border-[#334155] rounded-xl',
+    'bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9]',
+    'placeholder-gray-300 dark:placeholder-slate-600',
+    'focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]',
+  ].join(' ')
+
+  const labelCls = 'block text-[12px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] mb-1.5'
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <label className={labelCls}>Full Name</label>
+        <input
+          autoFocus
+          type="text"
+          value={name}
+          onChange={e => { setName(e.target.value); sync(e.target.value, email, phone) }}
+          placeholder="e.g. Ananya Sharma"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>Email Address</label>
+        <input
+          type="email"
+          value={email}
+          onChange={e => { setEmail(e.target.value); sync(name, e.target.value, phone) }}
+          placeholder="e.g. ananya@email.com"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>Phone Number</label>
+        <input
+          type="tel"
+          value={phone}
+          onChange={e => { setPhone(e.target.value); sync(name, email, e.target.value) }}
+          placeholder="e.g. +91 98765 43210"
+          className={inputCls}
+        />
+      </div>
+    </div>
+  )
+}
+
 interface Step {
   key: keyof QAAnswers
   icon:        string
@@ -301,7 +363,8 @@ interface Step {
   multiline?:  boolean
   options?:    string[]
   dropdown?:   boolean
-  locationPicker?: boolean
+  locationPicker?:  boolean
+  contactPicker?:   boolean
 }
 
 const STEPS: Step[] = [
@@ -367,11 +430,12 @@ const STEPS: Step[] = [
     locationPicker: true,
   },
   {
-    key:         'contact',
-    icon:        '📋',
-    question:    'What are your contact details?',
-    hint:        'Name, email, and phone number.',
-    placeholder: 'e.g. Ananya Sharma · ananya@email.com · +91 98765 43210',
+    key:           'contact',
+    icon:          '📋',
+    question:      'What are your contact details?',
+    hint:          'Add the details you want to show on your resume.',
+    placeholder:   '',
+    contactPicker: true,
   },
 ]
 
@@ -465,8 +529,13 @@ export function AIResumeBuilder({
           </h2>
           <p className="text-[12px] text-gray-400 dark:text-slate-500 mb-5">{current.hint}</p>
 
-          {/* Location picker */}
-          {current.locationPicker ? (
+          {/* Contact picker */}
+          {current.contactPicker ? (
+            <ContactPickerInput
+              value={value}
+              onChange={updateAnswer}
+            />
+          ) : current.locationPicker ? (
             <LocationPickerInput
               value={value}
               onChange={updateAnswer}
