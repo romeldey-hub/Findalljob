@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Machine Learning Engineer Jobs | Resume-Matched ML Roles | FindAllJob',
   description: 'Find better-fit Machine Learning Engineer jobs matched to your ML frameworks, deployment experience, and domain expertise. AI-powered resume matching for MLE roles.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-machine-learning-engineers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-machine-learning-engineers' },
   openGraph: {
     title: 'Machine Learning Engineer Jobs | FindAllJob',
     description: 'Find ML Engineer roles matched to your frameworks, deployment skills, and domain expertise.',
-    url: 'https://findalljob.com/jobs-for-machine-learning-engineers',
+    url: 'https://www.findalljob.com/jobs-for-machine-learning-engineers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Machine Learning Engineer Jobs | FindAllJob', description: 'Find ML Engineer jobs matched to your skills and experience.' },

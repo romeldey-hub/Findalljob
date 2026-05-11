@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid, CompareTable } from '@/components/seo
 export const metadata: Metadata = {
   title: 'AI Mock Interview Practice — Prepare for Interviews with AI Feedback | FindAllJob',
   description: 'Practice real interview questions for your target role and resume. Get instant AI feedback on every answer. Build confidence before the actual interview.',
-  alternates: { canonical: 'https://findalljob.com/ai-mock-interview' },
+  alternates: { canonical: 'https://www.findalljob.com/ai-mock-interview' },
   openGraph: {
     title: 'AI Mock Interview Practice | FindAllJob',
     description: 'Practice interview questions tailored to your resume and role. Get instant AI feedback.',
-    url: 'https://findalljob.com/ai-mock-interview',
+    url: 'https://www.findalljob.com/ai-mock-interview',
     siteName: 'FindAllJob',
   },
   twitter: {

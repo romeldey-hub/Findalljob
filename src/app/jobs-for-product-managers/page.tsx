@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid } from '@/components/seo/SeoPage'
 export const metadata: Metadata = {
   title: 'Jobs for Product Managers — AI Job Matching for PMs | FindAllJob',
   description: 'Find product manager jobs matched to your resume. AI ranks PM roles by your skills, experience, and location. Get your resume optimized for PM job descriptions instantly.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-product-managers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-product-managers' },
   openGraph: {
     title: 'Jobs for Product Managers | FindAllJob',
     description: 'AI job matching for product managers. Find PM roles ranked by your resume fit score.',
-    url: 'https://findalljob.com/jobs-for-product-managers',
+    url: 'https://www.findalljob.com/jobs-for-product-managers',
     siteName: 'FindAllJob',
   },
   twitter: {

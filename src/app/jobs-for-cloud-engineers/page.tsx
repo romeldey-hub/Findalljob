@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Cloud Engineer Jobs | Match Your AWS, GCP & Azure Skills | FindAllJob',
   description: 'Find better-fit Cloud Engineer jobs matched to your specific cloud platform skills. Resume-based AI matching for AWS, GCP, Azure, and multi-cloud infrastructure roles.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-cloud-engineers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-cloud-engineers' },
   openGraph: {
     title: 'Cloud Engineer Jobs | FindAllJob',
     description: 'Match your AWS, GCP, or Azure skills with relevant cloud infrastructure roles.',
-    url: 'https://findalljob.com/jobs-for-cloud-engineers',
+    url: 'https://www.findalljob.com/jobs-for-cloud-engineers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Cloud Engineer Jobs | FindAllJob', description: 'Find Cloud Engineer jobs matched to your specific cloud platform and skills.' },

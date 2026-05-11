@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid, CompareTable } from '@/components/seo
 export const metadata: Metadata = {
   title: 'AI Resume Job Matching — Find Jobs That Match Your Resume | FindAllJob',
   description: 'Upload your resume and instantly see jobs ranked by how well they match your skills, experience, and location. No more blindly applying to jobs you are underqualified for.',
-  alternates: { canonical: 'https://findalljob.com/resume-job-matching' },
+  alternates: { canonical: 'https://www.findalljob.com/resume-job-matching' },
   openGraph: {
     title: 'AI Resume Job Matching | FindAllJob',
     description: 'Find jobs ranked by your actual resume fit score. Upload once, get matched instantly.',
-    url: 'https://findalljob.com/resume-job-matching',
+    url: 'https://www.findalljob.com/resume-job-matching',
     siteName: 'FindAllJob',
   },
   twitter: {

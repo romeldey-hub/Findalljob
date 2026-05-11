@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Sales Manager Jobs | Find Better-Fit Sales Roles | FindAllJob',
   description: 'Find better-fit Sales Manager jobs matched to your industry, deal type, and experience. AI resume matching for B2B SaaS, enterprise, inside sales, and field sales management roles.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-sales-managers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-sales-managers' },
   openGraph: {
     title: 'Sales Manager Jobs | FindAllJob',
     description: 'Find Sales Manager jobs matched to your industry, deal type, and experience level.',
-    url: 'https://findalljob.com/jobs-for-sales-managers',
+    url: 'https://www.findalljob.com/jobs-for-sales-managers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Sales Manager Jobs | FindAllJob', description: 'Find Sales Manager jobs matched to your industry and deal experience.' },

@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'AI Engineer Jobs | Find Roles That Match Your Skills & Projects | FindAllJob',
   description: 'Find AI Engineer jobs matched to your LLM, NLP, and ML engineering skills. Resume-based matching, AI resume optimization, and interview preparation — all in one place.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-ai-engineers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-ai-engineers' },
   openGraph: {
     title: 'AI Engineer Jobs | FindAllJob',
     description: 'Find AI Engineer roles that match your skills, projects, and experience.',
-    url: 'https://findalljob.com/jobs-for-ai-engineers',
+    url: 'https://www.findalljob.com/jobs-for-ai-engineers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'AI Engineer Jobs | FindAllJob', description: 'Find AI Engineer roles matched to your LLM, NLP, and ML engineering skills.' },

@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Digital Marketing Manager Jobs | Resume-Matched Roles | FindAllJob',
   description: 'Find better-fit Digital Marketing Manager jobs matched to your channels, tools, and experience. AI resume matching for performance marketing, SEO, content, and growth roles.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-digital-marketing-managers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-digital-marketing-managers' },
   openGraph: {
     title: 'Digital Marketing Manager Jobs | FindAllJob',
     description: 'Find Digital Marketing Manager jobs matched to your channels, tools, and experience.',
-    url: 'https://findalljob.com/jobs-for-digital-marketing-managers',
+    url: 'https://www.findalljob.com/jobs-for-digital-marketing-managers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Digital Marketing Manager Jobs | FindAllJob', description: 'Find Digital Marketing Manager roles matched to your specific skills and channels.' },

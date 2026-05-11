@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Business Analyst Jobs | Find Better-Fit BA Roles | FindAllJob',
   description: 'Find better-fit Business Analyst jobs matched to your domain, tools, and experience. AI resume matching for IT, product, functional, and data-focused BA roles across industries.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-business-analysts' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-business-analysts' },
   openGraph: {
     title: 'Business Analyst Jobs | FindAllJob',
     description: 'Find better-fit Business Analyst jobs matched to your domain and experience.',
-    url: 'https://findalljob.com/jobs-for-business-analysts',
+    url: 'https://www.findalljob.com/jobs-for-business-analysts',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Business Analyst Jobs | FindAllJob', description: 'Find Business Analyst jobs matched to your domain and tools.' },

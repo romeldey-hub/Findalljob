@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://findalljob.com'),
+  metadataBase: new URL('https://www.findalljob.com'),
   title: "FindAllJob — Land your next job with AI",
   description: "AI-powered job matching, resume optimization, and application tracking.",
   alternates: { canonical: '/' },
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     title: "FindAllJob — Land your next job with AI",
     description: "AI-powered job matching, resume optimization, and application tracking.",
     type: "website",
-    url: "https://findalljob.com",
+    url: "https://www.findalljob.com",
     siteName: "FindAllJob",
     images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'FindAllJob — Apply smarter with AI-powered job matching' }],
   },
@@ -74,7 +74,7 @@ export default function RootLayout({
             "@context": "https://schema.org",
             "@type": "WebSite",
             "name": "FindAllJob",
-            "url": "https://findalljob.com",
+            "url": "https://www.findalljob.com",
           }) }}
         />
         <script

@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid, CompareTable } from '@/components/seo
 export const metadata: Metadata = {
   title: 'AI Resume Optimizer — Tailor Your Resume for Every Job | FindAllJob',
   description: 'Automatically optimize your resume for any job description using AI. Improve your ATS score, highlight the right keywords, and get more interview calls.',
-  alternates: { canonical: 'https://findalljob.com/ai-resume-optimizer' },
+  alternates: { canonical: 'https://www.findalljob.com/ai-resume-optimizer' },
   openGraph: {
     title: 'AI Resume Optimizer — Tailor Your Resume for Every Job | FindAllJob',
     description: 'Automatically optimize your resume for any job description using AI. Improve your ATS score and get more interview calls.',
-    url: 'https://findalljob.com/ai-resume-optimizer',
+    url: 'https://www.findalljob.com/ai-resume-optimizer',
     siteName: 'FindAllJob',
   },
   twitter: {

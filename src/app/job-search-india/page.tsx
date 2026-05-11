@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid } from '@/components/seo/SeoPage'
 export const metadata: Metadata = {
   title: 'AI Job Search India — Find Jobs in India Matched to Your Resume | FindAllJob',
   description: 'Find the best job opportunities in India matched to your resume using AI. Roles across Bangalore, Mumbai, Delhi, Hyderabad, Pune, and remote. Upload your resume and get ranked matches instantly.',
-  alternates: { canonical: 'https://findalljob.com/job-search-india' },
+  alternates: { canonical: 'https://www.findalljob.com/job-search-india' },
   openGraph: {
     title: 'AI Job Search India | FindAllJob',
     description: 'Find jobs in India matched to your resume. AI-ranked matches across all major cities.',
-    url: 'https://findalljob.com/job-search-india',
+    url: 'https://www.findalljob.com/job-search-india',
     siteName: 'FindAllJob',
   },
   twitter: {

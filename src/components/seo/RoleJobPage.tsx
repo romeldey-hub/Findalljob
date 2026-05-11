@@ -99,7 +99,7 @@ export function RoleJobPage({ cfg }: { cfg: RoleJobConfig }) {
 
 /** Generates FAQPage + BreadcrumbList JSON-LD for role pages */
 export function RoleJobSchema({ role, slug, faqs }: { role: string; slug: string; faqs: FaqItem[] }) {
-  const base = 'https://findalljob.com'
+  const base = 'https://www.findalljob.com'
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',

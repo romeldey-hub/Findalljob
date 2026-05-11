@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Cybersecurity Analyst Jobs | Match Your Security Skills | FindAllJob',
   description: 'Find better-fit Cybersecurity Analyst jobs matched to your security skills, certifications, and domain expertise. AI resume matching for SOC, VAPT, and cloud security roles.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-cybersecurity-analysts' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-cybersecurity-analysts' },
   openGraph: {
     title: 'Cybersecurity Analyst Jobs | FindAllJob',
     description: 'Match your security skills and certifications with relevant cybersecurity roles.',
-    url: 'https://findalljob.com/jobs-for-cybersecurity-analysts',
+    url: 'https://www.findalljob.com/jobs-for-cybersecurity-analysts',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Cybersecurity Analyst Jobs | FindAllJob', description: 'Find Cybersecurity Analyst jobs matched to your security skills and certifications.' },

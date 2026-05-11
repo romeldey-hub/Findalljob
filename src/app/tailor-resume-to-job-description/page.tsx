@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid, CompareTable } from '@/components/seo
 export const metadata: Metadata = {
   title: 'Tailor Resume to Job Description — AI Resume Customization | FindAllJob',
   description: 'Automatically customize your resume to match any job description using AI. Highlight the right skills, add missing keywords, and increase your chances of getting shortlisted.',
-  alternates: { canonical: 'https://findalljob.com/tailor-resume-to-job-description' },
+  alternates: { canonical: 'https://www.findalljob.com/tailor-resume-to-job-description' },
   openGraph: {
     title: 'Tailor Resume to Job Description | FindAllJob',
     description: 'AI customizes your resume for each job description. Get more interview calls.',
-    url: 'https://findalljob.com/tailor-resume-to-job-description',
+    url: 'https://www.findalljob.com/tailor-resume-to-job-description',
     siteName: 'FindAllJob',
   },
   twitter: {

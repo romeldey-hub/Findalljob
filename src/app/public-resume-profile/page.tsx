@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid, CompareTable } from '@/components/seo
 export const metadata: Metadata = {
   title: 'Public Resume Profile — Get Discovered by Recruiters Online | FindAllJob',
   description: 'Create a public resume profile on FindAllJob and get discovered by recruiters. Share a professional profile link, showcase your skills and experience, and let opportunities come to you.',
-  alternates: { canonical: 'https://findalljob.com/public-resume-profile' },
+  alternates: { canonical: 'https://www.findalljob.com/public-resume-profile' },
   openGraph: {
     title: 'Public Resume Profile | FindAllJob',
     description: 'Create a public profile and get discovered by recruiters. Free to start.',
-    url: 'https://findalljob.com/public-resume-profile',
+    url: 'https://www.findalljob.com/public-resume-profile',
     siteName: 'FindAllJob',
   },
   twitter: {

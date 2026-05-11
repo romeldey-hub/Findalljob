@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Data Scientist Jobs | Match Your Resume with Relevant Roles | FindAllJob',
   description: 'Find better-fit Data Scientist jobs matched to your ML skills, tools, and experience. Optimize your resume for each role and prepare for technical interviews with AI.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-data-scientists' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-data-scientists' },
   openGraph: {
     title: 'Data Scientist Jobs | FindAllJob',
     description: 'Match your resume with relevant Data Scientist jobs. AI-ranked by your skills and experience.',
-    url: 'https://findalljob.com/jobs-for-data-scientists',
+    url: 'https://www.findalljob.com/jobs-for-data-scientists',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Data Scientist Jobs | FindAllJob', description: 'Find Data Scientist jobs matched to your ML skills and experience.' },

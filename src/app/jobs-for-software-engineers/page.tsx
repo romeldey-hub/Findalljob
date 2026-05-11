@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid } from '@/components/seo/SeoPage'
 export const metadata: Metadata = {
   title: 'Jobs for Software Engineers — AI Job Matching for Developers | FindAllJob',
   description: 'Find software engineering jobs matched to your tech stack and experience. AI ranks SWE roles by your resume fit score. Optimize your resume for each job description instantly.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-software-engineers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-software-engineers' },
   openGraph: {
     title: 'Jobs for Software Engineers | FindAllJob',
     description: 'AI job matching for software engineers. Find SWE roles ranked by your resume fit score.',
-    url: 'https://findalljob.com/jobs-for-software-engineers',
+    url: 'https://www.findalljob.com/jobs-for-software-engineers',
     siteName: 'FindAllJob',
   },
   twitter: {

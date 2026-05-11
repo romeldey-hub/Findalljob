@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'DevOps Engineer Jobs | Match Your Cloud & CI/CD Skills | FindAllJob',
   description: 'Find better-fit DevOps Engineer jobs matched to your cloud, CI/CD, and infrastructure skills. AI resume matching for AWS, Kubernetes, Terraform, and more.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-devops-engineers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-devops-engineers' },
   openGraph: {
     title: 'DevOps Engineer Jobs | FindAllJob',
     description: 'Match your DevOps skills with relevant cloud, CI/CD, and infrastructure roles.',
-    url: 'https://findalljob.com/jobs-for-devops-engineers',
+    url: 'https://www.findalljob.com/jobs-for-devops-engineers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'DevOps Engineer Jobs | FindAllJob', description: 'Find DevOps Engineer jobs matched to your AWS, Kubernetes, and CI/CD skills.' },

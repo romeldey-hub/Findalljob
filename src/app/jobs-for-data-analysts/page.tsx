@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Data Analyst Jobs | Match Your Resume with Better-Fit Roles | FindAllJob',
   description: 'Find better-fit Data Analyst jobs by matching your resume with relevant roles. Improve your resume, prepare for interviews, and apply smarter with FindAllJob.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-data-analysts' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-data-analysts' },
   openGraph: {
     title: 'Data Analyst Jobs | FindAllJob',
     description: 'Find better-fit Data Analyst jobs by matching your resume with relevant roles.',
-    url: 'https://findalljob.com/jobs-for-data-analysts',
+    url: 'https://www.findalljob.com/jobs-for-data-analysts',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Data Analyst Jobs | FindAllJob', description: 'Match your resume with relevant Data Analyst roles.' },

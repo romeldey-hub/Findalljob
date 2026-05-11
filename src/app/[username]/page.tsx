@@ -229,7 +229,7 @@ export async function generateMetadata(
     openGraph: {
       title: `${name} · ${role}`,
       description: desc,
-      url: `https://findalljob.com/${username}`,
+      url: `https://www.findalljob.com/${username}`,
       type: 'profile',
       images: profileRow.avatar_url
         ? [{ url: profileRow.avatar_url, width: 400, height: 400, alt: name }]
@@ -355,7 +355,7 @@ export default async function PublicProfilePage(
   const yearsExp     = computeYearsExperience(experience)
   const profileScore = computeProfileScore(pd, hasAvatar)
   const { roles: aiRoles, industries: aiIndustries } = deriveAIInsights(experience, skills)
-  const profileUrl   = `https://findalljob.com/${username}`
+  const profileUrl   = `https://www.findalljob.com/${username}`
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A]">

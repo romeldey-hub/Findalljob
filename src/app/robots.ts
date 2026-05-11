@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/', '/admin/'],
     },
-    sitemap: 'https://findalljob.com/sitemap.xml',
+    sitemap: 'https://www.findalljob.com/sitemap.xml',
   }
 }

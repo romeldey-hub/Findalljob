@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'Full Stack Developer Jobs | Resume-Matched Roles | FindAllJob',
   description: 'Find better-fit Full Stack Developer jobs using resume-based AI matching. Get matched by your specific tech stack — React, Node, Python, AWS — and improve your resume for each role.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-full-stack-developers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-full-stack-developers' },
   openGraph: {
     title: 'Full Stack Developer Jobs | FindAllJob',
     description: 'Discover better-fit Full Stack Developer jobs using resume-based AI matching.',
-    url: 'https://findalljob.com/jobs-for-full-stack-developers',
+    url: 'https://www.findalljob.com/jobs-for-full-stack-developers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'Full Stack Developer Jobs | FindAllJob', description: 'Find Full Stack Developer jobs matched to your specific tech stack.' },

@@ -5,11 +5,11 @@ import type { RoleJobConfig } from '@/components/seo/RoleJobPage'
 export const metadata: Metadata = {
   title: 'UI UX Designer Jobs | Match Your Portfolio & Skills | FindAllJob',
   description: 'Find better-fit UI/UX Designer jobs matched to your design skills, tools, and portfolio experience. Resume-based AI matching for product designers, UX researchers, and UI specialists.',
-  alternates: { canonical: 'https://findalljob.com/jobs-for-ui-ux-designers' },
+  alternates: { canonical: 'https://www.findalljob.com/jobs-for-ui-ux-designers' },
   openGraph: {
     title: 'UI UX Designer Jobs | FindAllJob',
     description: 'Find UI/UX Designer jobs that match your design skills, tools, and portfolio experience.',
-    url: 'https://findalljob.com/jobs-for-ui-ux-designers',
+    url: 'https://www.findalljob.com/jobs-for-ui-ux-designers',
     siteName: 'FindAllJob',
   },
   twitter: { card: 'summary_large_image', title: 'UI UX Designer Jobs | FindAllJob', description: 'Find UI/UX Designer jobs matched to your design skills and portfolio.' },

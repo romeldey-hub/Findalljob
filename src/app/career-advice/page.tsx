@@ -4,11 +4,11 @@ import { SeoPage, SeoSection, FeatureGrid } from '@/components/seo/SeoPage'
 export const metadata: Metadata = {
   title: 'Career Advice — Job Search Tips and Resume Guidance | FindAllJob',
   description: 'Practical career advice for job seekers. Resume writing tips, interview preparation guidance, how to get more interview calls, and how to use AI to accelerate your job search.',
-  alternates: { canonical: 'https://findalljob.com/career-advice' },
+  alternates: { canonical: 'https://www.findalljob.com/career-advice' },
   openGraph: {
     title: 'Career Advice | FindAllJob',
     description: 'Practical resume tips, interview preparation, and AI-powered job search guidance.',
-    url: 'https://findalljob.com/career-advice',
+    url: 'https://www.findalljob.com/career-advice',
     siteName: 'FindAllJob',
   },
   twitter: {
