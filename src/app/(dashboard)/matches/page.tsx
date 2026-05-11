@@ -1127,6 +1127,14 @@ export default function MatchesPage() {
       }
 
       if (matchCount === 0) {
+        // Still refresh from DB — there may be matches from a prior successful run
+        const fresh = await mutate()
+        const existing = (fresh?.matches ?? []) as MatchRecord[]
+        if (existing.length > 0) {
+          setAiJobs(existing.filter((m) => m.job?.source !== 'manual'))
+        } else {
+          setAiJobs(null)   // reset so savedAiJobs (DB) can show if any appear later
+        }
         setAnalyzeError(noJobsMessage || 'No jobs found. Try the search form.')
         return
       }

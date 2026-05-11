@@ -968,10 +968,7 @@ export async function POST(req: Request) {
 
         const [matchResult, cvSuggestions] = await Promise.all([
           matchRows.length > 0
-            ? admin.from('job_matches').upsert(matchRows, {
-                onConflict: 'search_run_id,job_id',
-                ignoreDuplicates: false,
-              })
+            ? admin.from('job_matches').insert(matchRows)
             : Promise.resolve({ error: null }),
           generateCvSuggestions(
             parsedResume,
@@ -997,21 +994,22 @@ export async function POST(req: Request) {
         if (matchResult.error) {
           console.error('[analyze] match insert error:', matchResult.error.message)
           if (runId) {
-            void admin.from('job_search_runs').update({
+            await admin.from('job_search_runs').update({
               status: 'failed', ...runCounts,
             }).eq('id', runId)
           }
+          throw new Error(`Failed to save job matches: ${matchResult.error.message}`)
         } else if (matchRows.length === 0 && jobsFetchedCount > 0) {
           // Jobs were fetched but none survived scoring/mapping — bad UX to call this success
           console.warn(`[analyze] run completed with zero saved matches (fetched=${jobsFetchedCount}) — marking failed/no_relevant_matches | run=${runId}`)
           if (runId) {
-            void admin.from('job_search_runs').update({
+            await admin.from('job_search_runs').update({
               status: 'failed', failure_reason: 'no_relevant_matches', ...runCounts,
             }).eq('id', runId)
           }
         } else if (runId) {
-          // Only mark success after confirming matches are saved
-          void admin.from('job_search_runs').update({
+          // Await so the run is marked success before the frontend's mutate() queries it
+          await admin.from('job_search_runs').update({
             status: 'success', ...runCounts,
           }).eq('id', runId)
         }
