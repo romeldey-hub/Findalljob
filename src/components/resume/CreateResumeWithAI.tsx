@@ -2,16 +2,21 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Sparkles, CheckCircle2, BriefcaseBusiness } from 'lucide-react'
+import { Loader2, Sparkles, CheckCircle2, BriefcaseBusiness, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import useSWR from 'swr'
 import { AIResumeBuilder } from './AIResumeBuilder'
 import { ResumePreviewModal } from './ResumePreviewModal'
 import { CountryConfirmStep, type CountryChoice } from './CountryConfirmStep'
+import { UpgradeModal } from '@/components/UpgradeModal'
 import type { QAAnswers } from './AIResumeBuilder'
 import type { ParsedResume } from '@/types'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 
-type Phase = 'idle' | 'qa' | 'generating' | 'editing' | 'saving' | 'analyzing' | 'country_confirm' | 'done'
+type Phase = 'idle' | 'no_credits' | 'qa' | 'generating' | 'editing' | 'saving' | 'analyzing' | 'country_confirm' | 'done'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+const RESUME_GENERATE_COST = 2
 
 function toOptimized(pd: ParsedResume): OptimizedResumeData {
   return {
@@ -96,11 +101,23 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
   const [generatedPD,            setGeneratedPD]            = useState<ParsedResume | null>(null)
   const [analyzeStep,            setAnalyzeStep]            = useState(0)
   const [matchCount,             setMatchCount]             = useState(0)
+  const [showUpgrade,            setShowUpgrade]            = useState(false)
   const [countryConfirmPending,  setCountryConfirmPending]  = useState<{
     detectedCountry: string | null
     detectedCountryCode: string | null
   } | null>(null)
   const router = useRouter()
+
+  const { data: profileData } = useSWR('/api/profile', fetcher, { refreshInterval: 120000 })
+  const creditsRemaining: number | null = profileData?.credits_remaining ?? null
+
+  function handleCreateClick() {
+    if (creditsRemaining !== null && creditsRemaining < RESUME_GENERATE_COST) {
+      setPhase('no_credits')
+      return
+    }
+    setPhase('qa')
+  }
 
   // ── Q&A complete → call generate API ──────────────────────────────────────
   async function handleQAComplete(answers: QAAnswers) {
@@ -278,12 +295,40 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
       {/* CTA button (idle) */}
       {phase === 'idle' && (
         <button
-          onClick={() => setPhase('qa')}
+          onClick={handleCreateClick}
           className="mt-5 flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[13px] font-bold hover:from-violet-700 hover:to-blue-700 transition-all shadow-sm hover:scale-[1.02] active:scale-100"
         >
           <Sparkles className="w-4 h-4" />
           Create Resume with AI
         </button>
+      )}
+
+      {/* Insufficient credits block */}
+      {phase === 'no_credits' && (
+        <div className="mt-5 flex flex-col items-center gap-3 px-5 py-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-center max-w-sm">
+          <div className="flex flex-col items-center gap-1">
+            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400" />
+            <p className="font-bold text-[13px] text-red-700 dark:text-red-400">Not enough AI credits</p>
+            <p className="text-[12px] text-red-600/80 dark:text-red-400/70 leading-snug">
+              You need {RESUME_GENERATE_COST} AI credits to create a resume.
+              You currently have {creditsRemaining ?? 0} credit{creditsRemaining === 1 ? '' : 's'} left.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowUpgrade(true)}
+              className="px-4 py-1.5 rounded-lg bg-[#2563EB] text-white text-[12px] font-bold hover:bg-blue-700 transition-colors"
+            >
+              Upgrade Plan
+            </button>
+            <button
+              onClick={() => setPhase('idle')}
+              className="px-3 py-1.5 rounded-lg text-[12px] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Q&A builder modal */}
@@ -410,6 +455,8 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
           </div>
         </div>
       )}
+
+      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
     </>
   )
 }
