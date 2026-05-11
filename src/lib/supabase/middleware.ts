@@ -33,7 +33,8 @@ export async function updateSession(request: NextRequest) {
 
   // Protect dashboard routes
   const isDashboardRoute = pathname.startsWith('/(dashboard)')
-    || pathname.startsWith('/resume')
+    || pathname === '/resume'
+    || pathname.startsWith('/resume/')
     || pathname.startsWith('/matches')
     || pathname.startsWith('/optimizer')
     || pathname.startsWith('/tracker')
