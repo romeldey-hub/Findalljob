@@ -12,6 +12,7 @@ import { track } from '@/lib/analytics'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { CountryConfirmStep, type CountryChoice } from '@/components/resume/CountryConfirmStep'
+import { CreateResumeWithAI } from '@/components/resume/CreateResumeWithAI'
 
 // ── Progress configuration (outside component — never recreated) ──────────────
 
@@ -44,11 +45,12 @@ interface ResumeUploadZoneProps {
   uploadCount?: number
   uploadLimit?: number
   userId?: string
+  avatarUrl?: string | null
 }
 
 type UploadState = 'idle' | 'uploading' | 'analyzing' | 'country_confirm' | 'success' | 'no-text'
 
-export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId }: ResumeUploadZoneProps) {
+export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId, avatarUrl }: ResumeUploadZoneProps) {
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
@@ -540,6 +542,20 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
           </div>
         </div>
       ) : null}
+
+      {/* ── Empty state — only when no resume AND fully idle ─────────────── */}
+      {!hasExistingResume && uploadState === 'idle' && (
+        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
+          <div className="w-14 h-14 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-4">
+            <FileText className="w-6 h-6 text-gray-300 dark:text-slate-600" />
+          </div>
+          <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">No resume uploaded yet</p>
+          <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
+            Upload your resume above, or let AI build one for you in 2 minutes.
+          </p>
+          <CreateResumeWithAI avatarUrl={avatarUrl ?? null} />
+        </div>
+      )}
 
       {/* ── Delete confirmation modal ─────────────────────────────────────── */}
       {showConfirm && (

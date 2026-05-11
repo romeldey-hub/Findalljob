@@ -3,8 +3,7 @@ import { ResumeUploadZone } from '@/components/resume/ResumeUploadZone'
 import { VisualResumeCard } from '@/components/resume/VisualResumeCard'
 import { InsightsPanel } from '@/components/resume/InsightsPanel'
 import { ReanalyzeButton } from '@/components/resume/ReanalyzeButton'
-import { CreateResumeWithAI } from '@/components/resume/CreateResumeWithAI'
-import { FileText, Sparkles, RefreshCw } from 'lucide-react'
+import { Sparkles, RefreshCw } from 'lucide-react'
 import type { ParsedResume, Resume } from '@/types'
 import { resolveAvatar } from '@/lib/avatar'
 import { isAdminUser, isProUser } from '@/lib/admin'
@@ -81,6 +80,7 @@ export default async function ResumePage() {
         uploadCount={uploadCount}
         uploadLimit={FREE_LIMITS.resumeUploads}
         userId={user!.id}
+        avatarUrl={avatarUrl}
       />
 
       {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}
@@ -124,19 +124,6 @@ export default async function ResumePage() {
         </div>
       )}
 
-      {/* ── Empty state (no resume) ─────────────────────────────── */}
-      {!hasResume && (
-        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
-          <div className="w-14 h-14 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-4">
-            <FileText className="w-6 h-6 text-gray-300 dark:text-slate-600" />
-          </div>
-          <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">No resume uploaded yet</p>
-          <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
-            Upload your resume above, or let AI build one for you in 2 minutes.
-          </p>
-          <CreateResumeWithAI avatarUrl={avatarUrl} />
-        </div>
-      )}
 
     </div>
   )
