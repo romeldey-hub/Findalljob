@@ -419,7 +419,7 @@ export default async function LandingPage() {
         <div className="flex items-center gap-2">
           <LogoMark href="/" size="sm" onDark />
         </div>
-        <span>© {new Date().getFullYear()} FindAllJob · AI-powered job search platform · Developed by Bestine</span>
+        <span>© {new Date().getFullYear()} FindAllJob · AI-powered job search platform · Developed by <a href="https://www.bestin-e.com/" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors underline underline-offset-2">Bestine</a></span>
         <div className="flex gap-4">
           <Link href="/login" className="hover:text-slate-400 transition-colors">Sign In</Link>
           <Link href="/signup" className="hover:text-slate-400 transition-colors">Sign Up</Link>
