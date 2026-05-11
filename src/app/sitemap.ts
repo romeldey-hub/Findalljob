@@ -4,16 +4,31 @@ const BASE = 'https://findalljob.com'
 
 // SEO landing pages — static public marketing pages only
 const SEO_PAGES = [
+  // Feature pages
   '/ai-resume-optimizer',
   '/resume-job-matching',
   '/ats-resume-checker',
   '/ai-mock-interview',
   '/tailor-resume-to-job-description',
   '/job-search-india',
-  '/jobs-for-product-managers',
-  '/jobs-for-software-engineers',
   '/career-advice',
   '/public-resume-profile',
+  // Role-based pages (batch 1)
+  '/jobs-for-product-managers',
+  '/jobs-for-software-engineers',
+  // Role-based pages (batch 2)
+  '/jobs-for-data-analysts',
+  '/jobs-for-data-scientists',
+  '/jobs-for-ai-engineers',
+  '/jobs-for-full-stack-developers',
+  '/jobs-for-devops-engineers',
+  '/jobs-for-ui-ux-designers',
+  '/jobs-for-machine-learning-engineers',
+  '/jobs-for-cloud-engineers',
+  '/jobs-for-cybersecurity-analysts',
+  '/jobs-for-business-analysts',
+  '/jobs-for-digital-marketing-managers',
+  '/jobs-for-sales-managers',
 ]
 
 export default function sitemap(): MetadataRoute.Sitemap {
