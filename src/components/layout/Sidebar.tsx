@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   FileText, Briefcase, Settings,
-  LogOut, ChevronRight, X, ShieldCheck, Zap,
+  LogOut, ChevronRight, X, ShieldCheck, Zap, Share2, Check,
 } from 'lucide-react'
 import { UpgradeModal } from '@/components/UpgradeModal'
 import { LogoMark } from '@/components/LogoMark'
@@ -191,6 +191,83 @@ function CreditsWidget({
   void isPro // available for future Pro-specific styling
 }
 
+// ── Share popover ─────────────────────────────────────────────────────────────
+
+const SHARE_URL = 'https://www.findalljob.com'
+const SHARE_MSG = encodeURIComponent(
+  'I found FindAllJob useful for matching resumes with better-fit jobs, improving resumes, and preparing for interviews.\nTry it free: https://www.findalljob.com'
+)
+const SHARE_MSG_RAW =
+  'I found FindAllJob useful for matching resumes with better-fit jobs, improving resumes, and preparing for interviews.\nTry it free: https://www.findalljob.com'
+
+function SharePopover({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+
+  function open(url: string) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(SHARE_MSG_RAW)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="absolute bottom-full mb-2 left-0 w-[260px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
+        <div className="flex items-center gap-2">
+          <Share2 className="w-4 h-4 text-blue-500" />
+          <span className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">Share FindAllJob</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="px-4 py-3">
+        <p className="text-[12px] text-gray-500 dark:text-slate-400 mb-3 leading-relaxed">
+          Help others apply smarter with AI-powered job matching.
+        </p>
+        <div className="space-y-1.5">
+          <button
+            onClick={() => open(`https://wa.me/?text=${SHARE_MSG}`)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors text-left"
+          >
+            <span className="text-[16px]">💬</span> Share on WhatsApp
+          </button>
+          <button
+            onClick={() => open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(SHARE_URL)}`)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors text-left"
+          >
+            <span className="text-[16px]">🔗</span> Share on LinkedIn
+          </button>
+          <button
+            onClick={() => open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(SHARE_URL)}`)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors text-left"
+          >
+            <span className="text-[16px]">📘</span> Share on Facebook
+          </button>
+          <button
+            onClick={copyLink}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors text-left"
+          >
+            {copied
+              ? <><Check className="w-4 h-4 text-green-500 flex-shrink-0" /> Copied!</>
+              : <><span className="text-[16px]">📋</span> Copy link</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const BASE_NAV = [
@@ -217,8 +294,10 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   const [showCredits, setShowCredits]     = useState(false)
   const [showUpgrade, setShowUpgrade]     = useState(false)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
+  const [showShare, setShowShare]         = useState(false)
   const creditsRef = useRef<HTMLDivElement>(null)
   const logoutRef  = useRef<HTMLDivElement>(null)
+  const shareRef   = useRef<HTMLDivElement>(null)
 
   const { data: profileData } = useSWR('/api/profile', fetcher, { refreshInterval: 120000 })
 
@@ -238,6 +317,25 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showCredits])
+
+  // Close share popover on outside click
+  useEffect(() => {
+    if (!showShare) return
+    function handleClick(e: MouseEvent) {
+      if (shareRef.current && !shareRef.current.contains(e.target as Node)) {
+        setShowShare(false)
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowShare(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [showShare])
 
   // Close logout dropdown on outside click or ESC
   useEffect(() => {
@@ -330,8 +428,20 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
             )}
           </div>
 
+          {/* Share */}
+          <div ref={shareRef} className="relative ml-auto">
+            <button
+              onClick={() => setShowShare(v => !v)}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
+              title="Share FindAllJob"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+            {showShare && <SharePopover onClose={() => setShowShare(false)} />}
+          </div>
+
           {/* Logout */}
-          <div ref={logoutRef} className="relative ml-auto">
+          <div ref={logoutRef} className="relative">
             <button
               onClick={() => setShowLogoutMenu(v => !v)}
               className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
