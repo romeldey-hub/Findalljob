@@ -33,6 +33,7 @@ interface Step {
   placeholder: string
   multiline?:  boolean
   options?:    string[]
+  dropdown?:   boolean
 }
 
 const STEPS: Step[] = [
@@ -48,8 +49,17 @@ const STEPS: Step[] = [
     icon:        '💼',
     question:    'Are you a fresher or do you have work experience?',
     hint:        'This shapes how your resume is structured.',
-    placeholder: '',
-    options:     ['Fresher / Entry-level', 'Experienced (1–3 years)', 'Experienced (3+ years)'],
+    placeholder: 'Select your experience level',
+    dropdown:    true,
+    options:     [
+      'Fresher / Entry-level — 0–1 year',
+      'Early career — 1–3 years',
+      'Mid-level — 3–5 years',
+      'Experienced professional — 5–8 years',
+      'Senior professional — 8–12 years',
+      'Lead / Manager level — 12–15 years',
+      'Senior leadership — 15+ years',
+    ],
   },
   {
     key:         'education',
@@ -184,8 +194,25 @@ export function AIResumeBuilder({
           </h2>
           <p className="text-[12px] text-gray-400 dark:text-slate-500 mb-5">{current.hint}</p>
 
-          {/* Option buttons (for step 2 — fresher/experienced) */}
-          {current.options ? (
+          {/* Dropdown (for experience level step) */}
+          {current.dropdown && current.options ? (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
+                Experience level
+              </label>
+              <select
+                autoFocus
+                value={value}
+                onChange={e => updateAnswer(e.target.value)}
+                className="w-full px-4 py-3 text-[13px] border border-[#E5E7EB] dark:border-[#334155] rounded-xl bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] appearance-none cursor-pointer"
+              >
+                <option value="" disabled>Select your experience level</option>
+                {current.options.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          ) : current.options ? (
             <div className="flex flex-col gap-2">
               {current.options.map(opt => (
                 <button
@@ -226,7 +253,7 @@ export function AIResumeBuilder({
         </div>
 
         {/* Footer */}
-        {!current.options && (
+        {(!current.options || current.dropdown) && (
           <div className="flex items-center justify-between px-6 py-4 border-t border-[#E5E7EB] dark:border-[#334155]">
             <div className="flex items-center gap-2">
               {step > 0 && (
@@ -256,8 +283,8 @@ export function AIResumeBuilder({
           </div>
         )}
 
-        {/* Skip-only footer for option-step */}
-        {current.options && (
+        {/* Skip-only footer for card option-step */}
+        {current.options && !current.dropdown && (
           <div className="flex items-center justify-between px-6 py-3 border-t border-[#E5E7EB] dark:border-[#334155]">
             <div className="flex items-center gap-2">
               {step > 0 && (
