@@ -231,12 +231,15 @@ export async function generateMetadata(
       description: desc,
       url: `https://findalljob.com/${username}`,
       type: 'profile',
-      images: profileRow.avatar_url ? [{ url: profileRow.avatar_url }] : [],
+      images: profileRow.avatar_url
+        ? [{ url: profileRow.avatar_url, width: 400, height: 400, alt: name }]
+        : [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'FindAllJob — Apply smarter with AI-powered job matching' }],
     },
     twitter: {
-      card: 'summary',
+      card: 'summary_large_image',
       title: `${name} · ${role}`,
       description: desc,
+      images: profileRow.avatar_url ? [profileRow.avatar_url] : ['/opengraph-image'],
     },
   }
 }

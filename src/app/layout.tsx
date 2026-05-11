@@ -27,11 +27,13 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://findalljob.com",
     siteName: "FindAllJob",
+    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'FindAllJob — Apply smarter with AI-powered job matching' }],
   },
   twitter: {
     card: "summary_large_image",
     title: "FindAllJob — Land your next job with AI",
     description: "AI-powered job matching, resume optimization, and application tracking.",
+    images: ['/opengraph-image'],
   },
 };
 
