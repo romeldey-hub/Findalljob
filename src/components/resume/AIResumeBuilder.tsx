@@ -365,6 +365,7 @@ interface Step {
   dropdown?:   boolean
   locationPicker?:  boolean
   contactPicker?:   boolean
+  optional?:        boolean
 }
 
 const STEPS: Step[] = [
@@ -420,6 +421,7 @@ const STEPS: Step[] = [
     question:    'Any certifications or achievements?',
     hint:        'Awards, courses, hackathons, or publications.',
     placeholder: 'e.g. AWS Solutions Architect, Google Data Analytics Certificate, Won HackIndia 2023…',
+    optional:    true,
   },
   {
     key:            'preferred_location',
@@ -610,12 +612,14 @@ export function AIResumeBuilder({
                   ← Back
                 </button>
               )}
-              <button
-                onClick={handleSkip}
-                className="px-3 py-2 rounded-lg text-[12px] font-medium text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
-              >
-                Skip
-              </button>
+              {current.optional && (
+                <button
+                  onClick={handleSkip}
+                  className="px-3 py-2 rounded-lg text-[12px] font-medium text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
+                >
+                  Skip
+                </button>
+              )}
             </div>
 
             <button
@@ -629,25 +633,17 @@ export function AIResumeBuilder({
           </div>
         )}
 
-        {/* Skip-only footer for card option-step */}
+        {/* Footer for card option-step (Back only) */}
         {current.options && !current.dropdown && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-[#E5E7EB] dark:border-[#334155]">
-            <div className="flex items-center gap-2">
-              {step > 0 && (
-                <button
-                  onClick={handleBack}
-                  className="px-3 py-2 rounded-lg text-[12px] font-medium text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
-                >
-                  ← Back
-                </button>
-              )}
-            </div>
-            <button
-              onClick={handleSkip}
-              className="px-3 py-2 rounded-lg text-[12px] font-medium text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
-            >
-              Skip
-            </button>
+          <div className="flex items-center px-6 py-3 border-t border-[#E5E7EB] dark:border-[#334155]">
+            {step > 0 && (
+              <button
+                onClick={handleBack}
+                className="px-3 py-2 rounded-lg text-[12px] font-medium text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors"
+              >
+                ← Back
+              </button>
+            )}
           </div>
         )}
       </div>
