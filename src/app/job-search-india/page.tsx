@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Find the best job opportunities in India matched to your resume using AI. Roles across Bangalore, Mumbai, Delhi, Hyderabad, Pune, and remote. Upload your resume and get ranked matches instantly.',
   alternates: { canonical: 'https://www.findalljob.com/job-search-india' },
   openGraph: {
+    type: 'website',
     title: 'AI Job Search India | FindAllJob',
     description: 'Find jobs in India matched to your resume. AI-ranked matches across all major cities.',
     url: 'https://www.findalljob.com/job-search-india',

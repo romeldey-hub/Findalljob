@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Machine Learning Engineer jobs matched to your ML frameworks, deployment experience, and domain expertise. AI-powered resume matching for MLE roles.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-machine-learning-engineers' },
   openGraph: {
+    type: 'website',
     title: 'Machine Learning Engineer Jobs | FindAllJob',
     description: 'Find ML Engineer roles matched to your frameworks, deployment skills, and domain expertise.',
     url: 'https://www.findalljob.com/jobs-for-machine-learning-engineers',

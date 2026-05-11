@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Sales Manager jobs matched to your industry, deal type, and experience. AI resume matching for B2B SaaS, enterprise, inside sales, and field sales management roles.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-sales-managers' },
   openGraph: {
+    type: 'website',
     title: 'Sales Manager Jobs | FindAllJob',
     description: 'Find Sales Manager jobs matched to your industry, deal type, and experience level.',
     url: 'https://www.findalljob.com/jobs-for-sales-managers',

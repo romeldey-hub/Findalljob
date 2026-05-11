@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Check your resume ATS compatibility score instantly. See which keywords are missing, what recruiters look for, and how to fix your resume to pass Applicant Tracking Systems.',
   alternates: { canonical: 'https://www.findalljob.com/ats-resume-checker' },
   openGraph: {
+    type: 'website',
     title: 'ATS Resume Checker | FindAllJob',
     description: 'Check your resume ATS score and fix it before applying. Free to start.',
     url: 'https://www.findalljob.com/ats-resume-checker',

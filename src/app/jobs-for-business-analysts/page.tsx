@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Business Analyst jobs matched to your domain, tools, and experience. AI resume matching for IT, product, functional, and data-focused BA roles across industries.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-business-analysts' },
   openGraph: {
+    type: 'website',
     title: 'Business Analyst Jobs | FindAllJob',
     description: 'Find better-fit Business Analyst jobs matched to your domain and experience.',
     url: 'https://www.findalljob.com/jobs-for-business-analysts',

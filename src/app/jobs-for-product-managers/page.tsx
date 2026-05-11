@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Find product manager jobs matched to your resume. AI ranks PM roles by your skills, experience, and location. Get your resume optimized for PM job descriptions instantly.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-product-managers' },
   openGraph: {
+    type: 'website',
     title: 'Jobs for Product Managers | FindAllJob',
     description: 'AI job matching for product managers. Find PM roles ranked by your resume fit score.',
     url: 'https://www.findalljob.com/jobs-for-product-managers',

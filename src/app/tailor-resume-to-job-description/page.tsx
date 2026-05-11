@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Automatically customize your resume to match any job description using AI. Highlight the right skills, add missing keywords, and increase your chances of getting shortlisted.',
   alternates: { canonical: 'https://www.findalljob.com/tailor-resume-to-job-description' },
   openGraph: {
+    type: 'website',
     title: 'Tailor Resume to Job Description | FindAllJob',
     description: 'AI customizes your resume for each job description. Get more interview calls.',
     url: 'https://www.findalljob.com/tailor-resume-to-job-description',

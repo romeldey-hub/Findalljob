@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Digital Marketing Manager jobs matched to your channels, tools, and experience. AI resume matching for performance marketing, SEO, content, and growth roles.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-digital-marketing-managers' },
   openGraph: {
+    type: 'website',
     title: 'Digital Marketing Manager Jobs | FindAllJob',
     description: 'Find Digital Marketing Manager jobs matched to your channels, tools, and experience.',
     url: 'https://www.findalljob.com/jobs-for-digital-marketing-managers',

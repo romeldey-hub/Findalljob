@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import {
@@ -6,6 +7,24 @@ import {
 } from 'lucide-react'
 import { LogoMark } from '@/components/LogoMark'
 import { getRegionPricing } from '@/lib/pricing'
+
+export const metadata: Metadata = {
+  title: 'FindAllJob — Apply Smarter with AI Job Matching',
+  description: 'Upload your resume, find better-fit jobs, optimize your resume for each role, and practice interviews with AI.',
+  alternates: { canonical: 'https://www.findalljob.com/' },
+  openGraph: {
+    title: 'FindAllJob — Apply Smarter with AI Job Matching',
+    description: 'Upload your resume, find better-fit jobs, optimize your resume for each role, and practice interviews with AI.',
+    url: 'https://www.findalljob.com/',
+    siteName: 'FindAllJob',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'FindAllJob — Apply Smarter with AI Job Matching',
+    description: 'Upload your resume, find better-fit jobs, optimize your resume for each role, and practice interviews with AI.',
+  },
+}
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 

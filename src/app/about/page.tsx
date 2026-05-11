@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'FindAllJob is an AI-powered job search platform that helps job seekers apply smarter — with resume optimization, job matching, mock interviews, and public profiles.',
   alternates: { canonical: 'https://www.findalljob.com/about' },
   openGraph: {
+    type: 'website',
     title: 'About FindAllJob',
     description: 'AI-powered job search — resume optimization, smart matching, mock interviews, and public profiles.',
     url: 'https://www.findalljob.com/about',

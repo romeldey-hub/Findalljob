@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Upload your resume and instantly see jobs ranked by how well they match your skills, experience, and location. No more blindly applying to jobs you are underqualified for.',
   alternates: { canonical: 'https://www.findalljob.com/resume-job-matching' },
   openGraph: {
+    type: 'website',
     title: 'AI Resume Job Matching | FindAllJob',
     description: 'Find jobs ranked by your actual resume fit score. Upload once, get matched instantly.',
     url: 'https://www.findalljob.com/resume-job-matching',

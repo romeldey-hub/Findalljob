@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Data Scientist jobs matched to your ML skills, tools, and experience. Optimize your resume for each role and prepare for technical interviews with AI.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-data-scientists' },
   openGraph: {
+    type: 'website',
     title: 'Data Scientist Jobs | FindAllJob',
     description: 'Match your resume with relevant Data Scientist jobs. AI-ranked by your skills and experience.',
     url: 'https://www.findalljob.com/jobs-for-data-scientists',

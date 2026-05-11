@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Practical career advice for job seekers. Resume writing tips, interview preparation guidance, how to get more interview calls, and how to use AI to accelerate your job search.',
   alternates: { canonical: 'https://www.findalljob.com/career-advice' },
   openGraph: {
+    type: 'website',
     title: 'Career Advice | FindAllJob',
     description: 'Practical resume tips, interview preparation, and AI-powered job search guidance.',
     url: 'https://www.findalljob.com/career-advice',

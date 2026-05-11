@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Full Stack Developer jobs using resume-based AI matching. Get matched by your specific tech stack — React, Node, Python, AWS — and improve your resume for each role.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-full-stack-developers' },
   openGraph: {
+    type: 'website',
     title: 'Full Stack Developer Jobs | FindAllJob',
     description: 'Discover better-fit Full Stack Developer jobs using resume-based AI matching.',
     url: 'https://www.findalljob.com/jobs-for-full-stack-developers',

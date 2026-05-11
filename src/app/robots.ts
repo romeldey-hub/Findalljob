@@ -5,7 +5,20 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/admin/'],
+      disallow: [
+      '/api/',
+      '/admin/',
+      '/dashboard/',
+      '/matches/',
+      '/optimizer/',
+      '/tracker/',
+      '/settings/',
+      '/resume/',
+      '/forgot-password',
+      '/reset-password',
+      '/callback',
+      '/banned',
+    ],
     },
     sitemap: 'https://www.findalljob.com/sitemap.xml',
   }

@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit UI/UX Designer jobs matched to your design skills, tools, and portfolio experience. Resume-based AI matching for product designers, UX researchers, and UI specialists.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-ui-ux-designers' },
   openGraph: {
+    type: 'website',
     title: 'UI UX Designer Jobs | FindAllJob',
     description: 'Find UI/UX Designer jobs that match your design skills, tools, and portfolio experience.',
     url: 'https://www.findalljob.com/jobs-for-ui-ux-designers',

@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit DevOps Engineer jobs matched to your cloud, CI/CD, and infrastructure skills. AI resume matching for AWS, Kubernetes, Terraform, and more.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-devops-engineers' },
   openGraph: {
+    type: 'website',
     title: 'DevOps Engineer Jobs | FindAllJob',
     description: 'Match your DevOps skills with relevant cloud, CI/CD, and infrastructure roles.',
     url: 'https://www.findalljob.com/jobs-for-devops-engineers',

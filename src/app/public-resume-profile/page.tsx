@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Create a public resume profile on FindAllJob and get discovered by recruiters. Share a professional profile link, showcase your skills and experience, and let opportunities come to you.',
   alternates: { canonical: 'https://www.findalljob.com/public-resume-profile' },
   openGraph: {
+    type: 'website',
     title: 'Public Resume Profile | FindAllJob',
     description: 'Create a public profile and get discovered by recruiters. Free to start.',
     url: 'https://www.findalljob.com/public-resume-profile',

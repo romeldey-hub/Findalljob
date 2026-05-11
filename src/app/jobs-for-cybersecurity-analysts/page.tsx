@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Cybersecurity Analyst jobs matched to your security skills, certifications, and domain expertise. AI resume matching for SOC, VAPT, and cloud security roles.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-cybersecurity-analysts' },
   openGraph: {
+    type: 'website',
     title: 'Cybersecurity Analyst Jobs | FindAllJob',
     description: 'Match your security skills and certifications with relevant cybersecurity roles.',
     url: 'https://www.findalljob.com/jobs-for-cybersecurity-analysts',

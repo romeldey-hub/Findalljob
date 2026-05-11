@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find AI Engineer jobs matched to your LLM, NLP, and ML engineering skills. Resume-based matching, AI resume optimization, and interview preparation — all in one place.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-ai-engineers' },
   openGraph: {
+    type: 'website',
     title: 'AI Engineer Jobs | FindAllJob',
     description: 'Find AI Engineer roles that match your skills, projects, and experience.',
     url: 'https://www.findalljob.com/jobs-for-ai-engineers',

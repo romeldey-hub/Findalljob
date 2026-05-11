@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Data Analyst jobs by matching your resume with relevant roles. Improve your resume, prepare for interviews, and apply smarter with FindAllJob.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-data-analysts' },
   openGraph: {
+    type: 'website',
     title: 'Data Analyst Jobs | FindAllJob',
     description: 'Find better-fit Data Analyst jobs by matching your resume with relevant roles.',
     url: 'https://www.findalljob.com/jobs-for-data-analysts',

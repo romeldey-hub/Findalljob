@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   description: 'FindAllJob is free to start. Upgrade to Pro Lite or Pro Plus to unlock AI resume optimization, mock interviews, and more AI credits. No credit card required to begin.',
   alternates: { canonical: 'https://www.findalljob.com/pricing' },
   openGraph: {
+    type: 'website',
     title: 'Pricing | FindAllJob',
     description: 'Free to start. Upgrade anytime. AI-powered job search tools.',
     url: 'https://www.findalljob.com/pricing',

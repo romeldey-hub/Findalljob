@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Find software engineering jobs matched to your tech stack and experience. AI ranks SWE roles by your resume fit score. Optimize your resume for each job description instantly.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-software-engineers' },
   openGraph: {
+    type: 'website',
     title: 'Jobs for Software Engineers | FindAllJob',
     description: 'AI job matching for software engineers. Find SWE roles ranked by your resume fit score.',
     url: 'https://www.findalljob.com/jobs-for-software-engineers',

@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Automatically optimize your resume for any job description using AI. Improve your ATS score, highlight the right keywords, and get more interview calls.',
   alternates: { canonical: 'https://www.findalljob.com/ai-resume-optimizer' },
   openGraph: {
+    type: 'website',
     title: 'AI Resume Optimizer — Tailor Your Resume for Every Job | FindAllJob',
     description: 'Automatically optimize your resume for any job description using AI. Improve your ATS score and get more interview calls.',
     url: 'https://www.findalljob.com/ai-resume-optimizer',

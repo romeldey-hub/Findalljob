@@ -120,11 +120,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const profileEntries = await fetchEligibleProfiles()
 
   return [
-    { url: BASE,                  lastModified: new Date(), changeFrequency: 'weekly',  priority: 1.0 },
-    { url: `${BASE}/pricing`,     lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${BASE}/about`,       lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
-    { url: `${BASE}/signup`,      lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${BASE}/login`,       lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
+    { url: BASE,              lastModified: new Date(), changeFrequency: 'weekly',  priority: 1.0 },
+    { url: `${BASE}/pricing`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
+    { url: `${BASE}/about`,   lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
     ...seoEntries,
     ...profileEntries,
   ]

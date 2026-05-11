@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: 'Practice real interview questions for your target role and resume. Get instant AI feedback on every answer. Build confidence before the actual interview.',
   alternates: { canonical: 'https://www.findalljob.com/ai-mock-interview' },
   openGraph: {
+    type: 'website',
     title: 'AI Mock Interview Practice | FindAllJob',
     description: 'Practice interview questions tailored to your resume and role. Get instant AI feedback.',
     url: 'https://www.findalljob.com/ai-mock-interview',

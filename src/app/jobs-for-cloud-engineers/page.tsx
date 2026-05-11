@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   description: 'Find better-fit Cloud Engineer jobs matched to your specific cloud platform skills. Resume-based AI matching for AWS, GCP, Azure, and multi-cloud infrastructure roles.',
   alternates: { canonical: 'https://www.findalljob.com/jobs-for-cloud-engineers' },
   openGraph: {
+    type: 'website',
     title: 'Cloud Engineer Jobs | FindAllJob',
     description: 'Match your AWS, GCP, or Azure skills with relevant cloud infrastructure roles.',
     url: 'https://www.findalljob.com/jobs-for-cloud-engineers',
