@@ -49,8 +49,8 @@ export function SubscriptionCard({ isPro, planTier, proUntil, cancelAtPeriodEnd 
 
       {/* Plan badge */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isPro ? 'bg-amber-50 dark:bg-amber-950' : 'bg-[#F8FAFC] dark:bg-[#263549]'}`}>
+        <div className="flex items-start gap-2">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isPro ? 'bg-amber-50 dark:bg-amber-950' : 'bg-[#F8FAFC] dark:bg-[#263549]'}`}>
             <Crown className={`w-4 h-4 ${isPro ? 'text-amber-500' : 'text-gray-400 dark:text-slate-500'}`} />
           </div>
           <div>

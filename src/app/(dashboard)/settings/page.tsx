@@ -79,7 +79,7 @@ export default async function SettingsPage() {
       </div>
 
       {/* ── Main layout: center + right ─────────────────────────── */}
-      <div className="flex flex-col xl:flex-row gap-5 items-start">
+      <div className="flex flex-col xl:flex-row gap-5">
 
         {/* Center: Profile + Password */}
         <div className="flex-1 min-w-0 space-y-5">
@@ -109,12 +109,14 @@ export default async function SettingsPage() {
 
         {/* Right: Subscription */}
         <div className="w-full xl:w-[300px] xl:flex-shrink-0">
-          <SubscriptionCard
-            isPro={isPro}
-            planTier={planTierRow?.plan_tier ?? 'free'}
-            proUntil={effectiveProUntil}
-            cancelAtPeriodEnd={billingRow?.cancel_at_period_end ?? false}
-          />
+          <div className="[@media(min-width:1280px)_and_(min-height:600px)]:sticky [@media(min-width:1280px)_and_(min-height:600px)]:top-6">
+            <SubscriptionCard
+              isPro={isPro}
+              planTier={planTierRow?.plan_tier ?? 'free'}
+              proUntil={effectiveProUntil}
+              cancelAtPeriodEnd={billingRow?.cancel_at_period_end ?? false}
+            />
+          </div>
         </div>
 
       </div>
