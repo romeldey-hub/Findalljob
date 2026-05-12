@@ -71,6 +71,14 @@ export async function ensureCredits(
   const total    = CREDIT_ALLOCATIONS[planType] ?? CREDIT_ALLOCATIONS.free
   const resetDay = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
+  // Look up email from profiles so new rows are created with email populated.
+  // ignoreDuplicates=true means this value is only written on first insert.
+  const { data: profileData } = await adminClient
+    .from('profiles')
+    .select('email')
+    .eq('user_id', userId)
+    .maybeSingle()
+
   await adminClient
     .from('ai_credits')
     .upsert(
@@ -81,6 +89,7 @@ export async function ensureCredits(
         used_credits:         0,
         reset_date:           resetDay,
         last_credit_reset_at: new Date().toISOString(),
+        email:                profileData?.email ?? null,
       },
       { onConflict: 'user_id', ignoreDuplicates: true },
     )

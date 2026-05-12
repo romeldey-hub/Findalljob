@@ -12,6 +12,7 @@ interface VisualResumeCardProps {
   resume: Resume
   parsedData: ParsedResume
   avatarUrl?: string | null
+  headline?: string | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,7 +176,7 @@ function ExperienceEntry({ exp }: { exp: ResumeExperience }) {
 
 // ── VisualResumeCard ──────────────────────────────────────────────────────────
 
-export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResumeCardProps) {
+export function VisualResumeCard({ resume, parsedData, avatarUrl, headline }: VisualResumeCardProps) {
   const { name, email, phone, location, summary, skills, experience, education, certifications } = parsedData
 
   const [showAllSkills, setShowAllSkills] = useState(false)
@@ -186,7 +187,9 @@ export function VisualResumeCard({ resume, parsedData, avatarUrl }: VisualResume
     .split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]).join('').toUpperCase() || '??'
 
-  const currentTitle = experience?.[0]?.title ?? null
+  // Use the profile headline as the subtitle under the name.
+  // Fall back to the first experience title only when no headline is saved.
+  const currentTitle = (headline?.trim() || null) ?? (experience?.[0]?.title ?? null)
 
   const SKILLS_PREVIEW = 10
   const visibleSkills = showAllSkills ? (skills ?? []) : (skills ?? []).slice(0, SKILLS_PREVIEW)

@@ -93,6 +93,8 @@ export default async function SettingsPage() {
             initialAvatarUrl={avatarUrl}
           />
 
+          <div id="public-profile"><PublicProfileCard /></div>
+
           <PasswordCard
             email={user?.email ?? ''}
             isGoogleUser={isGoogleUser}
@@ -100,8 +102,6 @@ export default async function SettingsPage() {
           />
 
           <AppearanceCard />
-
-          <div id="public-profile"><PublicProfileCard /></div>
 
           <DeleteAccountCard />
 

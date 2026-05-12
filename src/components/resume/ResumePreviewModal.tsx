@@ -508,16 +508,22 @@ export function ResumePreviewModal({
     setHasLocalEdits(true)
   }
 
-  // Auto-download: Pro users clicking the download icon trigger download on mount
+  // Auto-download: Pro users clicking the download icon trigger download silently then close
   useEffect(() => {
     if (autoDownload && canDownload) {
-      const t = setTimeout(() => void handleDownload(), 300)
+      const t = setTimeout(async () => {
+        await handleDownload()
+        onClose()
+      }, 50)
       return () => clearTimeout(t)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Silent mode: keep element in DOM for html-to-image capture but never show it
+  const silentMode = autoDownload && canDownload
+
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4${silentMode ? ' opacity-0 pointer-events-none' : ''}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl overflow-hidden">

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
-  Wand2, Download, Lightbulb,
+  Wand2, Download, CheckCircle2,
   ChevronRight, Loader2, Globe,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
 import type { ParsedResume } from '@/types'
 import { toDataUri } from '@/lib/utils'
 import { useCountUp, useAnimate } from '@/lib/useAnimations'
@@ -145,12 +146,21 @@ function ActionCard({
 
 // ── InsightsPanel ─────────────────────────────────────────────────────────────
 
+const swr_fetcher = (url: string) => fetch(url).then(r => r.json())
+
 export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: ParsedResume; avatarUrl?: string | null; userId?: string }) {
   const router       = useRouter()
   const printRef     = useRef<HTMLDivElement>(null)
   const [pdfBusy, setPdfBusy]             = useState(false)
   const [avatarDataUri, setAvatarDataUri] = useState<string | null>(null)
   const [showOptimize, setShowOptimize]   = useState(false)
+
+  const { data: appsData } = useSWR('/api/applications', swr_fetcher)
+  const appliedJobs = useMemo(() => {
+    return (appsData?.applications ?? []).filter(
+      (a: { status: string; job?: unknown }) => a.status === 'applied' && a.job
+    )
+  }, [appsData])
 
   useEffect(() => {
     if (!avatarUrl) {
@@ -161,10 +171,6 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
   }, [avatarUrl])
 
   const { overall, skillsMatch, expScore, contentQuality } = computeScores(parsedData)
-
-  const tip = (parsedData.experience?.some(e => (e.bullets?.length ?? 0) >= 3))
-    ? 'Add quantifiable achievements to your bullet points (e.g., "Increased revenue by 30%") to stand out to recruiters.'
-    : 'Expand each role with 3–5 bullet points highlighting key responsibilities and measurable outcomes.'
 
   async function handleDownloadPDF() {
     if (!printRef.current) return
@@ -221,7 +227,7 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
   }
 
   return (
-    <aside className="space-y-4 sticky top-6">
+    <aside className="space-y-4 [@media(min-width:1280px)_and_(min-height:750px)]:sticky [@media(min-width:1280px)_and_(min-height:750px)]:top-6">
 
       {/* ── Resume Score ────────────────────────────────────────── */}
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
@@ -270,19 +276,26 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
         </div>
       </div>
 
-      {/* ── Tip ─────────────────────────────────────────────────── */}
-      <div className="bg-[#EFF6FF] dark:bg-[#1E3A5F] rounded-2xl border border-blue-100 dark:border-blue-900 p-5">
-        <div className="flex items-center gap-2 mb-2.5">
-          <Lightbulb className="w-4 h-4 text-[#2563EB] flex-shrink-0" />
-          <span className="font-bold text-[11px] text-[#2563EB] uppercase tracking-[0.1em]">Tip</span>
+      {/* ── Applied Jobs ─────────────────────────────────────────── */}
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-[12px] uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500">
+            Applied Jobs
+          </h3>
+          {appliedJobs.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800">
+              {appliedJobs.length}
+            </span>
+          )}
         </div>
-        <p className="text-[13px] text-gray-700 dark:text-slate-300 leading-relaxed">{tip}</p>
-        <button
-          onClick={() => router.push('/optimizer')}
-          className="mt-3 flex items-center gap-1 text-[12px] font-semibold text-[#2563EB] hover:underline"
-        >
-          View Suggestions <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+        <ActionCard
+          icon={<CheckCircle2 className="w-[15px] h-[15px]" />}
+          label="View All Applied Jobs"
+          subtext="See jobs you have marked as applied"
+          onClick={() => router.push('/tracker')}
+          iconBg="bg-green-50 dark:bg-green-950/50"
+          iconColor="text-green-500 dark:text-green-400"
+        />
       </div>
 
       {/* Hidden A4 element captured by html-to-image for PDF download */}

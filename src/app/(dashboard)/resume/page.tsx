@@ -27,7 +27,7 @@ export default async function ResumePage() {
       .maybeSingle(),
     admin
       .from('profiles')
-      .select('avatar_url, role, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count')
+      .select('avatar_url, role, headline, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count')
       .eq('user_id', user!.id)
       .single(),
   ])
@@ -105,7 +105,7 @@ export default async function ResumePage() {
 
       {/* ── Profile + Insights ──────────────────────────────────── */}
       {hasResume && isParsed && (
-        <div className="flex flex-col xl:flex-row gap-5 items-start">
+        <div className="flex flex-col xl:flex-row gap-5">
 
           {/* Profile card — grows to fill */}
           <div className="flex-1 min-w-0">
@@ -113,6 +113,7 @@ export default async function ResumePage() {
               resume={resume as Resume}
               parsedData={resume.parsed_data as ParsedResume}
               avatarUrl={avatarUrl}
+              headline={profileRow?.headline ?? ''}
             />
           </div>
 
