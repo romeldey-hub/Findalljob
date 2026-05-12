@@ -12,8 +12,16 @@ interface PasswordCardProps {
 }
 
 export function PasswordCard({ email, isGoogleUser, hasPassword }: PasswordCardProps) {
-  const [open, setOpen] = useState(false)
-  const isSetFlow = isGoogleUser && !hasPassword
+  const [open,           setOpen]           = useState(false)
+  const [passwordJustSet, setPasswordJustSet] = useState(false)
+
+  // isSetFlow: Google user who has not yet set a password this session (or ever)
+  const isSetFlow = isGoogleUser && !hasPassword && !passwordJustSet
+
+  function handlePasswordSet() {
+    setPasswordJustSet(true)
+    setOpen(false)
+  }
 
   return (
     <>
@@ -28,7 +36,7 @@ export function PasswordCard({ email, isGoogleUser, hasPassword }: PasswordCardP
             <p className="text-[13px] font-semibold text-gray-600 dark:text-slate-300">Password</p>
             {isSetFlow
               ? <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">Not set — you sign in with Google</p>
-              : <p className="text-[13px] text-gray-400 dark:text-slate-500 tracking-[0.2em] mt-0.5">••••••••••••</p>
+              : <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">Password is set</p>
             }
           </div>
           <button
@@ -43,7 +51,7 @@ export function PasswordCard({ email, isGoogleUser, hasPassword }: PasswordCardP
         </div>
       </div>
 
-      {open && isSetFlow  && <SetPasswordModal    email={email} onClose={() => setOpen(false)} />}
+      {open && isSetFlow  && <SetPasswordModal    email={email} onClose={() => setOpen(false)} onPasswordSet={handlePasswordSet} />}
       {open && !isSetFlow && <ChangePasswordModal email={email} onClose={() => setOpen(false)} />}
     </>
   )
@@ -53,7 +61,7 @@ export function PasswordCard({ email, isGoogleUser, hasPassword }: PasswordCardP
 
 type SetStep = 'verify' | 'set'
 
-function SetPasswordModal({ email, onClose }: { email: string; onClose: () => void }) {
+function SetPasswordModal({ email, onClose, onPasswordSet }: { email: string; onClose: () => void; onPasswordSet: () => void }) {
   const [step,        setStep]        = useState<SetStep>('verify')
   const [sending,     setSending]     = useState(false)
   const [otp,         setOtp]         = useState('')
@@ -95,7 +103,7 @@ function SetPasswordModal({ email, onClose }: { email: string; onClose: () => vo
       const { error } = await supabase.auth.updateUser({ password: next, nonce: otp.trim() })
       if (error) { setError(error.message); return }
       toast.success('Password set successfully')
-      onClose()
+      onPasswordSet()
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

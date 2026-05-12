@@ -863,8 +863,9 @@ export default function MatchesPage() {
   const [detectedCity, setDetectedCity] = useState<string>(() =>
     typeof window !== 'undefined' ? (localStorage.getItem('detectedCity') ?? '') : ''
   )
-  const [analyzing, setAnalyzing]       = useState(false)
-  const [analyzeError, setAnalyzeError] = useState('')
+  const [analyzing, setAnalyzing]           = useState(false)
+  const [isLocationChange, setIsLocationChange] = useState(false)
+  const [analyzeError, setAnalyzeError]     = useState('')
   // Country confirmation pause state — set when the server asks the user to confirm
   // their target job search country before fetching begins.
   const [countryConfirmPending, setCountryConfirmPending] = useState<{
@@ -1157,6 +1158,7 @@ export default function MatchesPage() {
     } finally {
       currentAnalysisAbortRef.current = null
       setAnalyzing(false)
+      setIsLocationChange(false)
       if (!succeeded) setActiveSearchCountry(null)
     }
   }
@@ -1243,11 +1245,13 @@ export default function MatchesPage() {
   // ── handleCountryConfirmed ────────────────────────────────────────────────
   // Called by CountryConfirmStep when user picks a country or international mode.
   function handleCountryConfirmed(choice: CountryChoice) {
+    const wasLocationChange = countryConfirmPending?.context === 'change_search_location'
     if (choice.searchMode === 'country' && userId) {
       localStorage.setItem(lsKey('preferredSearchCountry', userId), choice.selectedSearchCountry)
       setPreferredSearchCountry(choice.selectedSearchCountry)
     }
     setCountryConfirmPending(null)
+    setIsLocationChange(wasLocationChange)
     void runAnalysis(pendingForce, choice)
   }
 
@@ -1260,8 +1264,9 @@ export default function MatchesPage() {
       currentAnalysisAbortRef.current = null
     }
     setAnalyzing(false)
-    setActiveSearchCountry(null)
-    // Restore confirmation UI — use last precheck info if available, otherwise show plain picker
+    // Do NOT clear activeSearchCountry here — it holds the committed location for the chip.
+    // The chip is hidden while countryConfirmPending is set, and restored on modal close.
+    // Only handleCountryConfirmed should update activeSearchCountry.
     const base = lastPrecheckInfoRef.current ?? { detectedCountry: null, detectedCountryCode: null }
     setCountryConfirmPending({ ...base, context: 'change_search_location' })
   }
@@ -1559,20 +1564,22 @@ export default function MatchesPage() {
         {/* ── Single results section — renders AI or Manual, never both ── */}
         <div className="flex-1 min-w-0 space-y-4" ref={aiSectionRef}>
 
-          <details className="xl:hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">
-              Refine Results
-              <SlidersHorizontal className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-            </summary>
-            <div className="border-t border-[#F1F5F9] dark:border-[#334155]">
-              <FilterPanel
-                filters={filters}
-                onChange={setFilters}
-                onClear={() => setFilters(DEFAULT_FILTERS)}
-                className="w-full"
-              />
-            </div>
-          </details>
+          {!analyzing && (
+            <details className="xl:hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">
+                Refine Results
+                <SlidersHorizontal className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+              </summary>
+              <div className="border-t border-[#F1F5F9] dark:border-[#334155]">
+                <FilterPanel
+                  filters={filters}
+                  onChange={setFilters}
+                  onClear={() => setFilters(DEFAULT_FILTERS)}
+                  className="w-full"
+                />
+              </div>
+            </details>
+          )}
 
           {/* Section header */}
           <div className="flex items-center justify-between">
@@ -1746,31 +1753,27 @@ export default function MatchesPage() {
             </div>
           )}
 
-          {/* Search intent chip — while analysis is running (moves into tier row once results load) */}
-          {activeSearchCountry && !countryConfirmPending && analyzing && (
-            <div className="flex items-center gap-0.5 text-[11px]">
-              <MapPin className="w-3 h-3 text-[#2563EB] flex-shrink-0 mr-0.5" />
-              {activeSearchCountry.mode === 'international_remote' ? (
-                <span className="text-gray-400 dark:text-slate-500 font-normal">Searching international / remote jobs</span>
-              ) : (
-                <>
-                  <span className="text-gray-400 dark:text-slate-500 font-normal">Searching in</span>
-                  <span className="text-gray-600 dark:text-slate-300 font-medium ml-0.5">{activeSearchCountry.name}</span>
-                </>
-              )}
-              <span className="text-gray-300 dark:text-slate-600 mx-0.5">·</span>
-              <button
-                onClick={handleChangeCountry}
-                className="text-[10px] text-gray-400 dark:text-slate-500 font-normal hover:underline underline-offset-2 hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
-              >
-                Change
-              </button>
-            </div>
-          )}
 
           {/* Activity view — shown while analysis is running */}
           {analyzing && (
-            <ProgressiveActivity title="Updating your matches" steps={activitySteps} />
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
+              <ProgressiveActivity title="Updating your matches" steps={activitySteps} />
+              <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
+                <div className="aspect-video w-full">
+                  <video
+                    className="h-full w-full object-cover"
+                    src="/coffee.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                  />
+                </div>
+                <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider bg-gradient-to-r from-slate-200 via-white to-slate-300 bg-clip-text text-transparent">
+                  Grab a coffee while AI finds your best-fit jobs.
+                </p>
+              </div>
+            </div>
           )}
 
           {searching && (
@@ -1905,12 +1908,14 @@ export default function MatchesPage() {
         </div>
 
         {/* ── Filter panel ─────────────────────────────────────────── */}
-        <FilterPanel
-          filters={filters}
-          onChange={setFilters}
-          onClear={() => setFilters(DEFAULT_FILTERS)}
-          className="hidden xl:block w-60 flex-shrink-0"
-        />
+        {!analyzing && (
+          <FilterPanel
+            filters={filters}
+            onChange={setFilters}
+            onClear={() => setFilters(DEFAULT_FILTERS)}
+            className="hidden xl:block w-60 flex-shrink-0"
+          />
+        )}
       </div>
 
       {viewOptimized && (() => {

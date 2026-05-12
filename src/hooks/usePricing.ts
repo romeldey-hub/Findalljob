@@ -21,15 +21,21 @@ function setCachedCountry(code: string) {
 }
 
 export function usePricing(): RegionPricing {
-  const [region, setRegion] = useState<RegionPricing>(() => {
-    if (isLocalhost()) return getRegionPricing('in')
-    return getRegionPricing(getCachedCountry())
-  })
+  // Start with the default (null → USD) on both server and client so the
+  // initial render matches and React's hydration never sees a mismatch.
+  // The actual region is applied in useEffect (client-only).
+  const [region, setRegion] = useState<RegionPricing>(() => getRegionPricing(null))
 
   useEffect(() => {
-    if (isLocalhost()) return
-    if (getCachedCountry() !== null) return
-
+    if (isLocalhost()) {
+      setRegion(getRegionPricing('in'))
+      return
+    }
+    const cached = getCachedCountry()
+    if (cached !== null) {
+      setRegion(getRegionPricing(cached))
+      return
+    }
     fetch('/api/geo')
       .then((r) => r.json())
       .then(({ countryCode }: { countryCode: string }) => {

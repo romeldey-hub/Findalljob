@@ -66,7 +66,7 @@ export async function GET() {
   // Compute the parsed resume hash so we can find the matching run
   const parsedData = resumeResult.data?.parsed_data as Record<string, unknown> | null
   const parsedResumeForHash = parsedData as ParsedResume | null
-  const resumeHash = parsedResumeForHash?.name
+  const resumeHash = parsedResumeForHash
     ? computeParsedResumeHash(parsedResumeForHash as ParsedResume)
     : null
 

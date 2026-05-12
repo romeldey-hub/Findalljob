@@ -448,11 +448,28 @@ export function ResumePreviewModal({
         }
       }))
 
+      // Inject a style that strips all diff highlight marks before capture
+      const cleanStyle = document.createElement('style')
+      cleanStyle.id = 'pdf-clean-override'
+      cleanStyle.textContent = `
+        #resume-content mark {
+          background: none !important;
+          background-color: transparent !important;
+          color: inherit !important;
+          border-radius: 0 !important;
+          padding: 0 !important;
+          -webkit-text-decoration: none !important;
+          text-decoration: none !important;
+        }
+      `
+      document.head.appendChild(cleanStyle)
+
       let imgData: string
       try {
         imgData = await toPng(element, { pixelRatio: 2, backgroundColor: '#ffffff', skipFonts: true, cacheBust: true })
       } finally {
         restores.forEach(r => r())
+        document.head.removeChild(cleanStyle)
       }
 
       const naturalSize = await new Promise<{ w: number; h: number }>((resolve, reject) => {

@@ -488,7 +488,15 @@ export async function POST(req: Request) {
 
         // ── 2. Parse resume if not already done ──────────────────────────────
         let parsedResume = resume.parsed_data as ParsedResume
-        if (!parsedResume?.name) {
+        // Use the same "already parsed" check as the resume page — name OR skills OR experience
+        // ensures a location-change flow never re-parses a resume that was parsed without a name
+        const isAlreadyParsed = Boolean(
+          parsedResume?.name ||
+          (Array.isArray(parsedResume?.skills) && parsedResume.skills.length > 0) ||
+          (Array.isArray(parsedResume?.experience) && parsedResume.experience.length > 0)
+        )
+        console.log(`[analyze] parsed_resume_status: isAlreadyParsed=${isAlreadyParsed} name=${!!parsedResume?.name} skills=${Array.isArray(parsedResume?.skills) ? parsedResume.skills.length : 0} exp=${Array.isArray(parsedResume?.experience) ? parsedResume.experience.length : 0}`)
+        if (!isAlreadyParsed) {
           try {
             if (resume.raw_text && resume.raw_text.length >= 50) {
               parsedResume = await parseResume(resume.raw_text, user.id, !isPro)
@@ -594,7 +602,7 @@ export async function POST(req: Request) {
         const resumeCountry = parsedResume.location?.trim() ?? ''
         const isInternational = searchMode === 'international_remote'
         const searchCountryCode = (!isInternational && selectedSearchCountry) ? selectedSearchCountry : ''
-        const profileLocation = isInternational ? '' : (COUNTRY_CODE_TO_NAME[searchCountryCode] ?? '')
+        const profileLocation = isInternational ? '' : (COUNTRY_CODE_TO_NAME[searchCountryCode] ?? searchCountryCode ?? '')
         const countryCode: string | undefined = isInternational ? undefined : (searchCountryCode || undefined)
         const isIndiaProfile = !isInternational && searchCountryCode === 'in'
 
@@ -925,8 +933,24 @@ export async function POST(req: Request) {
           console.log('[analyze] rerank complete, top score:', ranked[0]?.score, '| ranked by source:', sourceSummary(ranked))
         } catch (err) {
           const msg = apiErrMsg(err)
-          console.error('[analyze] rerank failed:', msg)
-          throw new Error(`AI matching failed: ${msg}`)
+          console.error('[analyze] rerank failed — falling back to heuristic scoring:', msg)
+          // Fallback: score jobs by keyword overlap so the run still produces results
+          const resumeSkills = new Set((parsedResume.skills ?? []).map((s) => s.toLowerCase()))
+          ranked = jobsForScoring.map((job) => {
+            const text = `${job.title} ${job.description ?? ''}`.toLowerCase()
+            const matched = [...resumeSkills].filter((s) => text.includes(s))
+            const score = Math.min(75, 40 + matched.length * 3)
+            return {
+              externalId:    job.externalId,
+              source:        job.source,
+              score,
+              reasoning:     'Scored by keyword overlap (AI ranking unavailable)',
+              bridge_advice: '',
+              match_reasons: matched.slice(0, 3),
+              matched_skills: matched,
+              missing_skills: [],
+            }
+          }).sort((a, b) => b.score - a.score)
         }
 
         const jobMap = new Map(jobsForScoring.map((j) => [`${j.source}:${j.externalId}`, j]))
@@ -968,7 +992,7 @@ export async function POST(req: Request) {
 
         const [matchResult, cvSuggestions] = await Promise.all([
           matchRows.length > 0
-            ? admin.from('job_matches').insert(matchRows)
+            ? admin.from('job_matches').upsert(matchRows, { onConflict: 'user_id,job_id' })
             : Promise.resolve({ error: null }),
           generateCvSuggestions(
             parsedResume,
