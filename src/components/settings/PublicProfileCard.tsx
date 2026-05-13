@@ -318,7 +318,7 @@ export function PublicProfileCard() {
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6">
         <div className="flex items-center gap-2 mb-1">
           <Globe className="w-4 h-4 text-[#2563EB]" />
-          <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Public Profile</h2>
+          <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Public Resume</h2>
         </div>
         <div className="flex items-center gap-2 mt-4 text-[13px] text-gray-400">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />Loading…
@@ -337,7 +337,7 @@ export function PublicProfileCard() {
             ? <Globe className="w-4 h-4 text-[#2563EB]" />
             : <Lock className="w-4 h-4 text-gray-400" />
           }
-          <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Public Profile</h2>
+          <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Public Resume</h2>
         </div>
         {settings.profile_public && saved.username && (
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-[11px] font-semibold text-green-600 dark:text-green-400">
