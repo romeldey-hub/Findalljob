@@ -27,6 +27,7 @@ function toOptimized(pd: ParsedResume): OptimizedResumeData {
     skills:         pd.skills         ?? [],
     education:      pd.education      ?? [],
     certifications: pd.certifications ?? [],
+    sectionNotes:   pd.sectionNotes,
     additionalSections: (pd.sections ?? []).map(s => ({ title: s.title, content: s.content })),
     ats_score:               0,
     original_score:          undefined,
@@ -58,6 +59,7 @@ function toParsed(opt: OptimizedResumeData, original: ParsedResume): ParsedResum
     skills:         opt.skills,
     education:      opt.education,
     certifications: opt.certifications,
+    sectionNotes:   opt.sectionNotes,
     // Preserve custom/additional sections from the editor back into parsed sections
     sections: opt.additionalSections?.map(s => ({
       title:   s.title,

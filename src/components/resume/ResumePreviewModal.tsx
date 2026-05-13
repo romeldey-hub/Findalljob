@@ -171,6 +171,7 @@ export function ResumePreviewModal({
   const [aiLoading, setAILoading]         = useState<Record<string, boolean>>({})
   // Tracks whether the user edited and saved from viewMode — switches footer from Close to Save
   const [hasLocalEdits, setHasLocalEdits] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'exp' | 'edu' | 'cert'; idx: number } | null>(null)
 
   const d        = data
   const initials = (d.name ?? '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?'
@@ -298,6 +299,44 @@ export function ResumePreviewModal({
         i === expIdx ? { ...exp, bullets: exp.bullets.filter((_, j) => j !== bulletIdx) } : exp
       ),
     }))
+  }
+
+  function updateSectionNote(section: 'experience' | 'education' | 'certifications' | 'skills', value: string) {
+    setEditData(prev => ({ ...prev, sectionNotes: { ...(prev.sectionNotes ?? {}), [section]: value } }))
+  }
+  function removeSectionNote(section: 'experience' | 'education' | 'certifications' | 'skills') {
+    setEditData(prev => {
+      const notes = { ...(prev.sectionNotes ?? {}) }
+      delete notes[section]
+      return { ...prev, sectionNotes: Object.keys(notes).length ? notes : undefined }
+    })
+  }
+  function addExperience() {
+    setEditData(prev => ({
+      ...prev,
+      experience: [...prev.experience, { title: '', company: '', location: '', start_date: '', end_date: '', bullets: [''] }],
+    }))
+  }
+  function removeExperience(idx: number) {
+    setEditData(prev => ({ ...prev, experience: prev.experience.filter((_, i) => i !== idx) }))
+    setDeleteConfirm(null)
+  }
+  function addEducation() {
+    setEditData(prev => ({
+      ...prev,
+      education: [...(prev.education ?? []), { school: '', degree: '', field: '', graduation_year: '' }],
+    }))
+  }
+  function removeEducation(idx: number) {
+    setEditData(prev => ({ ...prev, education: (prev.education ?? []).filter((_, i) => i !== idx) }))
+    setDeleteConfirm(null)
+  }
+  function addCertification() {
+    setEditData(prev => ({ ...prev, certifications: [...(prev.certifications ?? []), ''] }))
+  }
+  function removeCertification(idx: number) {
+    setEditData(prev => ({ ...prev, certifications: (prev.certifications ?? []).filter((_, i) => i !== idx) }))
+    setDeleteConfirm(null)
   }
 
   function updateEduField(eduIdx: number, key: string, value: string) {
@@ -523,6 +562,7 @@ export function ResumePreviewModal({
   const silentMode = autoDownload && canDownload
 
   return createPortal(
+    <>
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4${silentMode ? ' opacity-0 pointer-events-none' : ''}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -592,12 +632,37 @@ export function ResumePreviewModal({
                 />
               </section>
 
-              {(editData.experience?.length ?? 0) > 0 && (
-                <section>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Work Experience</p>
+              <section>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">Work Experience</p>
+
+                  {editData.sectionNotes?.experience !== undefined ? (
+                    <div className="mb-3 relative">
+                      <textarea
+                        rows={2}
+                        value={editData.sectionNotes.experience}
+                        onChange={e => updateSectionNote('experience', e.target.value)}
+                        placeholder="Add a short note about your overall work experience..."
+                        className="w-full px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none pr-8"
+                      />
+                      <button onClick={() => removeSectionNote('experience')} className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => updateSectionNote('experience', '')} className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 mb-3 transition-colors">
+                      <Plus className="w-3 h-3" />Add section note
+                    </button>
+                  )}
+
+                  {(editData.experience?.length ?? 0) > 0 && (
                   <div className="space-y-4">
                     {editData.experience.map((exp, i) => (
                       <div key={i} className="bg-[#F8FAFC] dark:bg-[#0F172A]/60 rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-4">
+                        <div className="flex justify-end mb-2">
+                          <button onClick={() => setDeleteConfirm({ type: 'exp', idx: i })} className="flex items-center gap-1 text-[11px] text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded-lg transition-colors">
+                            <Trash2 className="w-3 h-3" />Remove
+                          </button>
+                        </div>
                         {/* Job title + company + dates — all editable */}
                         <div className="grid grid-cols-2 gap-2 mb-3">
                           <div>
@@ -689,11 +754,35 @@ export function ResumePreviewModal({
                       </div>
                     ))}
                   </div>
-                </section>
-              )}
+                  )}
+
+                  <button onClick={addExperience} className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium mt-3">
+                    <Plus className="w-3.5 h-3.5" />Add Work Experience
+                  </button>
+              </section>
 
               <section>
-                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Skills</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">Skills</p>
+
+                {editData.sectionNotes?.skills !== undefined ? (
+                  <div className="mb-3 relative">
+                    <textarea
+                      rows={2}
+                      value={editData.sectionNotes.skills}
+                      onChange={e => updateSectionNote('skills', e.target.value)}
+                      placeholder="Add a short note about your key skills..."
+                      className="w-full px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none pr-8"
+                    />
+                    <button onClick={() => removeSectionNote('skills')} className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => updateSectionNote('skills', '')} className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 mb-3 transition-colors">
+                    <Plus className="w-3 h-3" />Add section note
+                  </button>
+                )}
+
                 <div className="flex flex-wrap gap-2 mb-3">
                   {(editData.skills ?? []).map((skill, i) => (
                     <span key={i} className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#DBEAFE] dark:border-[#1E3A5F] text-[12px] font-medium text-[#2563EB]">
@@ -722,12 +811,37 @@ export function ResumePreviewModal({
                 </div>
               </section>
 
-              {(editData.education?.length ?? 0) > 0 && (
-                <section>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Education</p>
+              <section>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">Education</p>
+
+                  {editData.sectionNotes?.education !== undefined ? (
+                    <div className="mb-3 relative">
+                      <textarea
+                        rows={2}
+                        value={editData.sectionNotes.education}
+                        onChange={e => updateSectionNote('education', e.target.value)}
+                        placeholder="Add a short note about your education background..."
+                        className="w-full px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none pr-8"
+                      />
+                      <button onClick={() => removeSectionNote('education')} className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => updateSectionNote('education', '')} className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 mb-3 transition-colors">
+                      <Plus className="w-3 h-3" />Add section note
+                    </button>
+                  )}
+
+                  {(editData.education?.length ?? 0) > 0 && (
                   <div className="space-y-3">
                     {editData.education.map((edu, i) => (
                       <div key={i} className="bg-[#F8FAFC] dark:bg-[#0F172A]/60 rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-4">
+                        <div className="flex justify-end mb-2">
+                          <button onClick={() => setDeleteConfirm({ type: 'edu', idx: i })} className="flex items-center gap-1 text-[11px] text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded-lg transition-colors">
+                            <Trash2 className="w-3 h-3" />Remove
+                          </button>
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-medium text-gray-400 dark:text-slate-500 mb-1">Degree</label>
@@ -773,13 +887,37 @@ export function ResumePreviewModal({
                       </div>
                     ))}
                   </div>
-                </section>
-              )}
+                  )}
 
-              {(editData.certifications?.length ?? 0) > 0 && (
-                <section>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-3">Certifications</p>
-                  <div className="space-y-2">
+                  <button onClick={addEducation} className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium mt-3">
+                    <Plus className="w-3.5 h-3.5" />Add Education
+                  </button>
+              </section>
+
+              <section>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">Certifications</p>
+
+                  {editData.sectionNotes?.certifications !== undefined ? (
+                    <div className="mb-3 relative">
+                      <textarea
+                        rows={2}
+                        value={editData.sectionNotes.certifications}
+                        onChange={e => updateSectionNote('certifications', e.target.value)}
+                        placeholder="Add a short note about your certifications..."
+                        className="w-full px-3 py-2 text-[12px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] resize-none pr-8"
+                      />
+                      <button onClick={() => removeSectionNote('certifications')} className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => updateSectionNote('certifications', '')} className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 mb-3 transition-colors">
+                      <Plus className="w-3 h-3" />Add section note
+                    </button>
+                  )}
+
+                  {(editData.certifications?.length ?? 0) > 0 && (
+                  <div className="space-y-2 mb-3">
                     {editData.certifications.map((cert, i) => (
                       <div key={i} className="flex gap-2">
                         <input
@@ -792,7 +930,7 @@ export function ResumePreviewModal({
                           className="flex-1 px-3 py-2 text-[13px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB]"
                         />
                         <button
-                          onClick={() => setEditData(prev => ({ ...prev, certifications: prev.certifications.filter((_, j) => j !== i) }))}
+                          onClick={() => setDeleteConfirm({ type: 'cert', idx: i })}
                           className="w-8 h-9 rounded-lg flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -800,8 +938,12 @@ export function ResumePreviewModal({
                       </div>
                     ))}
                   </div>
-                </section>
-              )}
+                  )}
+
+                  <button onClick={addCertification} className="flex items-center gap-1.5 text-[12px] text-[#2563EB] hover:text-blue-700 font-medium">
+                    <Plus className="w-3.5 h-3.5" />Add Certification
+                  </button>
+              </section>
 
               {/* ── Custom / Additional Sections ──────────────────────── */}
               <section>
@@ -1106,6 +1248,11 @@ export function ResumePreviewModal({
                         Key Skills
                       </p>
                       <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', marginBottom: '12px' }} />
+                      {d.sectionNotes?.skills && (
+                        <p style={{ fontSize: '10px', color: '#D1D5DB', lineHeight: '1.5', marginBottom: '8px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                          {d.sectionNotes.skills}
+                        </p>
+                      )}
                       {/* flex-wrap grid: each tag adapts width to content, wraps cleanly */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {d.skills.map((skill, i) => (
@@ -1155,6 +1302,11 @@ export function ResumePreviewModal({
                         <h3 className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#0F172A] leading-[1.4]">Work Experience</h3>
                         <div className="flex-1 h-px bg-[#E5E7EB]" />
                       </div>
+                      {d.sectionNotes?.experience && (
+                        <p className="text-[12px] text-gray-600 mb-4 whitespace-pre-line" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                          {d.sectionNotes.experience}
+                        </p>
+                      )}
                       <div className="relative">
                         <div className="absolute left-2.5 top-5 bottom-2 w-px bg-[#E5E7EB]" aria-hidden="true" />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1200,6 +1352,11 @@ export function ResumePreviewModal({
                         <h3 className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#0F172A] leading-[1.4]">Education</h3>
                         <div className="flex-1 h-px bg-[#E5E7EB]" />
                       </div>
+                      {d.sectionNotes?.education && (
+                        <p className="text-[12px] text-gray-600 mb-3 whitespace-pre-line" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                          {d.sectionNotes.education}
+                        </p>
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {d.education.map((edu, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', padding: '14px', borderRadius: '12px', background: '#F8FAFC', border: '1px solid #E5E7EB', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
@@ -1226,6 +1383,11 @@ export function ResumePreviewModal({
                         <h3 className="text-[10px] font-bold tracking-[0.14em] uppercase text-[#0F172A] leading-[1.4]">Certifications</h3>
                         <div className="flex-1 h-px bg-[#E5E7EB]" />
                       </div>
+                      {d.sectionNotes?.certifications && (
+                        <p className="text-[12px] text-gray-600 mb-3 whitespace-pre-line" style={{ lineHeight: '1.65', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                          {d.sectionNotes.certifications}
+                        </p>
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {d.certifications.map((cert, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', borderRadius: '12px', background: '#F8FAFC', border: '1px solid #E5E7EB', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
@@ -1411,7 +1573,36 @@ export function ResumePreviewModal({
           )}
         </div>
       </div>
-    </div>,
+    </div>
+
+    {deleteConfirm && (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} />
+        <div className="relative w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl p-6 z-10">
+          <h3 className="font-bold text-[17px] text-[#0F172A] dark:text-[#F1F5F9] mb-2">Remove this section?</h3>
+          <p className="text-[13px] text-gray-500 dark:text-slate-400 leading-relaxed mb-6">This will remove this entry from your resume.</p>
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => setDeleteConfirm(null)}
+              className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-[13px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (deleteConfirm.type === 'exp') removeExperience(deleteConfirm.idx)
+                else if (deleteConfirm.type === 'edu') removeEducation(deleteConfirm.idx)
+                else removeCertification(deleteConfirm.idx)
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold transition-all"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>,
     document.body
   )
 }

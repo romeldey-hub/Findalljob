@@ -135,6 +135,9 @@ export function ResumePrintView({
         {/* Key Skills */}
         {(data.skills?.length ?? 0) > 0 && (
           <SideSection label="Key Skills">
+            {data.sectionNotes?.skills && (
+              <p style={{ fontSize: '7pt', color: C.sideText, lineHeight: 1.4, marginBottom: 4 }}>{data.sectionNotes.skills}</p>
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
               {(data.skills ?? []).map((skill: string, i: number) => (
                 <span key={i} style={{
@@ -155,6 +158,9 @@ export function ResumePrintView({
         {/* Certifications */}
         {(data.certifications?.length ?? 0) > 0 && (
           <SideSection label="Certifications">
+            {data.sectionNotes?.certifications && (
+              <p style={{ fontSize: '7pt', color: C.sideText, lineHeight: 1.4, marginBottom: 4 }}>{data.sectionNotes.certifications}</p>
+            )}
             {(data.certifications ?? []).map((cert: string, i: number) => (
               <ContactLine key={i}>{cert}</ContactLine>
             ))}
@@ -185,6 +191,9 @@ export function ResumePrintView({
         {(data.experience?.length ?? 0) > 0 && (
           <div style={{ marginBottom: 13 }}>
             <SectionHead title="Work Experience" />
+            {data.sectionNotes?.experience && (
+              <p style={{ fontSize: '8.5pt', color: C.bodyText, lineHeight: 1.55, margin: '0 0 8pt 0' }}>{data.sectionNotes.experience}</p>
+            )}
             <div style={{ paddingLeft: 14 }}>
               {(data.experience ?? []).map((exp, i: number) => {
                 const duration = computeDuration(exp.start_date, exp.end_date)
@@ -229,6 +238,9 @@ export function ResumePrintView({
         {(data.education?.length ?? 0) > 0 && (
           <div>
             <SectionHead title="Education" />
+            {data.sectionNotes?.education && (
+              <p style={{ fontSize: '8.5pt', color: C.bodyText, lineHeight: 1.55, margin: '0 0 6pt 0' }}>{data.sectionNotes.education}</p>
+            )}
             {(data.education ?? []).map((edu, i: number) => (
               <div key={i} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',

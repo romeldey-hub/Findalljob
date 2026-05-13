@@ -48,6 +48,13 @@ export interface ParsedResume {
    * Used to pass complete content to AI optimization and to display on all resume views.
    */
   sections?: ResumeSection[]
+  /** Optional free-text notes stored at the section level (not inside individual cards). */
+  sectionNotes?: {
+    experience?:     string
+    education?:      string
+    certifications?: string
+    skills?:         string
+  }
 }
 
 export interface Resume {

@@ -37,6 +37,13 @@ export interface OptimizedResumeData {
     graduation_year: string
   }>
   certifications: string[]
+  /** Optional free-text notes stored at the section level (not inside individual cards). */
+  sectionNotes?: {
+    experience?:     string
+    education?:      string
+    certifications?: string
+    skills?:         string
+  }
   /**
    * Every non-standard section from the original resume (Languages, Personal Details,
    * Hobbies, Declaration, etc.) output here — never merged into other fields.
