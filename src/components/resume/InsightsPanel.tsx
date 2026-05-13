@@ -250,7 +250,7 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
         <div className="space-y-2">
           <ActionCard
             icon={<Globe className="w-[15px] h-[15px]" />}
-            label="Create Public Profile"
+            label="Create Public Resume"
             subtext="Get discovered by recruiters online"
             onClick={() => router.push('/settings#public-profile')}
             iconBg="bg-blue-50 dark:bg-blue-950/50"
