@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X, Building2, Globe, MapPin, Users,
-  Lightbulb, AlertCircle, Loader2, ExternalLink,
+  Lightbulb, AlertCircle, ExternalLink,
 } from 'lucide-react'
 
 interface CompanySnapshot {
@@ -38,6 +39,10 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
   const [needsUpgrade, setNeedsUpgrade] = useState(false)
+  const [mounted,      setMounted]      = useState(false)
+
+  // Mark mounted so portal target is available
+  useEffect(() => { setMounted(true) }, [])
 
   // Lock body scroll while open
   useEffect(() => {
@@ -95,8 +100,8 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
     return () => { cancelled = true }
   }, [job.id, job.company, job.title, job.description, job.location, job.url, job.source])
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+  const modal = (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
 
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -274,4 +279,7 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
       </div>
     </div>
   )
+
+  if (!mounted) return null
+  return createPortal(modal, document.body)
 }
