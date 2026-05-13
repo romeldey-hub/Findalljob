@@ -5,7 +5,7 @@ import { isProUser }                from '@/lib/admin'
 import { resolveProUntil }          from '@/lib/billing'
 import { FREE_LIMITS }              from '@/lib/limits'
 import { computeParsedResumeHash }  from '@/lib/resume-hash'
-import { locationMatchesCountry }   from '@/lib/jobs/location'
+import { locationMatchesCountry, detectLocation } from '@/lib/jobs/location'
 import type { ApplyStatus, ParsedResume } from '@/types'
 
 // Maps the ISO-2 country code sent by the frontend to the human-readable
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const { data: profileRow } = await admin
     .from('profiles')
-    .select('role, subscription_status, pro_until')
+    .select('role, subscription_status, pro_until, location')
     .eq('user_id', user.id)
     .single()
   const effectiveProUntil = await resolveProUntil(
@@ -100,32 +100,44 @@ export async function GET(req: NextRequest) {
     Object.entries(CC_TO_LOCATION).map(([k, v]) => [v, k])
   )
 
+  // When the client sends no ?cc, derive a country hint from the user's profile location
+  // (resume location e.g. "Delhi, India" → "in"). This ensures production users without
+  // a localStorage preference still see their country's jobs.
+  const profileLocationRaw = (profileRow as Record<string, unknown> | null)?.location as string | null
+  const profileCc = (!cc && profileLocationRaw)
+    ? detectLocation(profileLocationRaw).countryCode
+    : ''
+
   // Find the latest successful search run for this user+resume combination.
-  // When a country code is supplied, prefer a run scoped to that country (detected_location).
-  // Falls back to the latest run of any country so existing users without runs still see matches.
+  //  1. Explicit ?cc → find run matching that country
+  //  2. No ?cc but profile has a country → find run matching profile country
+  //  3. Last resort: latest run of any country (guarded by safety filter below)
   let latestRunId:          string | null = null
   let runDetectedLocation:  string | null = null  // detected_location from the chosen run
   if (resumeHash) {
-    // 1. Try to find a run for the specific country the user is browsing
-    if (targetLocation) {
+    // Step 1 / 2: look for a run matching the known or inferred country
+    const lookupLocation = targetLocation
+      || (profileCc && profileCc !== 'international_remote' ? CC_TO_LOCATION[profileCc] : null)
+
+    if (lookupLocation) {
       const { data: countryRun } = await admin
         .from('job_search_runs')
         .select('id, detected_location')
         .eq('user_id', user.id)
         .eq('resume_hash', resumeHash)
         .eq('status', 'success')
-        .eq('detected_location', targetLocation)
+        .eq('detected_location', lookupLocation)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       latestRunId         = countryRun?.id ?? null
       runDetectedLocation = countryRun?.detected_location ?? null
       if (latestRunId) {
-        console.log(`[jobs/match] using country-specific run for ${targetLocation}: ${latestRunId}`)
+        console.log(`[jobs/match] country run found for "${lookupLocation}": ${latestRunId}`)
       }
     }
 
-    // 2. Fallback: latest run regardless of country (safety net for users with older data)
+    // Step 3: fallback to latest run of any country
     if (!latestRunId) {
       const { data: anyRun } = await admin
         .from('job_search_runs')
@@ -138,17 +150,17 @@ export async function GET(req: NextRequest) {
         .maybeSingle()
       latestRunId         = anyRun?.id ?? null
       runDetectedLocation = anyRun?.detected_location ?? null
-      if (latestRunId && targetLocation) {
-        console.log(`[jobs/match] no ${targetLocation} run found — falling back to latest run (safety filter will enforce country)`)
-      }
+      console.log(`[jobs/match] fallback to latest run: ${latestRunId} (detected_location="${runDetectedLocation}")`)
     }
   }
 
-  // Derive effective country code: prefer the explicit ?cc param; if absent, derive from run
+  // Effective country: explicit ?cc > profile-derived > run-derived
   const effectiveCc: string = cc
+    || profileCc
     || (runDetectedLocation === 'international_remote'
         ? 'international_remote'
         : (LOCATION_TO_CC[runDetectedLocation ?? ''] ?? ''))
+
   // What the frontend should display as active country (code + name)
   const runCountryCode = effectiveCc || null
   const runCountryName = runCountryCode === 'international_remote'
