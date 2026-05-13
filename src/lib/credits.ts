@@ -13,7 +13,6 @@ export const CREDIT_COSTS = {
   jobExpand:        1,    // expand job pool with AI reranking
   resumeGenerate:   2,    // AI resume builder (full profile generation)
   followUpMessage:  0.5,  // AI follow-up / thank-you message generation
-  companySnapshot:  0.5,  // AI company snapshot (first generation; cache hits are free)
 } as const
 
 export type CreditFeature = keyof typeof CREDIT_COSTS

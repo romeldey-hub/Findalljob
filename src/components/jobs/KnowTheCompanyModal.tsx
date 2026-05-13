@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Building2, Globe, MapPin, Users,
-  Lightbulb, AlertCircle, ExternalLink,
+  AlertCircle, ExternalLink,
 } from 'lucide-react'
 
 interface CompanySnapshot {
@@ -35,11 +35,10 @@ interface Props {
 }
 
 export function KnowTheCompanyModal({ job, onClose }: Props) {
-  const [snapshot,     setSnapshot]     = useState<CompanySnapshot | null>(null)
-  const [loading,      setLoading]      = useState(true)
-  const [error,        setError]        = useState<string | null>(null)
-  const [needsUpgrade, setNeedsUpgrade] = useState(false)
-  const [mounted,      setMounted]      = useState(false)
+  const [snapshot, setSnapshot] = useState<CompanySnapshot | null>(null)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
+  const [mounted,  setMounted]  = useState(false)
 
   // Mark mounted so portal target is available
   useEffect(() => { setMounted(true) }, [])
@@ -81,11 +80,7 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
         if (cancelled) return
 
         if (!res.ok) {
-          if (data.requiresUpgrade) {
-            setNeedsUpgrade(true)
-          } else {
-            setError(data.error ?? 'Something went wrong. Please try again.')
-          }
+          setError(data.error ?? 'Something went wrong. Please try again.')
         } else {
           setSnapshot(data.snapshot as CompanySnapshot)
         }
@@ -149,20 +144,6 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
                 <div className="h-3 bg-gray-100 dark:bg-[#263549] rounded w-4/5" />
                 <div className="h-3 bg-gray-100 dark:bg-[#263549] rounded w-3/4" />
               </div>
-            </div>
-          )}
-
-          {/* Insufficient credits */}
-          {!loading && needsUpgrade && (
-            <div className="text-center py-8">
-              <Lightbulb className="w-8 h-8 text-amber-400 mx-auto mb-3" />
-              <p className="font-semibold text-[14px] text-[#0F172A] dark:text-[#F1F5F9] mb-1.5">
-                Not enough credits
-              </p>
-              <p className="text-[12px] text-gray-500 dark:text-slate-400 leading-relaxed">
-                Generating a company snapshot costs 0.5 credits.
-                Upgrade your plan to get more monthly credits.
-              </p>
             </div>
           )}
 
