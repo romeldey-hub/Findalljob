@@ -95,16 +95,22 @@ export async function GET(req: NextRequest) {
     ? computeParsedResumeHash(parsedResumeForHash as ParsedResume)
     : null
 
+  // Reverse map: "India" → "in", used when client sends no cc (e.g. production with no localStorage)
+  const LOCATION_TO_CC: Record<string, string> = Object.fromEntries(
+    Object.entries(CC_TO_LOCATION).map(([k, v]) => [v, k])
+  )
+
   // Find the latest successful search run for this user+resume combination.
   // When a country code is supplied, prefer a run scoped to that country (detected_location).
   // Falls back to the latest run of any country so existing users without runs still see matches.
-  let latestRunId: string | null = null
+  let latestRunId:          string | null = null
+  let runDetectedLocation:  string | null = null  // detected_location from the chosen run
   if (resumeHash) {
     // 1. Try to find a run for the specific country the user is browsing
     if (targetLocation) {
       const { data: countryRun } = await admin
         .from('job_search_runs')
-        .select('id')
+        .select('id, detected_location')
         .eq('user_id', user.id)
         .eq('resume_hash', resumeHash)
         .eq('status', 'success')
@@ -112,7 +118,8 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      latestRunId = countryRun?.id ?? null
+      latestRunId         = countryRun?.id ?? null
+      runDetectedLocation = countryRun?.detected_location ?? null
       if (latestRunId) {
         console.log(`[jobs/match] using country-specific run for ${targetLocation}: ${latestRunId}`)
       }
@@ -122,19 +129,31 @@ export async function GET(req: NextRequest) {
     if (!latestRunId) {
       const { data: anyRun } = await admin
         .from('job_search_runs')
-        .select('id')
+        .select('id, detected_location')
         .eq('user_id', user.id)
         .eq('resume_hash', resumeHash)
         .eq('status', 'success')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      latestRunId = anyRun?.id ?? null
+      latestRunId         = anyRun?.id ?? null
+      runDetectedLocation = anyRun?.detected_location ?? null
       if (latestRunId && targetLocation) {
         console.log(`[jobs/match] no ${targetLocation} run found — falling back to latest run (safety filter will enforce country)`)
       }
     }
   }
+
+  // Derive effective country code: prefer the explicit ?cc param; if absent, derive from run
+  const effectiveCc: string = cc
+    || (runDetectedLocation === 'international_remote'
+        ? 'international_remote'
+        : (LOCATION_TO_CC[runDetectedLocation ?? ''] ?? ''))
+  // What the frontend should display as active country (code + name)
+  const runCountryCode = effectiveCc || null
+  const runCountryName = runCountryCode === 'international_remote'
+    ? 'International / Remote'
+    : (CC_TO_LOCATION[runCountryCode ?? ''] ?? null)
 
   // Build the matches query — scoped to the latest run when available,
   // otherwise fall back to all matches for this user (safe for pre-migration data).
@@ -225,17 +244,17 @@ export async function GET(req: NextRequest) {
   // Last-line defence: remove any job whose location clearly doesn't match the
   // requested country, regardless of which run they came from.
   let safeMatches = matches
-  if (cc && cc !== 'international_remote') {
+  if (effectiveCc && effectiveCc !== 'international_remote') {
     const before = matches.length
     safeMatches = matches.filter((m) => {
       const job = m.job as Record<string, unknown> | null
       const loc = (job?.location as string | null) ?? null
       const src = (job?.source as string) ?? ''
-      const ok  = locationMatchesCountry(loc, src, cc)
+      const ok  = locationMatchesCountry(loc, src, effectiveCc)
       if (!ok) {
         console.log(
           `[jobs/match] LOCATION_MISMATCH removed | title="${job?.title ?? '?'}"` +
-          ` | jobLocation="${loc}" | selectedCountry="${cc} (${targetLocation})"` +
+          ` | jobLocation="${loc}" | selectedCountry="${effectiveCc} (${runCountryName})"` +
           ` | removedReason=country_mismatch`
         )
       }
@@ -243,10 +262,19 @@ export async function GET(req: NextRequest) {
     })
     const removed = before - safeMatches.length
     if (removed > 0) {
-      console.log(`[jobs/match] safety filter removed ${removed}/${before} jobs for country=${cc}`)
+      console.log(`[jobs/match] safety filter removed ${removed}/${before} jobs for country=${effectiveCc}`)
     }
   }
 
   const visibleMatches = isPro ? safeMatches : safeMatches.slice(0, matchLimit)
-  return NextResponse.json({ matches: visibleMatches, cvSuggestions, hasResume, isPro, matchLimit, totalMatches: safeMatches.length })
+  return NextResponse.json({
+    matches:        visibleMatches,
+    cvSuggestions,
+    hasResume,
+    isPro,
+    matchLimit,
+    totalMatches:   safeMatches.length,
+    runCountryCode,   // lets frontend show the chip even when no localStorage pref exists
+    runCountryName,
+  })
 }

@@ -456,6 +456,24 @@ export default function MatchesPage() {
     }
   }, [userId])
 
+  // When no explicit country preference is stored in localStorage (e.g. production users who
+  // haven't confirmed a country yet), auto-derive the active country from the run that was
+  // returned by the API. This makes the chip and location filter work without needing a re-analysis.
+  useEffect(() => {
+    if (activeSearchCountry) return          // already set from localStorage
+    if (!data?.runCountryCode) return        // API hasn't returned yet or no run exists
+    const rcc = data.runCountryCode as string
+    if (rcc === 'international_remote') {
+      setActiveSearchCountry({ code: null, name: 'International / Remote', mode: 'international_remote' })
+    } else {
+      setActiveSearchCountry({
+        code: rcc,
+        name: (data.runCountryName as string) ?? COUNTRY_CODE_TO_NAME[rcc] ?? rcc,
+        mode: 'country',
+      })
+    }
+  }, [data?.runCountryCode, data?.runCountryName, activeSearchCountry])
+
   const savedJobIds = useMemo(() => {
     const ids = new Set<string>()
     for (const app of (appsData?.applications ?? [])) {
@@ -509,8 +527,9 @@ export default function MatchesPage() {
   // Frontend safety filter: strip any job whose location clearly doesn't match the
   // active country, guarding against stale wrong-country data already in the DB.
   const savedAiJobs: MatchRecord[] = useMemo(() => {
-    const cc   = activeSearchCountry?.code ?? ''
-    const mode = activeSearchCountry?.mode
+    // Use explicit user preference, or fall back to the country derived from the run
+    const cc   = activeSearchCountry?.code ?? (data?.runCountryCode as string | null) ?? ''
+    const mode = activeSearchCountry?.mode  ?? (data?.runCountryCode === 'international_remote' ? 'international_remote' : 'country')
     const raw  = (data?.matches ?? []).filter((m: MatchRecord) => m.job?.source !== 'manual')
     if (!cc || mode === 'international_remote') return raw
     return raw.filter((m: MatchRecord) => {
