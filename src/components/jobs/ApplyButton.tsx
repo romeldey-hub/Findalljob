@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import {
   ExternalLink, Loader2, AlertTriangle,
-  Search, X, Globe, ShieldCheck,
+  Search, X, Globe, ShieldCheck, Building2,
 } from 'lucide-react'
 import { track } from '@/lib/analytics'
 import type { ApplyStatus, VerifiedLabel } from '@/types'
+import { KnowTheCompanyModal } from '@/components/jobs/KnowTheCompanyModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,9 @@ export interface ApplyButtonJob {
   apply_status?:   ApplyStatus
   verified_label?: VerifiedLabel
   source?:         string
+  // Optional extras used by Know the Company
+  description?:    string
+  location?:       string
 }
 
 interface ApplyButtonProps {
@@ -190,8 +194,9 @@ export function VerifiedBadge({ label }: { label?: VerifiedLabel }) {
 // ── ApplyButton ────────────────────────────────────────────────────────────────
 
 export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonProps) {
-  const [state,       setState]       = useState<ButtonState>('idle')
-  const [showFallback, setShowFallback] = useState(false)
+  const [state,           setState]           = useState<ButtonState>('idle')
+  const [showFallback,    setShowFallback]     = useState(false)
+  const [showCompanyInfo, setShowCompanyInfo]  = useState(false)
 
   const applyUrl  = job.apply_url || job.url
   const isBroken  = job.apply_status === 'broken'
@@ -232,13 +237,14 @@ export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonPr
           }
         </button>
 
-        {/* Manual escape hatch — only for outline variant */}
+        {/* Know the Company — only for outline variant */}
         {variant === 'outline' && (
           <button
-            onClick={() => setShowFallback(true)}
-            className="text-[10px] text-gray-400 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
+            onClick={() => setShowCompanyInfo(true)}
+            className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 transition-colors"
           >
-            Opens in new tab
+            <Building2 className="w-2.5 h-2.5" />
+            Know the Company
           </button>
         )}
 
@@ -250,6 +256,14 @@ export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonPr
           job={job}
           onClose={() => setShowFallback(false)}
           onDismiss={() => setShowFallback(false)}
+        />
+      )}
+
+      {/* Know the Company modal */}
+      {showCompanyInfo && (
+        <KnowTheCompanyModal
+          job={job}
+          onClose={() => setShowCompanyInfo(false)}
         />
       )}
     </>
