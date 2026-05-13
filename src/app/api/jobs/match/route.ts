@@ -137,7 +137,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Step 3: fallback to latest run of any country
+    // Step 3: most recent run with a specific country (not null, not international_remote).
+    // Handles users whose profiles.location is null/unset — skips the mixed/international runs
+    // and picks the India (or other country) run directly.
+    if (!latestRunId && !cc) {
+      const { data: countrySpecificRun } = await admin
+        .from('job_search_runs')
+        .select('id, detected_location')
+        .eq('user_id', user.id)
+        .eq('resume_hash', resumeHash)
+        .eq('status', 'success')
+        .not('detected_location', 'is', null)
+        .neq('detected_location', 'international_remote')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (countrySpecificRun?.id) {
+        latestRunId         = countrySpecificRun.id
+        runDetectedLocation = countrySpecificRun.detected_location
+        console.log(`[jobs/match] using most recent country-specific run: ${latestRunId} (detected_location="${runDetectedLocation}")`)
+      }
+    }
+
+    // Step 4: fallback to latest run of any country
     if (!latestRunId) {
       const { data: anyRun } = await admin
         .from('job_search_runs')
