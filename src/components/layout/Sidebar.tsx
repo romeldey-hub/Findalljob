@@ -22,7 +22,7 @@ const fetcher = (url: string) => fetch(url).then(r => r.json())
 interface FeatureUsageRow { label: string; count: number; credits: number }
 
 function CreditsPopup({
-  remaining, total, resetDate, isPro, onClose, onUpgrade,
+  remaining, total, resetDate, isPro, onClose, onUpgrade, mobileMode = false,
 }: {
   remaining: number
   total: number
@@ -30,6 +30,7 @@ function CreditsPopup({
   isPro: boolean
   onClose: () => void
   onUpgrade: () => void
+  mobileMode?: boolean
 }) {
   const pct      = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0
   const isLow    = pct <= 30
@@ -44,7 +45,7 @@ function CreditsPopup({
   const usageRows = usageData?.usage ?? []
 
   return (
-    <div className="absolute bottom-0 left-[calc(100%+8px)] w-[272px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden">
+    <div className={`absolute w-[272px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden ${mobileMode ? 'bottom-full mb-2 left-0' : 'bottom-0 left-[calc(100%+8px)]'}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
         <div className="flex items-center gap-2">
@@ -200,7 +201,7 @@ const SHARE_MSG = encodeURIComponent(
 const SHARE_MSG_RAW =
   'I found FindAllJob useful for matching resumes with better-fit jobs, improving resumes, and preparing for interviews.\nTry it free: https://www.findalljob.com'
 
-function SharePopover({ onClose }: { onClose: () => void }) {
+function SharePopover({ onClose, mobileMode = false }: { onClose: () => void; mobileMode?: boolean }) {
   const [copied, setCopied] = useState(false)
 
   function open(url: string) {
@@ -214,7 +215,7 @@ function SharePopover({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute bottom-full mb-2 left-0 w-[260px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden">
+    <div className={`absolute bottom-full mb-2 w-[260px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-2xl z-50 overflow-hidden ${mobileMode ? 'right-0' : 'left-0'}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#F1F5F9] dark:border-[#334155]">
         <div className="flex items-center gap-2">
@@ -301,9 +302,12 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   const [showUpgrade, setShowUpgrade]     = useState(false)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
   const [showShare, setShowShare]         = useState(false)
-  const creditsRef = useRef<HTMLDivElement>(null)
-  const logoutRef  = useRef<HTMLDivElement>(null)
-  const shareRef   = useRef<HTMLDivElement>(null)
+  const creditsRef       = useRef<HTMLDivElement>(null)
+  const logoutRef        = useRef<HTMLDivElement>(null)
+  const shareRef         = useRef<HTMLDivElement>(null)
+  const creditsMobileRef = useRef<HTMLDivElement>(null)
+  const shareMobileRef   = useRef<HTMLDivElement>(null)
+  const logoutMobileRef  = useRef<HTMLDivElement>(null)
 
   const { data: profileData } = useSWR('/api/profile', fetcher, { refreshInterval: 120000 })
 
@@ -316,7 +320,8 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   useEffect(() => {
     if (!showCredits) return
     function handleClick(e: MouseEvent) {
-      if (creditsRef.current && !creditsRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (!creditsRef.current?.contains(t) && !creditsMobileRef.current?.contains(t)) {
         setShowCredits(false)
       }
     }
@@ -328,7 +333,8 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   useEffect(() => {
     if (!showShare) return
     function handleClick(e: MouseEvent) {
-      if (shareRef.current && !shareRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (!shareRef.current?.contains(t) && !shareMobileRef.current?.contains(t)) {
         setShowShare(false)
       }
     }
@@ -347,7 +353,8 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
   useEffect(() => {
     if (!showLogoutMenu) return
     function handleClick(e: MouseEvent) {
-      if (logoutRef.current && !logoutRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (!logoutRef.current?.contains(t) && !logoutMobileRef.current?.contains(t)) {
         setShowLogoutMenu(false)
       }
     }
@@ -496,6 +503,67 @@ export function Sidebar({ userName, subscriptionStatus, role = 'user', avatarUrl
     </aside>
 
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 dark:border-[#1E293B] bg-white/95 dark:bg-[#0F1B2D]/95 backdrop-blur-xl px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+
+      {/* Utility row: credits + share + logout */}
+      <div className="flex items-center gap-2 px-1 pb-2 border-b border-gray-100 dark:border-[#1E293B] mb-2">
+
+        {/* AI Credits */}
+        <div ref={creditsMobileRef} className="relative flex-1 min-w-0">
+          <CreditsWidget
+            remaining={creditsRemaining}
+            total={creditsTotal}
+            isPro={isPro}
+            onClick={() => setShowCredits(v => !v)}
+          />
+          {showCredits && (
+            <CreditsPopup
+              remaining={creditsRemaining ?? 0}
+              total={creditsTotal ?? 0}
+              resetDate={creditsResetDate}
+              isPro={isPro}
+              onClose={() => setShowCredits(false)}
+              onUpgrade={() => { track.upgradeClick('credits_popup'); setShowUpgrade(true) }}
+              mobileMode
+            />
+          )}
+        </div>
+
+        {/* Share */}
+        <div ref={shareMobileRef} className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowShare(v => !v)}
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
+            title="Share FindAllJob"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+          {showShare && <SharePopover onClose={() => setShowShare(false)} mobileMode />}
+        </div>
+
+        {/* Logout */}
+        <div ref={logoutMobileRef} className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowLogoutMenu(v => !v)}
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1E293B] transition-colors"
+            title="Log out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+          {showLogoutMenu && (
+            <div className="absolute right-0 bottom-full mb-1 w-40 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl shadow-lg z-20 overflow-hidden py-1">
+              <button
+                onClick={() => { setShowLogoutMenu(false); handleLogout() }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-gray-600 dark:text-slate-300 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors text-left"
+              >
+                <LogOut className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
+                Log out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Nav items */}
       <div className="flex items-center justify-around gap-1 overflow-x-auto">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
