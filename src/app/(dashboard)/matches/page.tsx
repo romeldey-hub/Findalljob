@@ -23,6 +23,7 @@ import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { FREE_LIMITS } from '@/lib/limits'
 import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from '@/components/resume/CountryConfirmStep'
+import { locationMatchesCountry } from '@/lib/jobs/location'
 import {
   JobCard, MatchRecord,
   extractExperience, extractJobType, extractWorkMode, extractExpMin, formatPostedDate,
@@ -421,7 +422,13 @@ export default function MatchesPage() {
   const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
     useAnalyzeProgress({ stepDefs: REANALYZE_STEP_DEFS, stepMap: REANALYZE_STEP_MAP })
 
-  const { data, error: swrError, mutate } = useSWR('/api/jobs/match', fetcher)
+  // Include the active country code in the SWR key so the backend returns
+  // country-scoped matches. Falls back to the unscoped key while the country
+  // is still loading from localStorage (first render).
+  const matchSWRKey = preferredSearchCountry
+    ? `/api/jobs/match?cc=${preferredSearchCountry}`
+    : '/api/jobs/match'
+  const { data, error: swrError, mutate } = useSWR(matchSWRKey, fetcher)
   const { data: appsData }                = useSWR('/api/applications', fetcher)
   const { data: optimizedData }           = useSWR('/api/resume/optimize', fetcher)
   const { data: profileData }             = useSWR('/api/profile', fetcher)
@@ -498,11 +505,30 @@ export default function MatchesPage() {
 
   const allOptimizedJobIds = useMemo(() => new Set(allOptimizedByJobId.keys()), [allOptimizedByJobId])
 
-  // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null
-  const savedAiJobs: MatchRecord[] = useMemo(
-    () => (data?.matches ?? []).filter((m: MatchRecord) => m.job?.source !== 'manual'),
-    [data]
-  )
+  // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null.
+  // Frontend safety filter: strip any job whose location clearly doesn't match the
+  // active country, guarding against stale wrong-country data already in the DB.
+  const savedAiJobs: MatchRecord[] = useMemo(() => {
+    const cc   = activeSearchCountry?.code ?? ''
+    const mode = activeSearchCountry?.mode
+    const raw  = (data?.matches ?? []).filter((m: MatchRecord) => m.job?.source !== 'manual')
+    if (!cc || mode === 'international_remote') return raw
+    return raw.filter((m: MatchRecord) => {
+      const ok = locationMatchesCountry(
+        (m.job as { location?: string | null })?.location ?? null,
+        (m.job as { source?: string })?.source ?? '',
+        cc,
+      )
+      if (!ok) {
+        console.warn(
+          `[matches] LOCATION_MISMATCH hidden | title="${(m.job as { title?: string })?.title ?? '?'}"` +
+          ` | jobLocation="${(m.job as { location?: string })?.location ?? '?'}"` +
+          ` | selectedCountry="${cc}" | removedReason=country_mismatch`
+        )
+      }
+      return ok
+    })
+  }, [data, activeSearchCountry])
 
   const hasResume: boolean = data?.hasResume ?? false
   const dataLoaded         = data !== undefined

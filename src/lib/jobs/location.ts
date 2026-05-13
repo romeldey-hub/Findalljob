@@ -123,6 +123,24 @@ export function isJobFromCountry(job: NormalizedJob, countryCode: string): boole
   return re.test(job.location)
 }
 
+/**
+ * Pure-string version of isJobFromCountry — no NormalizedJob dependency.
+ * Safe to call from both server routes and client components.
+ */
+export function locationMatchesCountry(
+  location: string | null,
+  source:   string,
+  countryCode: string,
+): boolean {
+  if (!countryCode) return true
+  if (REMOTE_RE.test(location ?? '')) return true
+  if (countryCode === 'in' && INDIA_ONLY_SOURCES.has(source)) return true
+  if (!location) return false
+  const re = COUNTRY_LOCATION_RE[countryCode]
+  if (!re) return true
+  return re.test(location)
+}
+
 /** Filter a job list to only include jobs from the detected country. */
 export function filterJobsByCountry(
   jobs: NormalizedJob[],

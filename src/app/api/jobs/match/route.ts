@@ -1,11 +1,29 @@
-import { NextResponse }          from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { computeVerifiedLabel }  from '@/types'
-import { isProUser }             from '@/lib/admin'
-import { resolveProUntil }       from '@/lib/billing'
-import { FREE_LIMITS }           from '@/lib/limits'
-import { computeParsedResumeHash } from '@/lib/resume-hash'
+import { computeVerifiedLabel }     from '@/types'
+import { isProUser }                from '@/lib/admin'
+import { resolveProUntil }          from '@/lib/billing'
+import { FREE_LIMITS }              from '@/lib/limits'
+import { computeParsedResumeHash }  from '@/lib/resume-hash'
+import { locationMatchesCountry }   from '@/lib/jobs/location'
 import type { ApplyStatus, ParsedResume } from '@/types'
+
+// Maps the ISO-2 country code sent by the frontend to the human-readable
+// detected_location value stored in job_search_runs (e.g. "in" → "India").
+const CC_TO_LOCATION: Record<string, string> = {
+  in: 'India',
+  gb: 'United Kingdom',
+  us: 'United States',
+  au: 'Australia',
+  ca: 'Canada',
+  de: 'Germany',
+  fr: 'France',
+  nl: 'Netherlands',
+  sg: 'Singapore',
+  ae: 'UAE',
+  nz: 'New Zealand',
+  za: 'South Africa',
+}
 
 function decodeReasoning(raw: string): {
   reasoning:      string
@@ -35,10 +53,17 @@ function isColumnError(code?: string, msg?: string): boolean {
   return false
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Country code sent by the client — e.g. "in", "us", "gb", or "international_remote".
+  // When present, the run lookup is scoped to that country and a safety filter is applied.
+  const cc             = new URL(req.url).searchParams.get('cc') ?? ''
+  const targetLocation = cc === 'international_remote'
+    ? 'international_remote'
+    : (CC_TO_LOCATION[cc] ?? null)
 
   // Resolve Pro status — used to determine match cap
   const admin = createAdminClient()
@@ -71,19 +96,44 @@ export async function GET() {
     : null
 
   // Find the latest successful search run for this user+resume combination.
-  // Falls back to null (no run filter) so existing users without runs still see matches.
+  // When a country code is supplied, prefer a run scoped to that country (detected_location).
+  // Falls back to the latest run of any country so existing users without runs still see matches.
   let latestRunId: string | null = null
   if (resumeHash) {
-    const { data: runRow } = await admin
-      .from('job_search_runs')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('resume_hash', resumeHash)
-      .eq('status', 'success')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    latestRunId = runRow?.id ?? null
+    // 1. Try to find a run for the specific country the user is browsing
+    if (targetLocation) {
+      const { data: countryRun } = await admin
+        .from('job_search_runs')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('resume_hash', resumeHash)
+        .eq('status', 'success')
+        .eq('detected_location', targetLocation)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      latestRunId = countryRun?.id ?? null
+      if (latestRunId) {
+        console.log(`[jobs/match] using country-specific run for ${targetLocation}: ${latestRunId}`)
+      }
+    }
+
+    // 2. Fallback: latest run regardless of country (safety net for users with older data)
+    if (!latestRunId) {
+      const { data: anyRun } = await admin
+        .from('job_search_runs')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('resume_hash', resumeHash)
+        .eq('status', 'success')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      latestRunId = anyRun?.id ?? null
+      if (latestRunId && targetLocation) {
+        console.log(`[jobs/match] no ${targetLocation} run found — falling back to latest run (safety filter will enforce country)`)
+      }
+    }
   }
 
   // Build the matches query — scoped to the latest run when available,
@@ -171,6 +221,32 @@ export async function GET() {
     }
   })
 
-  const visibleMatches = isPro ? matches : matches.slice(0, matchLimit)
-  return NextResponse.json({ matches: visibleMatches, cvSuggestions, hasResume, isPro, matchLimit, totalMatches: matches.length })
+  // ── Location safety filter ───────────────────────────────────────────────
+  // Last-line defence: remove any job whose location clearly doesn't match the
+  // requested country, regardless of which run they came from.
+  let safeMatches = matches
+  if (cc && cc !== 'international_remote') {
+    const before = matches.length
+    safeMatches = matches.filter((m) => {
+      const job = m.job as Record<string, unknown> | null
+      const loc = (job?.location as string | null) ?? null
+      const src = (job?.source as string) ?? ''
+      const ok  = locationMatchesCountry(loc, src, cc)
+      if (!ok) {
+        console.log(
+          `[jobs/match] LOCATION_MISMATCH removed | title="${job?.title ?? '?'}"` +
+          ` | jobLocation="${loc}" | selectedCountry="${cc} (${targetLocation})"` +
+          ` | removedReason=country_mismatch`
+        )
+      }
+      return ok
+    })
+    const removed = before - safeMatches.length
+    if (removed > 0) {
+      console.log(`[jobs/match] safety filter removed ${removed}/${before} jobs for country=${cc}`)
+    }
+  }
+
+  const visibleMatches = isPro ? safeMatches : safeMatches.slice(0, matchLimit)
+  return NextResponse.json({ matches: visibleMatches, cvSuggestions, hasResume, isPro, matchLimit, totalMatches: safeMatches.length })
 }

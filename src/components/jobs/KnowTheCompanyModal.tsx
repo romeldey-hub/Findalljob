@@ -17,6 +17,7 @@ interface CompanySnapshot {
   why_relevant:   string
   interview_prep: string[]
   data_limited:   boolean
+  source_note?:   'official_website' | 'fallback_only'
 }
 
 export interface KnowTheCompanyJob {
@@ -252,7 +253,9 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
         {!loading && snapshot && (
           <div className="flex-shrink-0 px-5 py-3 border-t border-[#F1F5F9] dark:border-[#334155]">
             <p className="text-[10px] text-gray-400 dark:text-slate-600 leading-relaxed">
-              Generated using AI from available job and public company context. Please verify details before applying.
+              {snapshot.source_note === 'official_website'
+                ? 'Based on official company website and available job information. Please verify details before applying.'
+                : 'Official company website could not be verified. Details may need manual checking.'}
             </p>
           </div>
         )}
