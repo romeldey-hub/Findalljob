@@ -1035,8 +1035,8 @@ export default function MatchesPage() {
         <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-0.5">AI-ranked jobs based on your resume.</p>
       </div>
 
-      {/* ── Search bar (collapsible) ─────────────────────────────── */}
-      <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+      {/* ── Search bar (collapsible) — hidden while a location-change match is running ── */}
+      {!(analyzing && isLocationChange) && <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
 
         {/* Toggle header — always visible */}
         <button
@@ -1117,7 +1117,7 @@ export default function MatchesPage() {
             </div>
           </form>
         </div>
-      </div>
+      </div>}
 
       {/* ── Error state ──────────────────────────────────────────── */}
       {analyzeError && !analyzing && (
@@ -1358,6 +1358,15 @@ export default function MatchesPage() {
 
           {/* Activity view — shown while analysis is running */}
           {analyzing && (
+            <>
+            {isLocationChange && (
+              <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 dark:bg-[#1E3A5F]/60 border border-blue-100 dark:border-[#2563EB]/25 rounded-xl">
+                <Loader2 className="w-3.5 h-3.5 text-[#2563EB] animate-spin flex-shrink-0" />
+                <p className="text-[13px] font-semibold text-[#2563EB] dark:text-blue-300">
+                  This may take 3–5 minutes while AI refreshes your best-fit jobs.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(360px,1.15fr)] gap-5">
               <ProgressiveActivity title="Updating your matches" steps={activitySteps} />
               <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] shadow-sm">
@@ -1371,11 +1380,12 @@ export default function MatchesPage() {
                     playsInline
                   />
                 </div>
-                <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider bg-gradient-to-r from-slate-200 via-white to-slate-300 bg-clip-text text-transparent">
+                <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider text-slate-600 dark:bg-gradient-to-r dark:from-slate-200 dark:via-white dark:to-slate-300 dark:bg-clip-text dark:text-transparent">
                   Grab a coffee while AI finds your best-fit jobs.
                 </p>
               </div>
             </div>
+            </>
           )}
 
           {searching && (
