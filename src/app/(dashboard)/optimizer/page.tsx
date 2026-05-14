@@ -275,7 +275,7 @@ function OptimizedJobCard({
           ) : (
             <div className="flex items-center flex-wrap gap-2">
               {onInterview && (
-                <button onClick={onInterview} className={primaryBtn}>
+                <button onClick={onInterview} className={secondaryBtn}>
                   <Mic className="w-3 h-3" />Prepare For This Interview
                 </button>
               )}
@@ -333,7 +333,7 @@ function OptimizedJobCard({
             )}
             <ApplyButton
               job={{ id: resume.jobId || resume.id, title: jobTitle, company, url: applyUrl, source }}
-              variant="outline"
+              variant="primary"
             />
           </div>
 

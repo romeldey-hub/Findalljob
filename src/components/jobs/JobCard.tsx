@@ -503,12 +503,12 @@ export function JobCard({
                 </button>
               </div>
             ) : (
-              <button onClick={() => onOptimize(job.id)} className={primaryBtn}>
+              <button onClick={() => onOptimize(job.id)} className={secondaryBtn}>
                 <Wand2 className="w-3 h-3" />Fix Resume For This Job
               </button>
             )}
 
-            <button onClick={() => onInterview(match)} className={primaryBtn}>
+            <button onClick={() => onInterview(match)} className={secondaryBtn}>
               <Mic className="w-3 h-3" />Prepare For This Interview
             </button>
 
@@ -574,7 +574,7 @@ export function JobCard({
                 {src}
               </span>
             )}
-            <ApplyButton job={job} onApply={handleApplyCallback} variant="outline" />
+            <ApplyButton job={job} onApply={handleApplyCallback} variant="primary" />
           </div>
 
         </div>

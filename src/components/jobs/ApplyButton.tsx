@@ -237,15 +237,12 @@ export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonPr
           }
         </button>
 
-        {/* Know the Company — only for outline variant */}
-        {variant === 'outline' && (
-          <button
-            onClick={() => setShowCompanyInfo(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all"
-          >
-            Know the Company
-          </button>
-        )}
+        <button
+          onClick={() => setShowCompanyInfo(true)}
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all"
+        >
+          Know the Company
+        </button>
 
       </div>
 
