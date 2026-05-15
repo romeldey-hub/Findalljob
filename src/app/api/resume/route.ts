@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import type { ParsedResume } from '@/types'
+import { computeVerifiedLabel } from '@/types'
+import type { ParsedResume, ApplyStatus } from '@/types'
 
 export async function PATCH(req: Request) {
   const supabase = await createClient()
@@ -67,15 +68,97 @@ export async function DELETE() {
     }
   }
 
-  // ── 3. Delete all job_matches for this user ────────────────────────────────
-  const { error: matchErr } = await admin
-    .from('job_matches')
-    .delete()
-    .eq('user_id', user.id)
-  if (matchErr) console.error('[resume/delete] job_matches delete error:', matchErr.message)
-  else console.log('[resume/delete] cleared job_matches for user', user.id)
+  // ── 3. Pre-deletion: backfill match_snapshot for applied jobs that don't have one ──
+  // Must run BEFORE deleting job_matches so score/skills data is still available.
+  try {
+    const { data: unapplied } = await admin
+      .from('applications')
+      .select('id, job_id')
+      .eq('user_id', user.id)
+      .eq('status', 'applied')
+      .is('match_snapshot', null)
 
-  // ── 4. Delete the resume row ───────────────────────────────────────────────
+    if (unapplied && unapplied.length > 0) {
+      const jobIds = (unapplied as { id: string; job_id: string }[]).map(a => a.job_id)
+
+      const [{ data: matchRows }, { data: jobRows }] = await Promise.all([
+        admin.from('job_matches')
+          .select('job_id, id, ai_score, ai_reasoning')
+          .eq('user_id', user.id)
+          .in('job_id', jobIds)
+          .order('ai_score', { ascending: false }),
+        admin.from('jobs')
+          .select('id, title, company, location, url, apply_url, apply_status, last_verified_at, salary, source, description, created_at')
+          .in('id', jobIds),
+      ])
+
+      const bestByJobId = new Map<string, { id: string; ai_score: number; ai_reasoning: string }>()
+      for (const m of (matchRows ?? []) as { job_id: string; id: string; ai_score: number; ai_reasoning: string }[]) {
+        if (!bestByJobId.has(m.job_id)) bestByJobId.set(m.job_id, m)
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const jobById = new Map<string, Record<string, unknown>>((jobRows ?? []).map((j: any) => [j.id as string, j as Record<string, unknown>]))
+
+      for (const app of unapplied as { id: string; job_id: string }[]) {
+        const job   = jobById.get(app.job_id)
+        if (!job) continue
+        const match = bestByJobId.get(app.job_id)
+
+        let reasoning = '', bridgeAdvice = ''
+        let matchReasons: string[] = [], matchedSkills: string[] = [], missingSkills: string[] = []
+        if (match?.ai_reasoning) {
+          try {
+            const p = JSON.parse(match.ai_reasoning)
+            if (typeof p === 'object') {
+              reasoning    = typeof p.r      === 'string' ? p.r      : ''
+              bridgeAdvice = typeof p.bridge === 'string' ? p.bridge : ''
+              matchReasons  = Array.isArray(p.mr)   ? p.mr   : []
+              matchedSkills = Array.isArray(p.ms)   ? p.ms   : []
+              missingSkills = Array.isArray(p.miss) ? p.miss : []
+            }
+          } catch { reasoning = match.ai_reasoning }
+        }
+
+        const applyStatus    = job.apply_status    as ApplyStatus | undefined
+        const lastVerifiedAt = job.last_verified_at as string | null | undefined
+        const snapshot = {
+          id:             match?.id ?? app.id,
+          ai_score:       match?.ai_score ?? 0,
+          ai_reasoning:   reasoning,
+          bridge_advice:  bridgeAdvice,
+          match_reasons:  matchReasons,
+          matched_skills: matchedSkills,
+          missing_skills: missingSkills,
+          job: {
+            id:             job.id           ?? '',
+            title:          job.title        ?? '',
+            company:        job.company      ?? '',
+            location:       job.location     ?? '',
+            url:            job.url          ?? '',
+            apply_url:      job.apply_url    ?? null,
+            apply_status:   applyStatus      ?? null,
+            verified_label: computeVerifiedLabel(applyStatus, lastVerifiedAt),
+            salary:         job.salary       ?? null,
+            source:         job.source       ?? null,
+            description:    job.description  ?? '',
+            created_at:     job.created_at,
+          },
+        }
+        await admin.from('applications').update({ match_snapshot: snapshot }).eq('id', app.id)
+      }
+      console.log(`[resume/delete] pre-deletion backfill: ${unapplied.length} applied job snapshots saved`)
+    }
+  } catch (err) {
+    console.warn('[resume/delete] pre-deletion backfill failed (non-fatal):', err)
+  }
+
+  // ── 4. Preserve scoped search runs ─────────────────────────────────────────
+  // job_matches now contain immutable display snapshots for completed
+  // job_search_runs.  Do not delete them when the source resume is removed;
+  // otherwise refresh would break previously saved/displayed match cards.
+  console.log('[resume/delete] preserved job_search_runs/job_matches snapshots for user', user.id)
+
+  // ── 5. Delete the resume row ───────────────────────────────────────────────
   const { error: dbErr } = await admin
     .from('resumes')
     .delete()

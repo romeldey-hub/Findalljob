@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { toast } from 'sonner'
 import { Briefcase, Loader2, Sparkles, Circle } from 'lucide-react'
@@ -10,7 +10,7 @@ import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
 import { ResumePreviewModal } from '@/components/resume/ResumePreviewModal'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import { JobCard, type MatchRecord } from '@/components/jobs/JobCard'
-import type { Application } from '@/types'
+import { appliedJobToMatch, type AppliedJobRow } from '@/lib/applied-jobs'
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -60,65 +60,22 @@ export default function AppliedJobsPage() {
   const [showDownloadPaywall, setShowDownloadPaywall]   = useState(false)
   const [localOptimizedResumes, setLocalOptimizedResumes] = useState<Map<string, OptimizedResumeData>>(() => new Map())
 
-  const { data: appsData }      = useSWR('/api/applications', fetcher)
-  const { data: matchData }     = useSWR('/api/jobs/match', fetcher)
+  const { data: appliedData } = useSWR('/api/applied-jobs', fetcher)
+  const { data: profileData } = useSWR('/api/profile', fetcher)
   const { data: optimizedData } = useSWR('/api/resume/optimize', fetcher)
-  const { data: profileData }   = useSWR('/api/profile', fetcher)
 
   const userId: string | undefined = profileData?.user_id as string | undefined
 
-  // Build a job-id → MatchRecord lookup from current AI match results
-  const matchByJobId = useMemo(() => {
-    const map = new Map<string, MatchRecord>()
-    for (const m of (matchData?.matches ?? []) as MatchRecord[]) {
-      if (m.job?.id) map.set(m.job.id, m)
-    }
-    return map
-  }, [matchData])
-
-  // Applied applications only
-  const appliedApps: Application[] = useMemo(
-    () => (appsData?.applications ?? []).filter((a: Application) => a.status === 'applied'),
-    [appsData]
+  const appliedJobs: AppliedJobRow[] = useMemo(
+    () => appliedData?.appliedJobs ?? [],
+    [appliedData]
   )
 
-  // Build MatchRecord[] — use real match data where available, synthetic otherwise
+  // Applied Jobs renders exclusively from applied_jobs snapshots.
+  // It does not read job_matches, active resume data, search results, or live job sources.
   const appliedMatches: MatchRecord[] = useMemo(() => {
-    return appliedApps.map((app) => {
-      const existing = matchByJobId.get(app.job.id)
-      if (existing) return existing
-      return {
-        id: app.id,
-        ai_score: 0,
-        ai_reasoning: '',
-        match_reasons: [],
-        matched_skills: [],
-        missing_skills: [],
-        job: {
-          id: app.job.id,
-          title: app.job.title,
-          company: app.job.company,
-          location: app.job.location,
-          url: app.job.url,
-          apply_url: app.job.apply_url,
-          apply_status: app.job.apply_status,
-          salary: app.job.salary,
-          description: app.job.description,
-          source: app.job.source,
-          created_at: app.job.created_at,
-        },
-      } satisfies MatchRecord
-    })
-  }, [appliedApps, matchByJobId])
-
-  // application id per job id (for initialApplicationId)
-  const appIdByJobId = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const app of (appsData?.applications ?? []) as Application[]) {
-      if (app.job?.id && app.id) map.set(app.job.id, app.id)
-    }
-    return map
-  }, [appsData])
+    return appliedJobs.map(appliedJobToMatch)
+  }, [appliedJobs])
 
   const optimizedResumesByJobId = useMemo(() => {
     const map = new Map<string, { id: string; data: OptimizedResumeData }>()
@@ -126,25 +83,62 @@ export default function AppliedJobsPage() {
       if (!r.job_id || !r.optimized_text) continue
       try {
         map.set(r.job_id, { id: r.id, data: JSON.parse(r.optimized_text) as OptimizedResumeData })
-      } catch { /* malformed — skip */ }
+      } catch { /* malformed optimized resume — skip */ }
     }
     return map
   }, [optimizedData])
 
-  const allOptimizedByJobId = useMemo(() => {
-    const map = new Map<string, { id?: string; data: OptimizedResumeData }>()
-    for (const [jid, entry] of optimizedResumesByJobId) map.set(jid, entry)
-    for (const [jid, data] of localOptimizedResumes) {
-      if (!map.has(jid)) map.set(jid, { data })
+  // application id per job id (for initialApplicationId)
+  const appIdByJobId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const app of appliedJobs) {
+      if (app.original_job_id && app.application_id) map.set(app.original_job_id, app.application_id)
     }
     return map
-  }, [optimizedResumesByJobId, localOptimizedResumes])
+  }, [appliedJobs])
+
+  const allOptimizedByJobId = useMemo(() => {
+    const map = new Map<string, { id?: string; data: OptimizedResumeData }>()
+    // 2. Local state (just-completed optimize flow in this session)
+    for (const [jid, data] of localOptimizedResumes) map.set(jid, { data })
+    // 3. Existing optimized resume rows — copied into applied_jobs below when missing.
+    for (const [jid, entry] of optimizedResumesByJobId) {
+      if (!map.has(jid)) map.set(jid, entry)
+    }
+    // 1. Permanent applied_jobs snapshot — always wins, survives resume deletion.
+    for (const app of appliedJobs) {
+      const jobId = app.original_job_id
+      if (!jobId || !app.optimized_resume_snapshot) continue
+      map.set(jobId, { data: app.optimized_resume_snapshot })
+    }
+    return map
+  }, [localOptimizedResumes, optimizedResumesByJobId, appliedJobs])
 
   const allOptimizedJobIds = useMemo(() => new Set(allOptimizedByJobId.keys()), [allOptimizedByJobId])
 
   const isCurrentUserPro = profileData !== undefined && (profileData?.plan ?? 'free') !== 'free'
+  const hasMainResume = profileData === undefined ? true : Boolean(profileData?.has_resume)
+
+  useEffect(() => {
+    if (!appliedJobs.length || optimizedResumesByJobId.size === 0) return
+
+    for (const app of appliedJobs) {
+      const jobId = app.original_job_id
+      if (!jobId || app.optimized_resume_snapshot) continue
+      const optimized = optimizedResumesByJobId.get(jobId)
+      if (!optimized) continue
+      void fetch('/api/applied-jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, optimizedSnapshot: optimized.data }),
+      })
+        .then((res) => { if (res.ok) globalMutate('/api/applied-jobs') })
+        .catch(() => { /* non-blocking persistence backfill */ })
+    }
+  }, [appliedJobs, optimizedResumesByJobId])
 
   function handleOptimize(jobId: string) {
+    if (!hasMainResume) return
     const credits       = profileData?.credits_remaining
     const OPTIMIZE_COST = 2
     if (credits != null && credits < OPTIMIZE_COST) { setShowPaywall(true); return }
@@ -152,21 +146,33 @@ export default function AppliedJobsPage() {
   }
 
   function handleInterview(match: MatchRecord) {
+    if (!hasMainResume) return
     const credits        = profileData?.credits_remaining
     const INTERVIEW_COST = 2
     if (credits != null && credits < INTERVIEW_COST) { setShowInterviewPaywall(true); return }
     setInterviewMatch(match)
   }
 
-  async function handleDeleteOptimized(id: string) {
-    const res = await fetch(`/api/resume/optimize?id=${id}`, { method: 'DELETE' })
+  async function handleDeleteOptimized(jobId: string) {
+    const res = await fetch('/api/applied-jobs', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId, removeOptimizedSnapshot: true }),
+    })
     if (!res.ok) { toast.error('Failed to delete optimized resume'); throw new Error('Delete failed') }
     toast.success('Optimized resume removed')
-    globalMutate('/api/resume/optimize')
+    globalMutate('/api/applied-jobs')
   }
 
   function handleLocalSaved(jobId: string, data: OptimizedResumeData) {
     setLocalOptimizedResumes(prev => { const next = new Map(prev); next.set(jobId, data); return next })
+    fetch('/api/applied-jobs', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId, optimizedSnapshot: data }),
+    })
+      .then((res) => { if (res.ok) globalMutate('/api/applied-jobs') })
+      .catch(() => { /* non-blocking; local preview still works */ })
   }
 
   function handleClearLocalOptimized(jobId: string) {
@@ -179,26 +185,22 @@ export default function AppliedJobsPage() {
   }
 
   async function handleViewOptimizedSaveEdits(jobId: string, edited: OptimizedResumeData) {
-    const res = await fetch('/api/resume/optimize/save', {
-      method: 'POST',
+    const res = await fetch('/api/applied-jobs', {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ optimizedData: edited, jobId }),
+      body: JSON.stringify({ optimizedSnapshot: edited, jobId }),
     })
     if (!res.ok) { toast.error('Failed to save changes.'); return }
     handleLocalSaved(jobId, edited)
-    globalMutate('/api/resume/optimize')
+    globalMutate('/api/applied-jobs')
     toast.success('Changes saved.')
   }
 
   async function handleConfirmDelete(jobId: string) {
     const entry = allOptimizedByJobId.get(jobId)
     if (!entry) return
-    if (entry.id) {
-      try { await handleDeleteOptimized(entry.id) } catch { /* error toasted inside */ }
-    } else {
-      handleClearLocalOptimized(jobId)
-      toast.success('Optimized resume removed')
-    }
+    try { await handleDeleteOptimized(jobId) } catch { /* error toasted inside */ }
+    handleClearLocalOptimized(jobId)
   }
 
   return (
@@ -225,7 +227,7 @@ export default function AppliedJobsPage() {
       )}
 
       {/* Job cards */}
-      {!appsData ? (
+      {!appliedData ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-5 h-5 animate-spin text-gray-300 dark:text-slate-600" />
         </div>
@@ -258,6 +260,8 @@ export default function AppliedJobsPage() {
                 isManual={match.job.source === 'manual'}
                 celebrate={celebratingJobId === jobId}
                 optimizedScore={optimized?.data?.ats_score}
+                optimizedData={optimized?.data ?? null}
+                disableResumeActions={!hasMainResume}
                 onOptimize={handleOptimize}
                 onInterview={handleInterview}
                 onViewOptimized={() => setViewOptimized({ jobId })}
@@ -286,7 +290,7 @@ export default function AppliedJobsPage() {
             }
           }}
           onSaved={() => {
-            globalMutate('/api/resume/optimize')
+            globalMutate('/api/applied-jobs')
             pendingCelebrationRef.current = optimizeJobId
           }}
           onLocalSaved={handleLocalSaved}

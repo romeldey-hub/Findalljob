@@ -63,6 +63,15 @@ export async function GET() {
 
   const isPro = isProUser(user.email, ext?.role, base?.subscription_status, effectiveProUntil)
 
+  const { data: activeResume } = await adminClient
+    .from('resumes')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   // AI credits — null-safe if migration not yet applied or row not yet created
   let { data: creditsRow } = await adminClient
     .from('ai_credits')
@@ -94,6 +103,7 @@ export async function GET() {
 
   return NextResponse.json({
     user_id: user.id,
+    has_resume: Boolean(activeResume?.id),
     plan: isPro ? 'pro' : 'free',
     has_used_free_preview: isAdmin ? false : (ext?.has_used_free_preview ?? false),
     subscription_status: base?.subscription_status ?? 'free',

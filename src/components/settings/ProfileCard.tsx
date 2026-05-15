@@ -19,9 +19,10 @@ export function ProfileCard({
   userId, initialName, email, initialHeadline, initialIsHeadlineEdited, initialAvatarUrl,
 }: ProfileCardProps) {
   const router = useRouter()
-  const [editing, setEditing]             = useState(false)
+  const [editingField, setEditingField]   = useState<'name' | 'headline' | null>(null)
   const [saving, setSaving]               = useState(false)
   const [name, setName]                   = useState(initialName)
+  const [savedName, setSavedName]         = useState(initialName)
   const [headline, setHeadline]           = useState(initialHeadline)
   const [savedHeadline, setSavedHeadline] = useState(initialHeadline)
   const [isHeadlineEdited, setIsHeadlineEdited] = useState(initialIsHeadlineEdited)
@@ -41,6 +42,7 @@ export function ProfileCard({
   }, [initialAvatarUrl])
 
   const fileInputRef     = useRef<HTMLInputElement>(null)
+  const nameInputRef     = useRef<HTMLInputElement>(null)
   const headlineInputRef = useRef<HTMLInputElement>(null)
 
   // Poll for AI-generated headline if the server didn't have one yet
@@ -67,8 +69,9 @@ export function ProfileCard({
   }, [])
 
   useEffect(() => {
-    if (editing) headlineInputRef.current?.focus()
-  }, [editing])
+    if (editingField === 'name') nameInputRef.current?.focus()
+    if (editingField === 'headline') headlineInputRef.current?.focus()
+  }, [editingField])
 
   const initials = name
     .split(' ').filter(Boolean).slice(0, 2)
@@ -122,31 +125,43 @@ export function ProfileCard({
     }
   }
 
-  function handleCancel() {
-    setEditing(false)
-    setName(initialName)
-    setHeadline(savedHeadline)
+  function handleCancel(field: 'name' | 'headline') {
+    setEditingField(null)
+    if (field === 'name') setName(savedName)
+    if (field === 'headline') setHeadline(savedHeadline)
     // Avatar is saved immediately on upload — do not revert it here
   }
 
-  async function handleSave() {
+  function beginEdit(field: 'name' | 'headline') {
+    if (editingField === 'name') setName(savedName)
+    if (editingField === 'headline') setHeadline(savedHeadline)
+    setEditingField(field)
+  }
+
+  async function handleSave(field: 'name' | 'headline') {
     if (!name.trim()) { toast.error('Name cannot be empty'); return }
     setSaving(true)
     try {
       const res = await fetch('/api/profile/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: name.trim(), headline: headline.trim() }),
+        body: JSON.stringify({
+          full_name: name.trim(),
+          ...(field === 'headline' ? { headline: headline.trim() } : {}),
+        }),
       })
       if (!res.ok) throw new Error('Profile update failed')
 
-      const supabase = createClient()
-      await supabase.auth.updateUser({ data: { headline: headline.trim() } })
+      if (field === 'headline') {
+        const supabase = createClient()
+        await supabase.auth.updateUser({ data: { headline: headline.trim() } })
+      }
 
       toast.success('Profile updated successfully')
+      setSavedName(name.trim())
       setSavedHeadline(headline.trim())
-      setIsHeadlineEdited(true)
-      setEditing(false)
+      if (field === 'headline') setIsHeadlineEdited(true)
+      setEditingField(null)
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save changes')
@@ -163,32 +178,6 @@ export function ProfileCard({
           <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Profile Information</h2>
           <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-0.5">Update your personal information and profile picture.</p>
         </div>
-        {!editing ? (
-          <button
-            onClick={() => setEditing(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-600 dark:text-slate-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 hover:scale-[1.02] active:scale-100 transition-all"
-          >
-            <Pencil className="w-3.5 h-3.5" />Edit
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCancel}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#E5E7EB] dark:border-[#334155] text-[12px] font-semibold text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-[#263549] transition-all"
-            >
-              <X className="w-3.5 h-3.5" />Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#0F172A] dark:bg-[#2563EB] text-white text-[12px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 hover:scale-[1.02] active:scale-100 transition-all disabled:opacity-50"
-            >
-              {saving
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saving…</>
-                : <><Check className="w-3.5 h-3.5" />Save Changes</>}
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-8">
@@ -237,14 +226,23 @@ export function ProfileCard({
 
         {/* ── Form ────────────────────────────────────────────── */}
         <div className="flex-1 space-y-4">
-          <Field label="Full Name">
+          <Field
+            label="Full Name"
+            editable
+            editing={editingField === 'name'}
+            saving={saving && editingField === 'name'}
+            onEdit={() => beginEdit('name')}
+            onCancel={() => handleCancel('name')}
+            onSave={() => handleSave('name')}
+          >
             <input
+              ref={nameInputRef}
               type="text"
               value={name}
-              disabled={!editing}
+              disabled={editingField !== 'name'}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your full name"
-              className={inputClass(editing)}
+              className={inputClass(editingField === 'name')}
             />
           </Field>
 
@@ -264,15 +262,21 @@ export function ProfileCard({
                 ? 'Edited by you. This will be used across your profile.'
                 : 'Auto-generated from your resume. You can edit it anytime.'
             }
+            editable
+            editing={editingField === 'headline'}
+            saving={saving && editingField === 'headline'}
+            onEdit={() => beginEdit('headline')}
+            onCancel={() => handleCancel('headline')}
+            onSave={() => handleSave('headline')}
           >
             <input
               ref={headlineInputRef}
               type="text"
               value={headline}
-              disabled={!editing}
+              disabled={editingField !== 'headline'}
               onChange={(e) => setHeadline(e.target.value)}
               placeholder="e.g. Senior Software Engineer | Cloud & DevOps | Fintech"
-              className={inputClass(editing)}
+              className={inputClass(editingField === 'headline')}
             />
           </Field>
         </div>
@@ -283,11 +287,68 @@ export function ProfileCard({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+  editable = false,
+  editing = false,
+  saving = false,
+  onEdit,
+  onCancel,
+  onSave,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+  editable?: boolean
+  editing?: boolean
+  saving?: boolean
+  onEdit?: () => void
+  onCancel?: () => void
+  onSave?: () => void
+}) {
   return (
     <div>
       <label className="block text-[12px] font-semibold text-gray-500 dark:text-slate-400 mb-1.5">{label}</label>
-      {children}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">{children}</div>
+        {editable && !editing && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-gray-300 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+            title={`Edit ${label}`}
+            aria-label={`Edit ${label}`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {editable && editing && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+              className="w-8 h-8 rounded-lg border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-center text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-[#263549] transition-colors disabled:opacity-50"
+              title={`Cancel ${label} edit`}
+              aria-label={`Cancel ${label} edit`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="w-8 h-8 rounded-lg bg-[#0F172A] dark:bg-[#2563EB] flex items-center justify-center text-white hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors disabled:opacity-50"
+              title={`Save ${label}`}
+              aria-label={`Save ${label}`}
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        )}
+      </div>
       {hint && <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">{hint}</p>}
     </div>
   )

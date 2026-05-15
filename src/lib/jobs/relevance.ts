@@ -739,8 +739,8 @@ export function applyAdvancedRelevanceFilter(
 } {
   const PRIMARY_THRESHOLD = 55
   const RELAXED_THRESHOLD = 40
-  const RELAXED_MIN       = 40
-  const FALLBACK_MIN      = 25
+  const RELAXED_MIN       = 20  // use primary result when it yields 20+ (was 40)
+  const FALLBACK_MIN      = 15  // use relaxed result when it yields 15+ (was 25)
 
   // Score every job once
   const scored = jobs.map((job) => ({ job, decision: scoreJobRelevance(job, profile, competitorSet) }))
@@ -810,6 +810,27 @@ export function applyAdvancedRelevanceFilter(
     if (SENIOR_PLUS.includes(profile.seniority) && INTERN_TITLE_PATTERNS.some((p) => p.test(job.title ?? ''))) return false
     return tokenize(job.title ?? '').some((tok) => profile.termSet.has(tok))
   })
+
+  // Safety net: when even the token-overlap fallback yields fewer than 15 results
+  // (common for niche roles or country-restricted searches with a small raw pool),
+  // return every job that isn't a hard negative rather than an empty or near-empty list.
+  // The AI reranker will assign appropriate scores and surface the best ones at the top.
+  const SAFETY_MINIMUM = 20
+  if (fallbackKept.length < SAFETY_MINIMUM) {
+    const safetyKept = scored
+      .filter(({ decision }) => decision.keep)  // still respect hard negatives / seniority blocks
+      .map(({ job }) => job)
+    if (safetyKept.length > fallbackKept.length) {
+      return {
+        filtered:       safetyKept,
+        removedCount:   jobs.length - safetyKept.length,
+        removalReasons: { safety_net_no_threshold: jobs.length - safetyKept.length },
+        removedSamples: [],
+        thresholdUsed:  0,
+        usedFallback:   true,
+      }
+    }
+  }
 
   return {
     filtered:       fallbackKept,

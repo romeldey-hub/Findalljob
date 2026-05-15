@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, type CSSProperties } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
   Sparkles, RefreshCcw, Trash2, X, AlertTriangle, Lock,
+  BrainCircuit, UserRoundSearch, BriefcaseBusiness, Trophy, Coffee, Coins, ArrowRight,
 } from 'lucide-react'
 import { track } from '@/lib/analytics'
 import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
-import { CountryConfirmStep, type CountryChoice } from '@/components/resume/CountryConfirmStep'
+import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from '@/components/resume/CountryConfirmStep'
 import { CreateResumeWithAI } from '@/components/resume/CreateResumeWithAI'
 
 // ── Progress configuration (outside component — never recreated) ──────────────
@@ -36,6 +37,29 @@ const UPLOAD_STEP_MAP: Record<string, number> = {
   matches_saved:  6,
 }
 
+function persistUploadSearchScope(userId: string, choice: CountryChoice, searchRunId?: string | null) {
+  const scope = choice.searchMode === 'international_remote'
+    ? {
+        searchMode: 'international_remote',
+        countryCode: null,
+        countryName: 'International / Remote',
+        searchRunId: searchRunId ?? null,
+      }
+    : {
+        searchMode: 'country',
+        countryCode: choice.selectedSearchCountry,
+        countryName: COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry] ?? choice.selectedSearchCountry,
+        searchRunId: searchRunId ?? null,
+      }
+  localStorage.setItem(`jobSearchScope:${userId}`, JSON.stringify(scope))
+  localStorage.setItem(`preferredSearchMode:${userId}`, choice.searchMode)
+  if (choice.searchMode === 'international_remote') {
+    localStorage.removeItem(`preferredSearchCountry:${userId}`)
+  } else {
+    localStorage.setItem(`preferredSearchCountry:${userId}`, choice.selectedSearchCountry)
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface ResumeUploadZoneProps {
@@ -46,11 +70,12 @@ interface ResumeUploadZoneProps {
   uploadLimit?: number
   userId?: string
   avatarUrl?: string | null
+  creditsRemaining?: number | null
 }
 
 type UploadState = 'idle' | 'uploading' | 'analyzing' | 'country_confirm' | 'success' | 'no-text'
 
-export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId, avatarUrl }: ResumeUploadZoneProps) {
+export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId, avatarUrl, creditsRemaining = null }: ResumeUploadZoneProps) {
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
@@ -167,13 +192,13 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
     setActivityFailed(false)
     resetProgress(1)
 
-    // Save preferred country for future Matches page visits
-    if (choice.searchMode === 'country' && userId && typeof window !== 'undefined') {
-      localStorage.setItem(`preferredSearchCountry:${userId}`, choice.selectedSearchCountry)
+    if (userId && typeof window !== 'undefined') {
+      persistUploadSearchScope(userId, choice)
     }
 
     let analyzeFailed = false
     let matchCount    = 0
+    let searchRunId: string | null = null
 
     const controller = new AbortController()
     const abortTimer = setTimeout(() => controller.abort(), 10 * 60 * 1000)
@@ -218,7 +243,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                 try {
                   const event = JSON.parse(line.slice(6)) as Record<string, unknown>
                   onSSEEvent(event)
-                  if (event.done) matchCount = (event.matchCount as number) ?? 0
+                  if (event.done) {
+                    matchCount = (event.matchCount as number) ?? 0
+                    searchRunId = (event.searchRunId as string | null) ?? ((event.searchScope as { searchRunId?: string | null } | undefined)?.searchRunId ?? null)
+                  }
                   if (event.error) { analyzeFailed = true; setActivityFailed(true); stopProgress() }
                 } catch { /* malformed SSE line */ }
               }
@@ -230,7 +258,10 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
 
         if (!analyzeFailed) {
           track.resumeUpload()
-          if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
+          if (typeof window !== 'undefined') {
+            if (userId) persistUploadSearchScope(userId, choice, searchRunId)
+            localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
+          }
           toast.success(`Found ${matchCount} job matches! Redirecting…`)
         } else {
           if (typeof window !== 'undefined') localStorage.setItem(userId ? `lastAnalyzedAt:${userId}` : 'lastAnalyzedAt', String(Date.now()))
@@ -371,7 +402,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
             <div
               {...getRootProps()}
               className={[
-                'flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed p-8 min-h-[200px] cursor-pointer transition-all duration-150',
+                'resume-soft-enter flex flex-col items-center justify-center text-center rounded-xl border-2 border-dashed p-8 min-h-[200px] cursor-pointer transition-all duration-300',
                 isDragActive
                   ? 'border-[#2563EB] bg-blue-50 dark:bg-[#1E3A5F]'
                   : 'border-[#E5E7EB] dark:border-[#334155] hover:border-[#2563EB]/50 hover:bg-[#F8FAFC] dark:hover:bg-[#263549]',
@@ -461,42 +492,74 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                   <p className="text-[12px] text-gray-400 dark:text-slate-500 mt-1.5">PDF or Word (.doc / .docx) · Max 5 MB</p>
                   <button
                     type="button"
-                    className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 hover:scale-[1.02] active:scale-100 transition-all shadow-sm"
+                    className="resume-upload-pulse mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 hover:-translate-y-0.5 hover:scale-[1.02] active:scale-100 transition-all shadow-sm"
                   >
                     <UploadCloud className="w-3.5 h-3.5" />
                     {hasExistingResume ? 'Replace Resume' : 'Upload Resume'}
                   </button>
-                  {!isPro && (
-                    <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
-                      {uploadLimit - uploadCount} of {uploadLimit} free uploads remaining
-                    </p>
-                  )}
                 </>
               )}
             </div>
 
             {/* RIGHT: What happens after upload */}
-            <div className="flex flex-col justify-center gap-3 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] p-6">
-              <div className="flex items-center gap-2 mb-1">
+            <div className="resume-soft-enter rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] p-6" style={{ '--delay': '90ms' } as CSSProperties}>
+              <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-[#2563EB]" />
                 <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#F1F5F9]">What happens after upload?</p>
               </div>
-              {[
-                'AI parses your resume into structured data',
-                'Skills, experience & education are extracted',
-                'Jobs are fetched and matched to your profile',
-                'A match score is generated for each listing',
-              ].map((step, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-[#2563EB] flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-[9px] font-bold text-white">{i + 1}</span>
-                  </div>
-                  <p className="text-[12px] text-gray-600 dark:text-slate-400 leading-snug">{step}</p>
-                </div>
-              ))}
-              <p className="text-[12px] font-medium text-gray-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-                ⏳ Processing usually takes 3–5 minutes
-              </p>
+              <div className="grid gap-3">
+                {[
+                  {
+                    title: 'We read your resume',
+                    body: 'AI picks up your skills, experience, education, and career direction.',
+                    icon: BrainCircuit,
+                  },
+                  {
+                    title: 'We understand your profile',
+                    body: 'Your resume is converted into a structured job-search profile.',
+                    icon: UserRoundSearch,
+                  },
+                  {
+                    title: 'We find better-fit jobs',
+                    body: 'FindAllJob searches and matches roles that fit your background.',
+                    icon: BriefcaseBusiness,
+                  },
+                  {
+                    title: 'You get ranked job matches',
+                    body: 'Each job shows why it matches you, with a clear match score.',
+                    icon: Trophy,
+                  },
+                ].map((step, i) => {
+                  const Icon = step.icon
+                  return (
+                    <div
+                      key={step.title}
+                      className="resume-soft-enter group relative flex gap-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white/80 dark:bg-[#1E293B]/55 p-3 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_10px_30px_rgba(37,99,235,0.10)] dark:hover:border-[#2563EB]/45 dark:hover:shadow-[0_10px_30px_rgba(37,99,235,0.12)]"
+                      style={{ '--delay': `${150 + i * 70}ms` } as CSSProperties}
+                    >
+                      {i < 3 && (
+                        <div className="resume-flow-line absolute left-[22px] top-[46px] h-[calc(100%-28px)] w-px overflow-hidden bg-[#E5E7EB] dark:bg-[#334155]" style={{ '--delay': `${i * 220}ms` } as CSSProperties} />
+                      )}
+                      <div className="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#2563EB] text-white shadow-sm transition-transform duration-300 group-hover:scale-[1.03]">
+                        <Icon className="w-4 h-4" />
+                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white dark:bg-[#0F172A] text-[8px] font-black text-[#2563EB] border border-blue-100 dark:border-blue-900">
+                          {i + 1}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">{step.title}</p>
+                        <p className="text-[11px] leading-relaxed text-gray-500 dark:text-slate-400 mt-0.5">{step.body}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-3 py-2.5">
+                <Coffee className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[12px] font-medium leading-relaxed text-amber-700 dark:text-amber-300">
+                  This usually takes 3–5 minutes. Grab a coffee — we&apos;ll do the heavy lifting.
+                </p>
+              </div>
             </div>
 
           </div>
@@ -545,15 +608,59 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
 
       {/* ── Empty state — only when no resume AND fully idle ─────────────── */}
       {!hasExistingResume && uploadState === 'idle' && (
-        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
-          <div className="w-14 h-14 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-4">
-            <FileText className="w-6 h-6 text-gray-300 dark:text-slate-600" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="resume-soft-enter flex flex-col items-center justify-center min-h-[260px] bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center p-8 transition-all duration-300 hover:border-blue-200 dark:hover:border-[#2563EB]/35 hover:shadow-[0_12px_34px_rgba(15,23,42,0.06)] dark:hover:shadow-[0_12px_34px_rgba(37,99,235,0.08)]">
+            <div className="w-14 h-14 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-4">
+              <FileText className="w-6 h-6 text-gray-300 dark:text-slate-600" />
+            </div>
+            <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">No resume uploaded yet</p>
+            <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1 max-w-sm">
+              Upload your resume above, or let AI build one for you in 2 minutes.
+            </p>
+            <CreateResumeWithAI avatarUrl={avatarUrl ?? null} />
           </div>
-          <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">No resume uploaded yet</p>
-          <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
-            Upload your resume above, or let AI build one for you in 2 minutes.
-          </p>
-          <CreateResumeWithAI avatarUrl={avatarUrl ?? null} />
+
+          <div className="resume-soft-enter min-h-[260px] bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6 transition-all duration-300 hover:border-blue-200 dark:hover:border-[#2563EB]/35 hover:shadow-[0_12px_34px_rgba(15,23,42,0.06)] dark:hover:shadow-[0_12px_34px_rgba(37,99,235,0.08)]" style={{ '--delay': '120ms' } as CSSProperties}>
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-[#1E3A5F] flex items-center justify-center flex-shrink-0">
+                <Coins className="w-5 h-5 text-[#2563EB]" />
+              </div>
+              <div>
+                <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">How AI credits work</p>
+                <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  AI credits are used when FindAllJob performs deeper AI tasks for you — like creating a resume, improving it for a job, or preparing you for an interview.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {[
+                'Resume creation may use credits',
+                'Resume optimization uses credits',
+                'Interview preparation uses credits',
+                'Viewing jobs, saved jobs, and opening job links do not use credits',
+              ].map((item, i) => (
+                <div key={item} className="flex items-start gap-2.5 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] px-3 py-2.5 transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white dark:hover:border-[#2563EB]/40 dark:hover:bg-[#2A3A50]">
+                  {i < 3 ? (
+                    <Sparkles className="w-3.5 h-3.5 text-[#2563EB] mt-0.5 flex-shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
+                  )}
+                  <p className="text-[12px] font-medium leading-relaxed text-gray-600 dark:text-slate-300">{item}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-[#0F172A] dark:bg-[#263549] border border-[#0F172A] dark:border-[#334155] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <p className="text-[12px] font-bold text-white dark:text-[#F1F5F9]">
+                  Your current balance: {creditsRemaining ?? 24} AI credits left
+                </p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-white/40 dark:text-slate-500 flex-shrink-0" />
+            </div>
+          </div>
         </div>
       )}
 

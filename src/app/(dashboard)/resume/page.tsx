@@ -27,7 +27,7 @@ export default async function ResumePage() {
       .maybeSingle(),
     admin
       .from('profiles')
-      .select('avatar_url, role, headline, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count')
+      .select('avatar_url, full_name, role, headline, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count, credits_remaining')
       .eq('user_id', user!.id)
       .single(),
   ])
@@ -51,19 +51,31 @@ export default async function ResumePage() {
     (Array.isArray(pd?.experience)  && pd.experience.length  > 0)
   )
   const avatarUrl = resolveAvatar(avatarRow, user)
+  const displayName = (
+    (typeof pd?.name === 'string' && pd.name.trim()) ||
+    profileRow?.full_name?.trim() ||
+    user?.user_metadata?.full_name?.trim?.() ||
+    user?.email?.split('@')[0] ||
+    'there'
+  ).split(/\s+/)[0]
+  const hasResumeActivity = hasResume || uploadCount > 0 || reanalyzeCount > 0
+  const welcomePrefix = hasResumeActivity ? 'Welcome back' : 'Welcome'
 
   return (
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
-        <div>
+        <div className="resume-soft-enter">
           <h1 className="text-[22px] font-black text-[#0F172A] dark:text-[#F1F5F9] flex items-center gap-2 leading-tight">
             My Resume
             <Sparkles className="w-4 h-4 text-amber-400" />
           </h1>
           <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-0.5">
-            Upload your resume — AI parses it and matches you to jobs instantly.
+            {welcomePrefix}, <span className="font-bold text-[#2563EB] dark:text-blue-400">{displayName}</span>. Let&apos;s get your resume ready for better job matches.
+          </p>
+          <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
+            Upload your resume, or create one with AI if you don&apos;t have it handy.
           </p>
         </div>
       </div>
@@ -81,6 +93,7 @@ export default async function ResumePage() {
         uploadLimit={FREE_LIMITS.resumeUploads}
         userId={user!.id}
         avatarUrl={avatarUrl}
+        creditsRemaining={profileRow?.credits_remaining ?? null}
       />
 
       {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}

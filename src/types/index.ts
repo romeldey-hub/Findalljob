@@ -173,6 +173,8 @@ export interface JobMatch {
   similarity_score: number
   ai_score: number
   ai_reasoning: string
+  rank_position?: number
+  display_snapshot?: Record<string, unknown> | null
   match_reasons: string[]
   matched_skills: string[]
   missing_skills: string[]
@@ -208,6 +210,10 @@ export interface Application {
   apply_method: ApplyMethod | null
   notes: string
   follow_up_messages: FollowUpMessage[]
+  /** Full MatchRecord snapshot saved when user clicked "Mark as Applied". */
+  match_snapshot?: Record<string, unknown> | null
+  /** OptimizedResumeData snapshot saved at apply time. Survives resume deletion. */
+  optimized_snapshot?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

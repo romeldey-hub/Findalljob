@@ -1,0 +1,5 @@
+Supabase backup — project aiizgshudyqviquicwrq
+Created: Fri May 15 09:13:30 IST 2026
+Method: REST API export (schema via migration files)
+Tables: 9 JSON files
+Migrations: 46 files

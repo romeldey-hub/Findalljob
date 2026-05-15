@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import useSWR from 'swr'
 import { AIResumeBuilder } from './AIResumeBuilder'
 import { ResumePreviewModal } from './ResumePreviewModal'
-import { CountryConfirmStep, type CountryChoice } from './CountryConfirmStep'
+import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from './CountryConfirmStep'
 import { UpgradeModal } from '@/components/UpgradeModal'
 import type { QAAnswers } from './AIResumeBuilder'
 import type { ParsedResume } from '@/types'
@@ -17,6 +17,24 @@ type Phase = 'idle' | 'no_credits' | 'qa' | 'generating' | 'editing' | 'saving' 
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 const RESUME_GENERATE_COST = 2
+
+function persistCreatedResumeSearchScope(userId: string, choice: CountryChoice, searchRunId?: string | null) {
+  const scope = choice.searchMode === 'international_remote'
+    ? { searchMode: 'international_remote', countryCode: null, countryName: 'International / Remote', searchRunId: searchRunId ?? null }
+    : {
+        searchMode: 'country',
+        countryCode: choice.selectedSearchCountry,
+        countryName: COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry] ?? choice.selectedSearchCountry,
+        searchRunId: searchRunId ?? null,
+      }
+  localStorage.setItem(`jobSearchScope:${userId}`, JSON.stringify(scope))
+  localStorage.setItem(`preferredSearchMode:${userId}`, choice.searchMode)
+  if (choice.searchMode === 'international_remote') {
+    localStorage.removeItem(`preferredSearchCountry:${userId}`)
+  } else {
+    localStorage.setItem(`preferredSearchCountry:${userId}`, choice.selectedSearchCountry)
+  }
+}
 
 function toOptimized(pd: ParsedResume): OptimizedResumeData {
   return {
@@ -214,6 +232,7 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
 
     let analyzeFailed = false
     let count         = 0
+    let searchRunId: string | null = null
 
     try {
       const analyzeRes = await fetch('/api/resume/analyze', {
@@ -255,6 +274,7 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
                   }
                   if (event.done) {
                     count = (event.matchCount as number) ?? 0
+                    searchRunId = (event.searchRunId as string | null) ?? ((event.searchScope as { searchRunId?: string | null } | undefined)?.searchRunId ?? null)
                     setAnalyzeStep(ANALYZE_STEPS.length - 1)
                   }
                   if (event.error) {
@@ -278,6 +298,10 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
     }
 
     if (!analyzeFailed) {
+      const userId = profileData?.user_id as string | undefined
+      if (userId && typeof window !== 'undefined') {
+        persistCreatedResumeSearchScope(userId, choice, searchRunId)
+      }
       setMatchCount(count)
       toast.success(count > 0 ? `Found ${count} job matches!` : 'Resume saved! Redirecting…')
     } else {
@@ -296,7 +320,7 @@ export function CreateResumeWithAI({ avatarUrl }: { avatarUrl?: string | null })
       {phase === 'idle' && (
         <button
           onClick={handleCreateClick}
-          className="mt-5 flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[13px] font-bold hover:from-violet-700 hover:to-blue-700 transition-all shadow-sm hover:scale-[1.02] active:scale-100"
+          className="mt-5 flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 text-white text-[13px] font-bold hover:from-violet-700 hover:to-blue-700 transition-all duration-300 shadow-sm hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_12px_28px_rgba(79,70,229,0.22)] active:scale-100"
         >
           <Sparkles className="w-4 h-4" />
           Create Resume with AI

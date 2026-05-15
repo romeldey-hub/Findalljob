@@ -192,6 +192,41 @@ Education: ${eduLine || 'Not specified'}`
   const allRanked = batchResults.flat().sort((a, b) => b.score - a.score)
   console.log(`[reranker] total ranked: ${allRanked.length} of ${jobs.length} input jobs`)
 
+  // Claude sometimes omits jobs it considers weak matches despite "Return all N jobs".
+  // Add back only jobs with meaningful keyword overlap (≥ 2 title tokens match the resume)
+  // so the pool isn't padded with completely irrelevant entries at near-zero scores.
+  const rankedKeys = new Set(allRanked.map((r) => `${r.source}:${r.externalId}`))
+  let filled = 0
+  for (const job of jobs) {
+    if (rankedKeys.has(`${job.source}:${job.externalId}`)) continue
+    const titleTokens  = (job.title  ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((t) => t.length >= 3)
+    const resumeTokens = new Set([
+      ...Array.isArray(resume.skills) ? resume.skills.map((s) => s.toLowerCase()) : [],
+      ...(resume.experience ?? []).flatMap((e) => (e.title ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)),
+    ])
+    const overlap = titleTokens.filter((t) => resumeTokens.has(t)).length
+    // Only add back if there's at least minimal title-level relevance (2+ matching tokens).
+    // Jobs with 0-1 overlap were intentionally omitted by Claude; keep them out of the pool
+    // so they never surface as filler results on the Matched Jobs page.
+    if (overlap < 2) continue
+    const fallback = Math.min(38, 28 + overlap * 2)  // 30–38 range for borderline entries
+    allRanked.push({
+      externalId:     job.externalId,
+      source:         job.source,
+      score:          fallback,
+      reasoning:      '',
+      bridge_advice:  '',
+      match_reasons:  [],
+      matched_skills: titleTokens.filter((t) => resumeTokens.has(t)),
+      missing_skills: [],
+    })
+    filled++
+  }
+  if (filled > 0) {
+    console.log(`[reranker] filled ${filled} omitted jobs with fallback keyword scores`)
+    allRanked.sort((a, b) => b.score - a.score)
+  }
+
   // Store in cache and evict stale entries
   rankCache.set(key, { result: allRanked, ts: Date.now() })
   for (const [k, v] of rankCache) {

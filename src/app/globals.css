@@ -121,11 +121,159 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    font-size: 16px;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-size: 0.9375rem;
+    line-height: 1.56;
+    letter-spacing: 0;
+  }
+  p,
+  li {
+    line-height: 1.58;
+  }
+}
+
+@layer utilities {
+  .text-\[8px\],
+  .text-\[9px\],
+  .text-\[10px\] {
+    font-size: 0.6875rem !important;
+    line-height: 1.3 !important;
+  }
+
+  .text-\[11px\],
+  .text-xs {
+    font-size: 0.75rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .text-\[12px\] {
+    font-size: 0.8125rem !important;
+    line-height: 1.42 !important;
+  }
+
+  .text-\[13px\],
+  .text-sm {
+    font-size: 0.875rem !important;
+    line-height: 1.48 !important;
+  }
+
+  .text-\[14px\],
+  .text-base {
+    font-size: 0.9375rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .text-\[15px\] {
+    font-size: 1rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .text-\[16px\] {
+    font-size: 1.0625rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .text-\[17px\],
+  .text-lg {
+    font-size: 1.125rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .text-\[18px\] {
+    font-size: 1.1875rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .text-\[19px\],
+  .text-xl {
+    font-size: 1.25rem !important;
+    line-height: 1.3 !important;
+  }
+
+  .job-card .text-\[8px\],
+  .job-card .text-\[9px\],
+  .job-card .text-\[10px\] {
+    font-size: 0.75rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .job-card .text-\[11px\],
+  .job-card .text-xs {
+    font-size: 0.8125rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .job-card .text-\[12px\] {
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+  }
+
+  .job-card .text-\[13px\],
+  .job-card .text-sm {
+    font-size: 0.9375rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .job-card .text-\[14px\],
+  .job-card .text-base {
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+  }
+
+  .job-card .text-\[15px\] {
+    font-size: 1.0625rem !important;
+    line-height: 1.6 !important;
+  }
+
+  .job-card .text-\[16px\] {
+    font-size: 1.125rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .job-card .text-\[17px\],
+  .job-card .text-lg {
+    font-size: 1.1875rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .job-card .text-\[18px\] {
+    font-size: 1.25rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .job-card .text-\[19px\],
+  .job-card .text-xl {
+    font-size: 1.375rem !important;
+    line-height: 1.3 !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    letter-spacing: 0;
+    line-height: 1.4;
+  }
+}
+
+@media (min-width: 1920px) {
+  html {
+    font-size: 16.5px;
+  }
+}
+
+@media (min-width: 2560px) {
+  html {
+    font-size: 17px;
   }
 }
 
@@ -136,6 +284,43 @@
 
 .animate-fade-in-up {
   animation: fadeInUp 350ms ease-out both;
+}
+
+@keyframes softEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.resume-soft-enter {
+  animation: softEnter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+@keyframes subtlePulse {
+  0%, 100% { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.10), 0 0 0 rgba(37, 99, 235, 0); }
+  50%      { box-shadow: 0 8px 22px rgba(37, 99, 235, 0.16), 0 0 0 4px rgba(37, 99, 235, 0.08); }
+}
+
+.resume-upload-pulse {
+  animation: subtlePulse 3.2s ease-in-out infinite;
+}
+
+@keyframes connectorFlow {
+  0%   { transform: translateY(-12px); opacity: 0; }
+  30%  { opacity: 0.65; }
+  100% { transform: translateY(28px); opacity: 0; }
+}
+
+.resume-flow-line::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 22px;
+  background: linear-gradient(to bottom, transparent, rgba(37, 99, 235, 0.55), transparent);
+  animation: connectorFlow 2.8s ease-in-out infinite;
+  animation-delay: var(--delay, 0ms);
 }
 
 @keyframes scoreGlow {
@@ -162,5 +347,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-in-up { animation: none; }
+  .animate-fade-in-up,
+  .resume-soft-enter,
+  .resume-upload-pulse,
+  .resume-flow-line::after {
+    animation: none;
+  }
 }

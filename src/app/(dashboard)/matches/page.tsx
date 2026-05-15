@@ -10,6 +10,7 @@ import {
   RefreshCw, Sparkles,
   SlidersHorizontal, ChevronDown, Lock,
   X, User, Clock, ChevronRight, CheckCircle2,
+  UploadCloud, FileText,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { track } from '@/lib/analytics'
@@ -23,7 +24,6 @@ import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { FREE_LIMITS } from '@/lib/limits'
 import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from '@/components/resume/CountryConfirmStep'
-import { locationMatchesCountry } from '@/lib/jobs/location'
 import {
   JobCard, MatchRecord,
   extractExperience, extractJobType, extractWorkMode, extractExpMin, formatPostedDate,
@@ -62,6 +62,63 @@ interface FilterState {
 }
 
 const DEFAULT_FILTERS: FilterState = { minScore: 0, jobType: 'Any', experience: 'Any', location: '', datePosted: 'Any time' }
+
+type SearchScope = {
+  searchMode: 'country' | 'international_remote'
+  countryCode: string | null
+  countryName: string | null
+  searchRunId?: string | null
+}
+
+function scopeKey(userId: string) {
+  return lsKey('jobSearchScope', userId)
+}
+
+function readStoredScope(userId: string): SearchScope | null {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(scopeKey(userId))
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<SearchScope>
+      if (parsed.searchMode === 'international_remote') {
+        return { searchMode: 'international_remote', countryCode: null, countryName: 'International / Remote', searchRunId: parsed.searchRunId ?? null }
+      }
+      if (parsed.searchMode === 'country' && parsed.countryCode) {
+        return {
+          searchMode: 'country',
+          countryCode: parsed.countryCode,
+          countryName: parsed.countryName ?? COUNTRY_CODE_TO_NAME[parsed.countryCode] ?? parsed.countryCode,
+          searchRunId: parsed.searchRunId ?? null,
+        }
+      }
+    } catch { /* fall through to legacy keys */ }
+  }
+
+  const savedMode = localStorage.getItem(lsKey('preferredSearchMode', userId)) as 'country' | 'international_remote' | null
+  if (savedMode === 'international_remote') {
+    return { searchMode: 'international_remote', countryCode: null, countryName: 'International / Remote' }
+  }
+  const legacyCountry = localStorage.getItem(lsKey('preferredSearchCountry', userId))
+  if (legacyCountry) {
+    return {
+      searchMode: 'country',
+      countryCode: legacyCountry,
+      countryName: COUNTRY_CODE_TO_NAME[legacyCountry] ?? legacyCountry,
+    }
+  }
+  return null
+}
+
+function persistSearchScope(userId: string, scope: SearchScope) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(scopeKey(userId), JSON.stringify(scope))
+  localStorage.setItem(lsKey('preferredSearchMode', userId), scope.searchMode)
+  if (scope.searchMode === 'international_remote') {
+    localStorage.removeItem(lsKey('preferredSearchCountry', userId))
+  } else if (scope.countryCode) {
+    localStorage.setItem(lsKey('preferredSearchCountry', userId), scope.countryCode)
+  }
+}
 
 // ── Filter logic ──────────────────────────────────────────────────────────────
 
@@ -163,11 +220,13 @@ function FilterPanel({
   onChange,
   onClear,
   className = '',
+  disabled = false,
 }: {
   filters: FilterState
   onChange: (f: FilterState) => void
   onClear: () => void
   className?: string
+  disabled?: boolean
 }) {
   const EXP_OPTIONS = ['Any', '0–5 years', '5–10 years', '10+ years']
   const JOB_TYPES   = ['Any', 'Full-time', 'Contract', 'Remote', 'Hybrid']
@@ -176,6 +235,13 @@ function FilterPanel({
     <aside className={className || 'w-60 flex-shrink-0'}>
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5 space-y-6">
         <h3 className="font-bold text-[13px] text-[#0F172A] dark:text-[#F1F5F9] tracking-tight">Refine Results</h3>
+        {disabled && (
+          <div className="resume-soft-enter rounded-xl border border-blue-100 dark:border-[#2563EB]/25 bg-blue-50/70 dark:bg-[#1E3A5F]/25 px-3 py-2.5">
+            <p className="text-[12px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">Upload a resume to unlock filters</p>
+            <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5 leading-relaxed">Filters will work once your matched jobs are available.</p>
+          </div>
+        )}
+        <fieldset disabled={disabled} className={disabled ? 'space-y-6 opacity-45 pointer-events-none' : 'space-y-6'}>
 
         {/* Experience */}
         <div>
@@ -187,6 +253,7 @@ function FilterPanel({
                   type="checkbox"
                   checked={filters.experience === opt}
                   onChange={() => onChange({ ...filters, experience: opt })}
+                  disabled={disabled}
                   className="w-3.5 h-3.5 rounded border-gray-300 dark:border-slate-600 accent-[#0F172A] dark:accent-[#2563EB] cursor-pointer"
                 />
                 <span className="text-[13px] text-gray-600 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{opt}</span>
@@ -205,6 +272,7 @@ function FilterPanel({
                   type="checkbox"
                   checked={filters.jobType === opt}
                   onChange={() => onChange({ ...filters, jobType: opt })}
+                  disabled={disabled}
                   className="w-3.5 h-3.5 rounded border-gray-300 dark:border-slate-600 accent-[#0F172A] dark:accent-[#2563EB] cursor-pointer"
                 />
                 <span className="text-[13px] text-gray-600 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{opt}</span>
@@ -223,6 +291,7 @@ function FilterPanel({
               placeholder="e.g. Bangalore"
               value={filters.location}
               onChange={(e) => onChange({ ...filters, location: e.target.value })}
+              disabled={disabled}
               className="w-full pl-8 pr-3 py-2 text-[13px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg bg-white dark:bg-[#263549] text-gray-600 dark:text-slate-300 placeholder:text-gray-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#0F172A]/10 dark:focus:ring-[#2563EB]/20 focus:border-gray-400 dark:focus:border-[#2563EB]"
             />
           </div>
@@ -235,6 +304,7 @@ function FilterPanel({
             <select
               value={filters.datePosted}
               onChange={(e) => onChange({ ...filters, datePosted: e.target.value })}
+              disabled={disabled}
               className="w-full text-[13px] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2 appearance-none bg-white dark:bg-[#263549] text-gray-600 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#0F172A]/10 dark:focus:ring-[#2563EB]/20 focus:border-gray-400 dark:focus:border-[#2563EB] cursor-pointer"
             >
               <option>Any time</option>
@@ -257,6 +327,7 @@ function FilterPanel({
             min={0} max={100} step={5}
             value={filters.minScore}
             onChange={(e) => onChange({ ...filters, minScore: Number(e.target.value) })}
+            disabled={disabled}
             className="w-full accent-[#0F172A] dark:accent-[#2563EB] h-1.5"
           />
           <div className="flex justify-between text-[10px] text-gray-300 dark:text-slate-600 mt-1.5">
@@ -267,10 +338,12 @@ function FilterPanel({
         {/* Clear */}
         <button
           onClick={onClear}
+          disabled={disabled}
           className="flex items-center gap-1.5 text-[12px] font-semibold text-[#DC2626] hover:text-red-700 dark:hover:text-red-400 transition-colors"
         >
           <SlidersHorizontal className="w-3.5 h-3.5" />Clear Filters
         </button>
+        </fieldset>
       </div>
     </aside>
   )
@@ -403,6 +476,8 @@ export default function MatchesPage() {
   } | null>(null)
   const [pendingForce, setPendingForce]                 = useState(false)
   const [preferredSearchCountry, setPreferredSearchCountry] = useState<string | null>(null)
+  // 'international_remote' | 'country' | null — persisted to localStorage alongside preferredSearchCountry
+  const [preferredSearchMode, setPreferredSearchMode] = useState<'country' | 'international_remote' | null>(null)
   // Country actively being used in the current analysis — shown as "Searching in X · Change" chip.
   const [activeSearchCountry, setActiveSearchCountry] = useState<{
     code: string | null    // null = international_remote
@@ -417,6 +492,9 @@ export default function MatchesPage() {
   const [searchHadError, setSearchHadError] = useState(false)
   const [searchStage, setSearchStage]       = useState<'primary' | 'fallback' | null>(null)
   const autoTriggered = useRef(false)
+  // Set to true (synchronously) inside the localStorage effect so the auto-derive
+  // effect can skip country detection in the same React batch.
+  const prefsLoadedRef = useRef(false)
   const aiSectionRef  = useRef<HTMLDivElement>(null)
 
   const { activitySteps, onSSEEvent, reset: resetProgress, stop: stopProgress } =
@@ -425,9 +503,11 @@ export default function MatchesPage() {
   // Include the active country code in the SWR key so the backend returns
   // country-scoped matches. Falls back to the unscoped key while the country
   // is still loading from localStorage (first render).
-  const matchSWRKey = preferredSearchCountry
-    ? `/api/jobs/match?cc=${preferredSearchCountry}`
-    : '/api/jobs/match'
+  const matchSWRKey = preferredSearchMode === 'international_remote'
+    ? '/api/jobs/match?cc=international_remote'
+    : preferredSearchCountry
+      ? `/api/jobs/match?cc=${preferredSearchCountry}`
+      : '/api/jobs/match'
   const { data, error: swrError, mutate } = useSWR(matchSWRKey, fetcher)
   const { data: appsData }                = useSWR('/api/applications', fetcher)
   const { data: optimizedData }           = useSWR('/api/resume/optimize', fetcher)
@@ -443,14 +523,18 @@ export default function MatchesPage() {
     const city    = localStorage.getItem(lsKey('detectedCity', userId))
     if (country !== null) setDetectedCountry(country)
     if (city    !== null) setDetectedCity(city)
-    // Load saved preferred search country for pre-selecting in the confirmation UI
-    const preferred = localStorage.getItem(lsKey('preferredSearchCountry', userId))
-    if (preferred) {
-      setPreferredSearchCountry(preferred)
-      // Restore the chip so "Showing jobs in X · Change" is visible on page load with existing matches
+    const storedScope = readStoredScope(userId)
+    prefsLoadedRef.current = Boolean(storedScope)
+    if (storedScope?.searchMode === 'international_remote') {
+      setPreferredSearchMode('international_remote')
+      setPreferredSearchCountry(null)
+      setActiveSearchCountry({ code: null, name: 'International / Remote', mode: 'international_remote' })
+    } else if (storedScope?.searchMode === 'country' && storedScope.countryCode) {
+      setPreferredSearchMode('country')
+      setPreferredSearchCountry(storedScope.countryCode)
       setActiveSearchCountry({
-        code: preferred,
-        name: COUNTRY_CODE_TO_NAME[preferred] ?? preferred,
+        code: storedScope.countryCode,
+        name: storedScope.countryName ?? COUNTRY_CODE_TO_NAME[storedScope.countryCode] ?? storedScope.countryCode,
         mode: 'country',
       })
     }
@@ -460,19 +544,37 @@ export default function MatchesPage() {
   // haven't confirmed a country yet), auto-derive the active country from the run that was
   // returned by the API. This makes the chip and location filter work without needing a re-analysis.
   useEffect(() => {
+    if (prefsLoadedRef.current) return       // localStorage effect already set the preference
     if (activeSearchCountry) return          // already set from localStorage
     if (!data?.runCountryCode) return        // API hasn't returned yet or no run exists
     const rcc = data.runCountryCode as string
     if (rcc === 'international_remote') {
       setActiveSearchCountry({ code: null, name: 'International / Remote', mode: 'international_remote' })
+      if (userId) {
+        persistSearchScope(userId, {
+          searchMode: 'international_remote',
+          countryCode: null,
+          countryName: 'International / Remote',
+          searchRunId: (data?.searchRunId as string | null) ?? null,
+        })
+      }
     } else {
+      const name = (data.runCountryName as string) ?? COUNTRY_CODE_TO_NAME[rcc] ?? rcc
       setActiveSearchCountry({
         code: rcc,
-        name: (data.runCountryName as string) ?? COUNTRY_CODE_TO_NAME[rcc] ?? rcc,
+        name,
         mode: 'country',
       })
+      if (userId) {
+        persistSearchScope(userId, {
+          searchMode: 'country',
+          countryCode: rcc,
+          countryName: name,
+          searchRunId: (data?.searchRunId as string | null) ?? null,
+        })
+      }
     }
-  }, [data?.runCountryCode, data?.runCountryName, activeSearchCountry])
+  }, [data?.runCountryCode, data?.runCountryName, data?.searchRunId, activeSearchCountry, userId])
 
   const savedJobIds = useMemo(() => {
     const ids = new Set<string>()
@@ -523,39 +625,28 @@ export default function MatchesPage() {
 
   const allOptimizedJobIds = useMemo(() => new Set(allOptimizedByJobId.keys()), [allOptimizedByJobId])
 
-  // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null.
-  // Frontend safety filter: strip any job whose location clearly doesn't match the
-  // active country, guarding against stale wrong-country data already in the DB.
-  const savedAiJobs: MatchRecord[] = useMemo(() => {
-    // Use explicit user preference, or fall back to the country derived from the run
-    const cc   = activeSearchCountry?.code ?? (data?.runCountryCode as string | null) ?? ''
-    const mode = activeSearchCountry?.mode  ?? (data?.runCountryCode === 'international_remote' ? 'international_remote' : 'country')
-    const raw  = (data?.matches ?? []).filter((m: MatchRecord) => m.job?.source !== 'manual')
-    if (!cc || mode === 'international_remote') return raw
-    return raw.filter((m: MatchRecord) => {
-      const ok = locationMatchesCountry(
-        (m.job as { location?: string | null })?.location ?? null,
-        (m.job as { source?: string })?.source ?? '',
-        cc,
-      )
-      if (!ok) {
-        console.warn(
-          `[matches] LOCATION_MISMATCH hidden | title="${(m.job as { title?: string })?.title ?? '?'}"` +
-          ` | jobLocation="${(m.job as { location?: string })?.location ?? '?'}"` +
-          ` | selectedCountry="${cc}" | removedReason=country_mismatch`
-        )
-      }
-      return ok
-    })
-  }, [data, activeSearchCountry])
+  const hasActiveResume = profileData === undefined
+    ? (data?.hasResume ?? true)
+    : Boolean(profileData?.has_resume)
+  const noResumeAvailable = profileData !== undefined && !hasActiveResume
 
-  const hasResume: boolean = data?.hasResume ?? false
+  // AI jobs from SWR (non-manual source), used as fallback when aiJobs is null.
+  // Location filtering is done before a scoped run is saved. The page renders the
+  // immutable run snapshot directly so backend and frontend counts stay aligned.
+  const savedAiJobs: MatchRecord[] = useMemo(() => {
+    if (noResumeAvailable) return []
+    return (data?.matches ?? []).filter((m: MatchRecord) => m.job?.source !== 'manual')
+  }, [data, noResumeAvailable])
+
+  const hasResume: boolean = hasActiveResume
   const dataLoaded         = data !== undefined
 
   // Resolved display lists — only one is rendered at a time based on mode
-  const displayAiJobs: MatchRecord[]  = aiJobs !== null ? aiJobs : savedAiJobs
-  const jobsToDisplay: MatchRecord[]  = mode === 'ai' ? displayAiJobs : manualJobs
-  const displaySuggestions            = suggestions.length > 0 ? suggestions : (mode === 'ai' ? (data?.cvSuggestions ?? []) : [])
+  const displayAiJobs: MatchRecord[]  = noResumeAvailable
+    ? []
+    : aiJobs !== null && (analyzing || aiJobs.length > 0) ? aiJobs : savedAiJobs
+  const jobsToDisplay: MatchRecord[]  = noResumeAvailable ? [] : (mode === 'ai' ? displayAiJobs : manualJobs)
+  const displaySuggestions            = noResumeAvailable ? [] : (suggestions.length > 0 ? suggestions : (mode === 'ai' ? (data?.cvSuggestions ?? []) : []))
   const filteredJobs                  = applyFilters(jobsToDisplay, filters)
   const sortedJobs                    = filteredJobs.slice().sort((a, b) => {
     if (sortKey === 'date') {
@@ -578,6 +669,14 @@ export default function MatchesPage() {
   }
   const isLoading                     = analyzing || searching
 
+  useEffect(() => {
+    if (!data) return
+    console.log(
+      `[matches] displayed=${tieredJobs.length} | returned=${data.returnedCount ?? data.matches?.length ?? 0}` +
+      ` | totalRunMatches=${data.totalMatches ?? 0} | run=${data.searchRunId ?? 'none'}`
+    )
+  }, [data, tieredJobs.length])
+
   // Auto-trigger on first load when user has a resume but no AI matches yet.
   // Skip if an analysis was completed in the last 10 minutes (localStorage guard)
   // to prevent double-analyze when navigating here right after the resume page runs one.
@@ -599,7 +698,7 @@ export default function MatchesPage() {
   // ── Shared SSE analysis runner ────────────────────────────────────────────
   // Called after country is confirmed (either from CountryConfirmStep or from saved preference).
   // Handles the full SSE fetch, stream reading, and post-processing.
-  async function runAnalysis(isReanalyze: boolean, choice: CountryChoice) {
+  async function runAnalysis(isReanalyze: boolean, choice: CountryChoice, forceJobsFetch = false) {
     const countryName = choice.searchMode === 'international_remote'
       ? 'International / Remote'
       : (COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry ?? ''] ?? choice.selectedSearchCountry ?? '')
@@ -615,6 +714,7 @@ export default function MatchesPage() {
     })
     setAnalyzeError('')
     setTierFilter('all')
+    setFilters(DEFAULT_FILTERS)
     resetProgress()
 
     const controller = new AbortController()
@@ -626,6 +726,7 @@ export default function MatchesPage() {
     let errorMessage  = ''
     let noJobsMessage = ''
     let succeeded     = false
+    let completedScope: SearchScope | null = null
 
     try {
       const res = await fetch('/api/resume/analyze', {
@@ -634,6 +735,7 @@ export default function MatchesPage() {
         signal:  controller.signal,
         body: JSON.stringify({
           force:                 isReanalyze,
+          forceJobsFetch:        forceJobsFetch && !isReanalyze,
           selectedSearchCountry: choice.selectedSearchCountry,
           searchMode:            choice.searchMode,
           wasDetected:           choice.wasDetected,
@@ -673,10 +775,11 @@ export default function MatchesPage() {
                 const event = JSON.parse(line.slice(6)) as Record<string, unknown>
                 onSSEEvent(event)
 
-                if (event.done) {
-                  matchCount    = (event.matchCount as number)  ?? 0
-                  cvSuggestions = (event.cvSuggestions as string[]) ?? []
-                  if (event.message) noJobsMessage = event.message as string
+                  if (event.done) {
+                    matchCount    = (event.matchCount as number)  ?? 0
+                    cvSuggestions = (event.cvSuggestions as string[]) ?? []
+                    completedScope = (event.searchScope as SearchScope | null) ?? null
+                    if (event.message) noJobsMessage = event.message as string
                   if (event.detectedCountry) {
                     const country = event.detectedCountry as string
                     setDetectedCountry(country)
@@ -721,13 +824,24 @@ export default function MatchesPage() {
       }
 
       localStorage.setItem(lsKey('lastAnalyzedAt', userId), String(Date.now()))
-      toast.success(`Found ${matchCount} AI-ranked matches!`)
       const fresh    = await mutate()
       const allFresh: MatchRecord[] = fresh?.matches ?? []
       const newAi    = allFresh
         .filter((m) => m.job?.source !== 'manual')
-        .filter((m) => !isReanalyze || (m.ai_score >= 40 && m.ai_score <= 100))
       setAiJobs(newAi)
+      if (userId) {
+        const scopeToPersist: SearchScope = completedScope ?? {
+          searchMode: choice.searchMode,
+          countryCode: choice.searchMode === 'international_remote' ? null : choice.selectedSearchCountry,
+          countryName: choice.searchMode === 'international_remote'
+            ? 'International / Remote'
+            : (COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry ?? ''] ?? choice.selectedSearchCountry ?? null),
+          searchRunId: (fresh?.searchRunId as string | null) ?? null,
+        }
+        persistSearchScope(userId, scopeToPersist)
+      }
+      // Toast after mutate so the count matches the cards returned for this exact run.
+      toast.success(`Found ${newAi.length} AI-ranked matches!`)
       if (cvSuggestions.length > 0) setSuggestions(cvSuggestions)
       void globalMutate('/api/profile')
       succeeded = true
@@ -758,9 +872,22 @@ export default function MatchesPage() {
     track.aiAnalyzeClick()
 
     // Read saved preference directly from localStorage (state may not be loaded yet on auto-trigger)
+    const savedPreferredMode = typeof window !== 'undefined' && userId
+      ? localStorage.getItem(lsKey('preferredSearchMode', userId)) as 'country' | 'international_remote' | null
+      : null
     const savedPreferred = typeof window !== 'undefined' && userId
       ? localStorage.getItem(lsKey('preferredSearchCountry', userId))
       : null
+
+    if (savedPreferredMode === 'international_remote') {
+      // Saved as international — skip precheck, go straight to analysis
+      await runAnalysis(reanalyze, {
+        searchMode: 'international_remote',
+        selectedSearchCountry: null,
+        wasDetected: false,
+      })
+      return
+    }
 
     if (savedPreferred) {
       // Known country — skip precheck, go straight to analysis
@@ -826,13 +953,28 @@ export default function MatchesPage() {
   // Called by CountryConfirmStep when user picks a country or international mode.
   function handleCountryConfirmed(choice: CountryChoice) {
     const wasLocationChange = countryConfirmPending?.context === 'change_search_location'
-    if (choice.searchMode === 'country' && userId) {
-      localStorage.setItem(lsKey('preferredSearchCountry', userId), choice.selectedSearchCountry)
-      setPreferredSearchCountry(choice.selectedSearchCountry)
+    if (userId) {
+      if (choice.searchMode === 'international_remote') {
+        persistSearchScope(userId, {
+          searchMode: 'international_remote',
+          countryCode: null,
+          countryName: 'International / Remote',
+        })
+        setPreferredSearchMode('international_remote')
+        setPreferredSearchCountry(null)
+      } else {
+        persistSearchScope(userId, {
+          searchMode: 'country',
+          countryCode: choice.selectedSearchCountry,
+          countryName: COUNTRY_CODE_TO_NAME[choice.selectedSearchCountry] ?? choice.selectedSearchCountry,
+        })
+        setPreferredSearchMode('country')
+        setPreferredSearchCountry(choice.selectedSearchCountry)
+      }
     }
     setCountryConfirmPending(null)
     setIsLocationChange(wasLocationChange)
-    void runAnalysis(pendingForce, choice)
+    void runAnalysis(pendingForce, choice, wasLocationChange)
   }
 
   // ── handleChangeCountry ───────────────────────────────────────────────────
@@ -1035,21 +1177,36 @@ export default function MatchesPage() {
         <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-0.5">AI-ranked jobs based on your resume.</p>
       </div>
 
-      {/* ── Search bar (collapsible) — hidden while a location-change match is running ── */}
-      {!(analyzing && isLocationChange) && <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+      {/* ── Search bar (collapsible) — hidden while any match is running ── */}
+      {analyzing && (
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm px-4 py-3 flex items-center gap-2.5">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 dark:text-slate-500 flex-shrink-0" />
+          <span className="text-[13px] font-medium text-gray-500 dark:text-slate-400">
+            AI is finding your best-fit jobs. This may take 3–5 minutes.
+          </span>
+        </div>
+      )}
+      {!analyzing && <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
 
         {/* Toggle header — always visible */}
         <button
           type="button"
-          onClick={() => { if (searchLimitReached) { setShowPaywall(true); return } setSearchOpen((o) => !o) }}
-          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${searchLimitReached ? 'cursor-default' : 'hover:bg-gray-50 dark:hover:bg-[#263549]'}`}
+          onClick={() => {
+            if (noResumeAvailable) return
+            if (searchLimitReached) { setShowPaywall(true); return }
+            setSearchOpen((o) => !o)
+          }}
+          disabled={noResumeAvailable}
+          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${noResumeAvailable || searchLimitReached ? 'cursor-default' : 'hover:bg-gray-50 dark:hover:bg-[#263549]'}`}
         >
           <div className="flex items-center gap-2 min-w-0">
-            {searchLimitReached
+            {noResumeAvailable || searchLimitReached
               ? <Lock className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0" />
               : <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />}
-            <span className="text-[13px] font-semibold text-[#0F172A] dark:text-[#F1F5F9] truncate">
-              {searchLimitReached
+            <span className={`text-[13px] font-semibold truncate ${noResumeAvailable ? 'text-gray-400 dark:text-slate-500' : 'text-[#0F172A] dark:text-[#F1F5F9]'}`}>
+              {noResumeAvailable
+                ? 'Upload a resume first to search and filter matched jobs.'
+                : searchLimitReached
                 ? 'Search limit reached'
                 : title.trim() || location.trim()
                 ? [title.trim(), location.trim()].filter(Boolean).join(' · ')
@@ -1057,17 +1214,17 @@ export default function MatchesPage() {
             </span>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-            {!searchLimitReached && profileData?.plan !== 'pro' && profileData !== undefined && (
+            {!noResumeAvailable && !searchLimitReached && profileData?.plan !== 'pro' && profileData !== undefined && (
               <span className="text-[10px] text-gray-400 dark:text-slate-500 whitespace-nowrap">
                 {Math.max(0, FREE_LIMITS.jobSearch - searchesUsed)}/{FREE_LIMITS.jobSearch} searches left
               </span>
             )}
-            {searchLimitReached && (
+            {!noResumeAvailable && searchLimitReached && (
               <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 underline whitespace-nowrap">
                 Unlock more searches
               </span>
             )}
-            {!searchLimitReached && (
+            {!noResumeAvailable && !searchLimitReached && (
               <ChevronDown
                 className={`w-4 h-4 text-gray-400 dark:text-slate-500 transition-transform duration-200 ${searchOpen ? 'rotate-180' : ''}`}
               />
@@ -1076,7 +1233,7 @@ export default function MatchesPage() {
         </button>
 
         {/* Expandable form */}
-        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${searchOpen ? 'max-h-[350px]' : 'max-h-0'}`}>
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${searchOpen && !noResumeAvailable ? 'max-h-[350px]' : 'max-h-0'}`}>
           <form
             onSubmit={handleSearch}
             className="flex flex-wrap gap-3 p-4 border-t border-[#E5E7EB] dark:border-[#334155]"
@@ -1142,7 +1299,7 @@ export default function MatchesPage() {
       <div className="flex flex-col xl:flex-row gap-5">
 
         {/* ── Single results section — renders AI or Manual, never both ── */}
-        <div className="flex-1 min-w-0 space-y-4" ref={aiSectionRef}>
+        <div className="flex-1 min-w-0 space-y-5" ref={aiSectionRef}>
 
           {!analyzing && (
             <details className="xl:hidden rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
@@ -1156,6 +1313,7 @@ export default function MatchesPage() {
                   onChange={setFilters}
                   onClear={() => setFilters(DEFAULT_FILTERS)}
                   className="w-full"
+                  disabled={noResumeAvailable}
                 />
               </div>
             </details>
@@ -1268,7 +1426,10 @@ export default function MatchesPage() {
                 <div className="hidden xl:ml-auto xl:flex items-center gap-0.5 text-[11px]">
                   <MapPin className="w-3 h-3 text-[#2563EB] flex-shrink-0 mr-0.5" />
                   {activeSearchCountry.mode === 'international_remote' ? (
-                    <span className="text-gray-400 dark:text-slate-500 font-normal">Showing international / remote jobs</span>
+                    <>
+                      <span className="text-gray-400 dark:text-slate-500 font-normal">Showing</span>
+                      <span className="text-gray-600 dark:text-slate-300 font-medium ml-0.5">international / remote jobs</span>
+                    </>
                   ) : (
                     <>
                       <span className="text-gray-400 dark:text-slate-500 font-normal">Showing jobs in</span>
@@ -1292,7 +1453,10 @@ export default function MatchesPage() {
             <div className="flex xl:hidden items-center gap-0.5 text-[11px]">
               <MapPin className="w-3 h-3 text-[#2563EB] flex-shrink-0 mr-0.5" />
               {activeSearchCountry.mode === 'international_remote' ? (
-                <span className="text-gray-400 dark:text-slate-500 font-normal">Showing international / remote jobs</span>
+                <>
+                  <span className="text-gray-400 dark:text-slate-500 font-normal">Showing</span>
+                  <span className="text-gray-600 dark:text-slate-300 font-medium ml-0.5">international / remote jobs</span>
+                </>
               ) : (
                 <>
                   <span className="text-gray-400 dark:text-slate-500 font-normal">Showing jobs in</span>
@@ -1407,13 +1571,96 @@ export default function MatchesPage() {
           )}
 
           {/* Empty — no jobs to show */}
-          {!isLoading && jobsToDisplay.length === 0 && dataLoaded && !analyzeError && (
-            <div className="flex flex-col items-center justify-center py-16 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-3">
-                <Briefcase className="w-5 h-5 text-gray-300 dark:text-slate-600" />
-              </div>
-              {mode === 'manual' ? (
+          {!isLoading && !analyzeError && (noResumeAvailable || (jobsToDisplay.length === 0 && dataLoaded)) && (
+            <div className="resume-soft-enter flex flex-col items-center justify-center py-16 px-5 bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-[#E5E7EB] dark:border-[#334155] text-center">
+              {noResumeAvailable ? (
                 <>
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-[#1E3A5F] flex items-center justify-center mb-4">
+                    <Sparkles className="w-5 h-5 text-[#2563EB]" />
+                  </div>
+                  <p className="font-black text-[18px] text-[#0F172A] dark:text-[#F1F5F9]">
+                    Your matched jobs are almost ready
+                  </p>
+                  <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-2 max-w-xl leading-relaxed">
+                    Upload or create your resume first, and FindAllJob will find better-fit jobs based on your skills, experience, and career goals.
+                  </p>
+
+                  <div className="mt-7 grid w-full max-w-3xl grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      {
+                        title: 'Upload Resume',
+                        text: 'Already have a resume? Upload it and let AI match you with relevant jobs.',
+                        button: 'Upload Resume',
+                        icon: UploadCloud,
+                        primary: true,
+                      },
+                      {
+                        title: 'Create Resume with AI',
+                        text: 'Don’t have a resume ready? Answer a few questions and AI will create one for you.',
+                        button: 'Create Resume with AI',
+                        icon: FileText,
+                        primary: false,
+                      },
+                    ].map((card, i) => {
+                      const Icon = card.icon
+                      return (
+                        <div
+                          key={card.title}
+                          className="resume-soft-enter rounded-2xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#263549] p-5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_34px_rgba(37,99,235,0.10)] dark:hover:border-[#2563EB]/40 dark:hover:shadow-[0_12px_34px_rgba(37,99,235,0.12)]"
+                          style={{ '--delay': `${i * 90}ms` } as React.CSSProperties}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-center flex-shrink-0">
+                              <Icon className="w-4 h-4 text-[#2563EB]" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">{card.title}</p>
+                              <p className="text-[12px] text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">{card.text}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => router.push('/resume')}
+                            className={`mt-5 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${
+                              card.primary
+                                ? 'bg-[#0F172A] dark:bg-[#2563EB] text-white hover:bg-[#1E293B] dark:hover:bg-blue-700 shadow-sm hover:shadow-[0_12px_28px_rgba(37,99,235,0.18)]'
+                                : 'border border-[#E5E7EB] dark:border-[#334155] text-[#0F172A] dark:text-[#F1F5F9] bg-white dark:bg-[#1E293B] hover:border-blue-200 dark:hover:border-[#2563EB]/45'
+                            }`}
+                          >
+                            {card.button}
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="mt-6 grid w-full max-w-3xl grid-cols-1 md:grid-cols-3 gap-3">
+                    {[
+                      {
+                        title: `${isCurrentUserPro ? 20 : FREE_LIMITS.matchesPerDay} better-fit jobs`,
+                        text: 'AI finds jobs based on your resume.',
+                      },
+                      {
+                        title: 'Match score for every job',
+                        text: 'See how strongly each role fits you.',
+                      },
+                      {
+                        title: 'Resume improvement options',
+                        text: 'Fix your resume for specific jobs.',
+                      },
+                    ].map((benefit, i) => (
+                      <div key={benefit.title} className="resume-soft-enter rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC]/70 dark:bg-[#263549]/70 px-4 py-3 text-left" style={{ '--delay': `${220 + i * 70}ms` } as React.CSSProperties}>
+                        <p className="text-[12px] font-bold text-[#0F172A] dark:text-[#F1F5F9]">{benefit.title}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5 leading-relaxed">{benefit.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : mode === 'manual' ? (
+                <>
+                  <div className="w-12 h-12 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-3">
+                    <Briefcase className="w-5 h-5 text-gray-300 dark:text-slate-600" />
+                  </div>
                   <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">
                     {searchHadError ? 'Unable to fetch jobs' : 'No results found'}
                   </p>
@@ -1429,15 +1676,11 @@ export default function MatchesPage() {
                     </p>
                   )}
                 </>
-              ) : !hasResume ? (
-                <>
-                  <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">No resume found</p>
-                  <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1">
-                    <a href="/resume" className="text-[#2563EB] font-semibold hover:underline">Upload your resume</a> to get AI-matched jobs.
-                  </p>
-                </>
               ) : (
                 <>
+                  <div className="w-12 h-12 rounded-2xl bg-[#F8FAFC] dark:bg-[#263549] flex items-center justify-center mb-3">
+                    <Briefcase className="w-5 h-5 text-gray-300 dark:text-slate-600" />
+                  </div>
                   <p className="font-bold text-[14px] text-[#0F172A] dark:text-[#F1F5F9]">No AI matches yet</p>
                   <p className="text-[13px] text-gray-400 dark:text-slate-500 mt-1 mb-4">Search above or auto-match with your resume</p>
                   <button
@@ -1470,7 +1713,7 @@ export default function MatchesPage() {
           )}
 
           {/* Job cards — dimmed while loading */}
-          <div className={`space-y-4 transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`space-y-5 transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
             {tieredJobs.map((match, i) => (
               <JobCard
                 key={match.id}
@@ -1482,6 +1725,7 @@ export default function MatchesPage() {
                 initialIsApplied={appliedJobIds.has(match.job.id)}
                 isOptimized={allOptimizedJobIds.has(match.job.id)}
                 optimizedScore={allOptimizedByJobId.get(match.job.id)?.data.ats_score}
+                optimizedData={allOptimizedByJobId.get(match.job.id)?.data ?? null}
                 celebrate={celebratingJobId === match.job.id}
                 isOptimizing={optimizeJobId === match.job.id}
                 onOptimize={handleOptimize}
@@ -1523,16 +1767,17 @@ export default function MatchesPage() {
         {/* ── Right column: filter + applied jobs ──────────────────── */}
         {!analyzing && (
           <div className="hidden xl:block w-60 flex-shrink-0">
-            <div className="flex flex-col gap-4 [@media(min-width:1280px)_and_(min-height:700px)]:sticky [@media(min-width:1280px)_and_(min-height:700px)]:top-6">
+            <div className="flex flex-col gap-5 [@media(min-width:1280px)_and_(min-height:700px)]:sticky [@media(min-width:1280px)_and_(min-height:700px)]:top-6">
             <FilterPanel
               filters={filters}
               onChange={setFilters}
               onClear={() => setFilters(DEFAULT_FILTERS)}
               className="w-full"
+              disabled={noResumeAvailable}
             />
 
             {/* ── Applied Jobs ───────────────────────────────────── */}
-            <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
+            <div className={`resume-soft-enter bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5 ${appliedJobIds.size === 0 ? 'opacity-75' : ''}`}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-[12px] uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500">
                   Applied Jobs
@@ -1545,16 +1790,25 @@ export default function MatchesPage() {
               </div>
               <button
                 onClick={() => router.push('/tracker')}
-                className="w-full group flex items-center gap-3 px-3.5 py-3 rounded-xl border border-[#E5E7EB] dark:border-[#2D3D55] bg-transparent hover:bg-[#F8FAFC] dark:hover:bg-[#1C2E45] hover:border-[#CBD5E1] dark:hover:border-[#3D5170] transition-all text-left"
+                disabled={appliedJobIds.size === 0}
+                className={`w-full group flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all text-left ${
+                  appliedJobIds.size === 0
+                    ? 'border-dashed border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#263549]/60 cursor-not-allowed'
+                    : 'border-[#E5E7EB] dark:border-[#2D3D55] bg-transparent hover:bg-[#F8FAFC] dark:hover:bg-[#1C2E45] hover:border-[#CBD5E1] dark:hover:border-[#3D5170]'
+                }`}
               >
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-green-50 dark:bg-green-950/50">
-                  <CheckCircle2 className="w-[15px] h-[15px] text-green-500 dark:text-green-400" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${appliedJobIds.size === 0 ? 'bg-white dark:bg-[#1E293B]' : 'bg-green-50 dark:bg-green-950/50'}`}>
+                  <CheckCircle2 className={`w-[15px] h-[15px] ${appliedJobIds.size === 0 ? 'text-gray-300 dark:text-slate-600' : 'text-green-500 dark:text-green-400'}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#CBD5E1] leading-tight">View All Applied Jobs</p>
-                  <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">See jobs you have marked as applied</p>
+                  <p className="font-semibold text-[13px] text-[#0F172A] dark:text-[#CBD5E1] leading-tight">
+                    {appliedJobIds.size === 0 ? 'No applied jobs yet' : 'View All Applied Jobs'}
+                  </p>
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">
+                    {appliedJobIds.size === 0 ? 'Jobs you mark as applied will appear here.' : 'See jobs you have marked as applied'}
+                  </p>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <ChevronRight className={`w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0 transition-opacity ${appliedJobIds.size === 0 ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`} />
               </button>
             </div>
             </div>

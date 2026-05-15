@@ -55,7 +55,7 @@ const COUNTRY_PATTERNS: Array<{ code: string; name: string; re: RegExp }> = [
 // Job location keywords by country — used for post-fetch filtering.
 // These should match what actually appears in job listing location fields.
 const COUNTRY_LOCATION_RE: Partial<Record<string, RegExp>> = {
-  in: /\b(india|delhi|new delhi|mumbai|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|ahmedabad|jaipur|surat|lucknow|nagpur|indore|bhopal|patna|visakhapatnam|noida|gurgaon|gurugram|ncr|haryana|maharashtra|karnataka|tamil\s*nadu|andhra|telangana|kerala|rajasthan|gujarat|west\s*bengal|uttar\s*pradesh)\b/i,
+  in: /\b(india|delhi|new delhi|mumbai|bombay|bangalore|bengaluru|chennai|madras|hyderabad|pune|poona|kolkata|calcutta|ahmedabad|jaipur|surat|lucknow|nagpur|indore|bhopal|patna|visakhapatnam|vizag|noida|gurgaon|gurugram|faridabad|thane|navi\s*mumbai|ncr|delhi[\s-]?ncr|kochi|cochin|mysore|mysuru|coimbatore|vadodara|baroda|nashik|aurangabad|ranchi|chandigarh|bhubaneswar|dehradun|amritsar|agra|varanasi|meerut|haryana|maharashtra|karnataka|tamil\s*nadu|andhra|telangana|kerala|rajasthan|gujarat|west\s*bengal|uttar\s*pradesh|madhya\s*pradesh|punjab|odisha|jharkhand|uttarakhand|himachal|goa)\b/i,
   gb: /\b(uk|united kingdom|england|wales|scotland|london|manchester|birmingham|glasgow|liverpool|bristol|leeds|sheffield|edinburgh|belfast|newcastle)\b/i,
   au: /\b(australia|sydney|melbourne|brisbane|perth|adelaide|canberra|queensland|victoria|nsw)\b/i,
   ca: /\b(canada|toronto|vancouver|calgary|montreal|ottawa|edmonton|winnipeg|ontario|british columbia|alberta|quebec)\b/i,
@@ -139,6 +139,19 @@ export function locationMatchesCountry(
   const re = COUNTRY_LOCATION_RE[countryCode]
   if (!re) return true
   return re.test(location)
+}
+
+/**
+ * Returns true when the job explicitly appears to be tied to the country.
+ * Unlike isJobFromCountry(), remote labels do not auto-pass here; this is used
+ * to exclude the resume's local country from international/remote searches.
+ */
+export function jobMentionsCountry(job: NormalizedJob, countryCode: string): boolean {
+  if (!countryCode) return false
+  if (countryCode === 'in' && INDIA_ONLY_SOURCES.has(job.source)) return true
+  const re = COUNTRY_LOCATION_RE[countryCode]
+  if (!re) return false
+  return re.test(job.location || '')
 }
 
 /** Filter a job list to only include jobs from the detected country. */

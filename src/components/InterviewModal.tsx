@@ -38,6 +38,9 @@ interface Props {
   isPro: boolean
   onClose: () => void
   mode?: 'resume' | 'job-based'
+  apiBasePath?: string
+  requestContext?: Record<string, unknown>
+  onPrepared?: () => void
 }
 
 const TOTAL_QUESTIONS = 5
@@ -303,7 +306,15 @@ function LeftPanel({
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
 
-export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Props) {
+export function InterviewModal({
+  job,
+  isPro,
+  onClose,
+  mode = 'job-based',
+  apiBasePath = '/api/interview',
+  requestContext,
+  onPrepared,
+}: Props) {
   const isResumeBased = mode === 'resume'
   const [phase, setPhase]                         = useState<Phase>('loading')
   const [questionNumber, setQuestionNumber]       = useState(1)
@@ -340,13 +351,14 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
     setPhase('loading')
     setError('')
     try {
-      const res = await fetch('/api/interview/start', {
+      const res = await fetch(`${apiBasePath}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobTitle: job.title,
           company: job.company,
           jobDescription: job.description,
+          ...(requestContext ?? {}),
         }),
       })
       const data = await res.json()
@@ -358,6 +370,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
       setFeedback(null)
       setShowImproved(false)
       setPhase('asking')
+      onPrepared?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start interview.')
       setPhase('asking')
@@ -374,7 +387,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
     setPhase('submitting')
     setError('')
     try {
-      const res = await fetch('/api/interview/evaluate', {
+      const res = await fetch(`${apiBasePath}/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,6 +395,8 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
           answer: answer.trim(),
           jobTitle: job.title,
           company: job.company,
+          jobDescription: job.description,
+          ...(requestContext ?? {}),
         }),
       })
       const data = await res.json()
@@ -409,7 +424,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
     setError('')
 
     try {
-      const res = await fetch('/api/interview/next', {
+      const res = await fetch(`${apiBasePath}/next`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -418,6 +433,7 @@ export function InterviewModal({ job, isPro, onClose, mode = 'job-based' }: Prop
           jobTitle: job.title,
           company: job.company,
           jobDescription: job.description,
+          ...(requestContext ?? {}),
         }),
       })
       const data = await res.json()

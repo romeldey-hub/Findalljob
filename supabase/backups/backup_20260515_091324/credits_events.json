@@ -1,0 +1,1 @@
+{"code":"PGRST205","details":null,"hint":"Perhaps you meant the table 'public.ai_usage_events'","message":"Could not find the table 'public.credits_events' in the schema cache"}

@@ -29,6 +29,7 @@ interface ApplyButtonProps {
   job:      ApplyButtonJob
   onApply?: () => void
   variant?: 'outline' | 'primary'
+  showCompanyButton?: boolean
 }
 
 type ButtonState = 'idle' | 'opening'
@@ -193,7 +194,7 @@ export function VerifiedBadge({ label }: { label?: VerifiedLabel }) {
 
 // ── ApplyButton ────────────────────────────────────────────────────────────────
 
-export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonProps) {
+export function ApplyButton({ job, onApply, variant = 'outline', showCompanyButton = true }: ApplyButtonProps) {
   const [state,           setState]           = useState<ButtonState>('idle')
   const [showFallback,    setShowFallback]     = useState(false)
   const [showCompanyInfo, setShowCompanyInfo]  = useState(false)
@@ -214,12 +215,12 @@ export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonPr
   }
 
   const btnClass = variant === 'primary'
-    ? 'flex w-full items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-[11px] font-semibold transition-all hover:shadow-md active:scale-100 disabled:opacity-60 whitespace-nowrap'
+    ? 'inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-2 text-[11px] font-semibold text-white transition-all hover:bg-blue-700 hover:shadow-sm active:scale-[0.99] disabled:opacity-60 whitespace-nowrap sm:w-auto sm:py-1.5'
     : 'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all hover:scale-[1.02] active:scale-100 disabled:opacity-60'
 
   return (
     <>
-      <div className={variant === 'primary' ? 'flex flex-col items-center gap-1 w-full' : 'flex flex-col items-center gap-1 w-full'}>
+      <div className={showCompanyButton ? 'flex w-full flex-col items-center gap-1' : 'inline-flex items-center'}>
 
         {/* Broken-link warning — only shown when confirmed broken */}
         {isBroken && (
@@ -237,12 +238,14 @@ export function ApplyButton({ job, onApply, variant = 'outline' }: ApplyButtonPr
           }
         </button>
 
-        <button
-          onClick={() => setShowCompanyInfo(true)}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all"
-        >
-          Know the Company
-        </button>
+        {showCompanyButton && (
+          <button
+            onClick={() => setShowCompanyInfo(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-transparent text-gray-500 dark:text-slate-400 text-[12px] font-semibold hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-gray-300 dark:hover:border-[#475569] hover:text-gray-700 dark:hover:text-slate-300 transition-all"
+          >
+            Know the Company
+          </button>
+        )}
 
       </div>
 

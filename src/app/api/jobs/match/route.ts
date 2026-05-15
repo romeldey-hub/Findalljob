@@ -4,9 +4,8 @@ import { computeVerifiedLabel }     from '@/types'
 import { isProUser }                from '@/lib/admin'
 import { resolveProUntil }          from '@/lib/billing'
 import { FREE_LIMITS }              from '@/lib/limits'
-import { computeParsedResumeHash }  from '@/lib/resume-hash'
-import { locationMatchesCountry, detectLocation } from '@/lib/jobs/location'
-import type { ApplyStatus, ParsedResume } from '@/types'
+import { detectLocation } from '@/lib/jobs/location'
+import type { ApplyStatus } from '@/types'
 
 // Maps the ISO-2 country code sent by the frontend to the human-readable
 // detected_location value stored in job_search_runs (e.g. "in" → "India").
@@ -57,13 +56,11 @@ export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = user.id
 
-  // Country code sent by the client — e.g. "in", "us", "gb", or "international_remote".
-  // When present, the run lookup is scoped to that country and a safety filter is applied.
-  const cc             = new URL(req.url).searchParams.get('cc') ?? ''
-  const targetLocation = cc === 'international_remote'
-    ? 'international_remote'
-    : (CC_TO_LOCATION[cc] ?? null)
+  // Country code sent by the client, e.g. "in", "us", "gb", or
+  // "international_remote". When present, the run lookup is exact.
+  const cc = new URL(req.url).searchParams.get('cc') ?? ''
 
   // Resolve Pro status — used to determine match cap
   const admin = createAdminClient()
@@ -78,7 +75,8 @@ export async function GET(req: NextRequest) {
   const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
   const matchLimit = isPro ? 20 : FREE_LIMITS.matchesPerDay
 
-  // Fetch active resume first so we can compute the resume hash for run lookup
+  // Fetch active resume only for "hasResume" and CV suggestions. Search results
+  // are owned by job_search_runs and must survive resume deletion.
   const resumeResult = await supabase
     .from('resumes')
     .select('id, raw_text, parsed_data')
@@ -88,113 +86,95 @@ export async function GET(req: NextRequest) {
     .limit(1)
     .maybeSingle()
 
-  // Compute the parsed resume hash so we can find the matching run
   const parsedData = resumeResult.data?.parsed_data as Record<string, unknown> | null
-  const parsedResumeForHash = parsedData as ParsedResume | null
-  const resumeHash = parsedResumeForHash
-    ? computeParsedResumeHash(parsedResumeForHash as ParsedResume)
-    : null
+  const hasResume = Boolean(resumeResult.data?.id)
+  const cvSuggestions = Array.isArray(parsedData?.cv_suggestions)
+    ? (parsedData!.cv_suggestions as string[])
+    : []
 
-  // Reverse map: "India" → "in", used when client sends no cc (e.g. production with no localStorage)
-  const LOCATION_TO_CC: Record<string, string> = Object.fromEntries(
-    Object.entries(CC_TO_LOCATION).map(([k, v]) => [v, k])
-  )
+  const requestedScope = cc === 'international_remote'
+    ? { searchMode: 'international_remote' as const, countryCode: null, countryName: null }
+    : cc
+      ? { searchMode: 'country' as const, countryCode: cc, countryName: CC_TO_LOCATION[cc] ?? cc }
+      : null
 
-  // When the client sends no ?cc, derive a country hint from the user's profile location
-  // (resume location e.g. "Delhi, India" → "in"). This ensures production users without
-  // a localStorage preference still see their country's jobs.
-  const profileLocationRaw = (profileRow as Record<string, unknown> | null)?.location as string | null
-  const profileCc = (!cc && profileLocationRaw)
-    ? detectLocation(profileLocationRaw).countryCode
-    : ''
+  function scopedRunQuery() {
+    let query = admin
+      .from('job_search_runs')
+      .select('id, search_mode, country_code, country_name, detected_location, generated_queries, final_saved_count, failure_reason, audit_counts')
+      .eq('user_id', userId)
+      .eq('status', 'success')
+      .order('created_at', { ascending: false })
+      .limit(1)
 
-  // Find the latest successful search run for this user+resume combination.
-  //  1. Explicit ?cc → find run matching that country
-  //  2. No ?cc but profile has a country → find run matching profile country
-  //  3. Last resort: latest run of any country (guarded by safety filter below)
-  let latestRunId:          string | null = null
-  let runDetectedLocation:  string | null = null  // detected_location from the chosen run
-  if (resumeHash) {
-    // Step 1 / 2: look for a run matching the known or inferred country
-    const lookupLocation = targetLocation
-      || (profileCc && profileCc !== 'international_remote' ? CC_TO_LOCATION[profileCc] : null)
-
-    if (lookupLocation) {
-      const { data: countryRun } = await admin
-        .from('job_search_runs')
-        .select('id, detected_location')
-        .eq('user_id', user.id)
-        .eq('resume_hash', resumeHash)
-        .eq('status', 'success')
-        .eq('detected_location', lookupLocation)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      latestRunId         = countryRun?.id ?? null
-      runDetectedLocation = countryRun?.detected_location ?? null
-      if (latestRunId) {
-        console.log(`[jobs/match] country run found for "${lookupLocation}": ${latestRunId}`)
-      }
+    if (requestedScope) {
+      query = query.eq('search_mode', requestedScope.searchMode)
+      query = requestedScope.countryCode
+        ? query.eq('country_code', requestedScope.countryCode)
+        : query.is('country_code', null)
     }
-
-    // Step 3: most recent run with a specific country (not null, not international_remote).
-    // Handles users whose profiles.location is null/unset — skips the mixed/international runs
-    // and picks the India (or other country) run directly.
-    if (!latestRunId && !cc) {
-      const { data: countrySpecificRun } = await admin
-        .from('job_search_runs')
-        .select('id, detected_location')
-        .eq('user_id', user.id)
-        .eq('resume_hash', resumeHash)
-        .eq('status', 'success')
-        .not('detected_location', 'is', null)
-        .neq('detected_location', 'international_remote')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (countrySpecificRun?.id) {
-        latestRunId         = countrySpecificRun.id
-        runDetectedLocation = countrySpecificRun.detected_location
-        console.log(`[jobs/match] using most recent country-specific run: ${latestRunId} (detected_location="${runDetectedLocation}")`)
-      }
-    }
-
-    // Step 4: fallback to latest run of any country
-    if (!latestRunId) {
-      const { data: anyRun } = await admin
-        .from('job_search_runs')
-        .select('id, detected_location')
-        .eq('user_id', user.id)
-        .eq('resume_hash', resumeHash)
-        .eq('status', 'success')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      latestRunId         = anyRun?.id ?? null
-      runDetectedLocation = anyRun?.detected_location ?? null
-      console.log(`[jobs/match] fallback to latest run: ${latestRunId} (detected_location="${runDetectedLocation}")`)
-    }
+    return query
   }
 
-  // Effective country: explicit ?cc > profile-derived > run-derived
-  const effectiveCc: string = cc
-    || profileCc
-    || (runDetectedLocation === 'international_remote'
-        ? 'international_remote'
-        : (LOCATION_TO_CC[runDetectedLocation ?? ''] ?? ''))
+  // Prefer the latest complete run. If a later partial/scarce run exists, it
+  // must not hide an older complete run for the same exact scope.
+  const completeRunQuery = scopedRunQuery().gte('final_saved_count', matchLimit)
+  const { data: completeRunRow, error: completeRunError } = await completeRunQuery.maybeSingle()
+  if (completeRunError) {
+    console.error('[jobs/match] complete run lookup failed:', completeRunError.message)
+  }
 
-  // What the frontend should display as active country (code + name)
-  const runCountryCode = effectiveCc || null
-  const runCountryName = runCountryCode === 'international_remote'
+  const runQuery = scopedRunQuery()
+  const { data: fallbackRunRow, error: runError } = await runQuery.maybeSingle()
+
+  const runRow = completeRunRow ?? fallbackRunRow
+  if (runError) {
+    console.error('[jobs/match] run lookup failed:', runError.message)
+    return NextResponse.json({ matches: [], cvSuggestions, hasResume, needsNewSearch: true })
+  }
+
+  if (!runRow?.id) {
+    const runCountryCode = requestedScope?.searchMode === 'international_remote'
+      ? 'international_remote'
+      : requestedScope?.countryCode ?? null
+    const runCountryName = requestedScope?.searchMode === 'international_remote'
+      ? 'International / Remote'
+      : requestedScope?.countryName ?? null
+    console.log(`[jobs/match] no successful run for exact scope=${requestedScope ? `${requestedScope.searchMode}:${requestedScope.countryCode ?? 'remote'}` : 'latest'}`)
+    return NextResponse.json({
+      matches: [],
+      cvSuggestions,
+      hasResume,
+      isPro,
+      matchLimit,
+      totalMatches: 0,
+      returnedCount: 0,
+      needsNewSearch: true,
+      runCountryCode,
+      runCountryName,
+      searchScope: requestedScope
+        ? { ...requestedScope, searchRunId: null }
+        : null,
+    })
+  }
+
+  const latestRunId = runRow.id as string
+  const runMode = (runRow.search_mode as 'country' | 'international_remote' | null)
+    ?? (runRow.detected_location === 'international_remote' ? 'international_remote' : 'country')
+  const runCountryCode = runMode === 'international_remote'
+    ? 'international_remote'
+    : ((runRow.country_code as string | null) ?? detectLocation((runRow.country_name ?? runRow.detected_location ?? '') as string).countryCode)
+  const runCountryName = runMode === 'international_remote'
     ? 'International / Remote'
-    : (CC_TO_LOCATION[runCountryCode ?? ''] ?? null)
+    : ((runRow.country_name as string | null) ?? CC_TO_LOCATION[runCountryCode ?? ''] ?? null)
 
-  // Build the matches query — scoped to the latest run when available,
-  // otherwise fall back to all matches for this user (safe for pre-migration data).
-  let matchesQuery = supabase
+  console.log(`[jobs/match] exact run selected | run=${latestRunId} | scope=${runMode}:${runCountryCode ?? 'remote'}`)
+
+  // Build the matches query from the exact run, ordered by immutable rank.
+  const matchesQuery = supabase
     .from('job_matches')
     .select(`
-      id, similarity_score, ai_score, ai_reasoning, created_at,
+      id, similarity_score, ai_score, ai_reasoning, created_at, rank_position, display_snapshot,
       job:jobs (
         id, title, company, location, description,
         url, apply_url, apply_status, last_verified_at,
@@ -202,43 +182,35 @@ export async function GET(req: NextRequest) {
       )
     `)
     .eq('user_id', user.id)
+    .eq('search_run_id', latestRunId)
+    .gte('ai_score', 40)
+    .order('rank_position', { ascending: true, nullsFirst: false })
     .order('ai_score', { ascending: false })
     .limit(20)
 
-  if (latestRunId) {
-    matchesQuery = matchesQuery.eq('search_run_id', latestRunId)
-  }
-
   const matchesResult = await matchesQuery
-
-  // hasResume = true whenever an active resume row exists in the DB.
-  // raw_text may be empty if Inngest is still parsing, or if text extraction
-  // failed silently — but the resume file IS uploaded. The analyze endpoint
-  // handles missing text on its own; don't block the UI here.
-  const hasResume = Boolean(resumeResult.data?.id)
-  const cvSuggestions = Array.isArray(parsedData?.cv_suggestions)
-    ? (parsedData!.cv_suggestions as string[])
-    : []
 
   // Resolve raw match rows — fall back to base schema if new columns aren't in DB yet
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let rawMatches: any[] | null = matchesResult.data
   if (matchesResult.error) {
     if (isColumnError(matchesResult.error.code, matchesResult.error.message)) {
-      console.warn('[jobs/match] migration pending — retrying without new columns')
-      let fallbackQuery = supabase
+      console.warn('[jobs/match] optional jobs columns unavailable — retrying with scoped snapshot columns and base job fields')
+      const fallbackQuery = supabase
         .from('job_matches')
         .select(`
-          id, similarity_score, ai_score, ai_reasoning, created_at,
+          id, similarity_score, ai_score, ai_reasoning, created_at, rank_position, display_snapshot,
           job:jobs (
             id, title, company, location, description,
             url, salary, source, created_at
           )
         `)
         .eq('user_id', user.id)
+        .eq('search_run_id', latestRunId)
+        .gte('ai_score', 40)
+        .order('rank_position', { ascending: true, nullsFirst: false })
         .order('ai_score', { ascending: false })
         .limit(20)
-      if (latestRunId) fallbackQuery = fallbackQuery.eq('search_run_id', latestRunId)
       const fallback = await fallbackQuery
 
       if (fallback.error) {
@@ -253,6 +225,15 @@ export async function GET(req: NextRequest) {
   }
 
   const matches = (rawMatches ?? []).map((m) => {
+    const snapshot = m.display_snapshot as Record<string, unknown> | null
+    if (snapshot && typeof snapshot === 'object' && snapshot.job) {
+      return {
+        ...snapshot,
+        id: m.id,
+        rank_position: m.rank_position ?? snapshot.rank_position,
+      }
+    }
+
     const decoded = decodeReasoning(m.ai_reasoning ?? '')
     const job = m.job as unknown as Record<string, unknown> | null
 
@@ -273,42 +254,31 @@ export async function GET(req: NextRequest) {
       },
     }
   })
+  console.log(`[PIPELINE_AUDIT] returned=${matches.length} | run=${latestRunId}`)
 
-  // ── Location safety filter ───────────────────────────────────────────────
-  // Last-line defence: remove any job whose location clearly doesn't match the
-  // requested country, regardless of which run they came from.
-  let safeMatches = matches
-  if (effectiveCc && effectiveCc !== 'international_remote') {
-    const before = matches.length
-    safeMatches = matches.filter((m) => {
-      const job = m.job as Record<string, unknown> | null
-      const loc = (job?.location as string | null) ?? null
-      const src = (job?.source as string) ?? ''
-      const ok  = locationMatchesCountry(loc, src, effectiveCc)
-      if (!ok) {
-        console.log(
-          `[jobs/match] LOCATION_MISMATCH removed | title="${job?.title ?? '?'}"` +
-          ` | jobLocation="${loc}" | selectedCountry="${effectiveCc} (${runCountryName})"` +
-          ` | removedReason=country_mismatch`
-        )
-      }
-      return ok
-    })
-    const removed = before - safeMatches.length
-    if (removed > 0) {
-      console.log(`[jobs/match] safety filter removed ${removed}/${before} jobs for country=${effectiveCc}`)
-    }
-  }
-
-  const visibleMatches = isPro ? safeMatches : safeMatches.slice(0, matchLimit)
+  const visibleMatches = isPro ? matches : matches.slice(0, matchLimit)
+  console.log(`[PIPELINE_AUDIT] displayed=${visibleMatches.length} | run=${latestRunId}`)
   return NextResponse.json({
     matches:        visibleMatches,
     cvSuggestions,
     hasResume,
     isPro,
     matchLimit,
-    totalMatches:   safeMatches.length,
-    runCountryCode,   // lets frontend show the chip even when no localStorage pref exists
+    totalMatches:   matches.length,
+    returnedCount:  visibleMatches.length,
+    needsNewSearch: false,
+    searchRunId:    latestRunId,
+    searchEngine:   'claude',
+    generatedQueries: runRow.generated_queries ?? null,
+    searchScope: {
+      searchMode: runMode,
+      countryCode: runMode === 'international_remote' ? null : runCountryCode,
+      countryName: runMode === 'international_remote' ? null : runCountryName,
+      searchRunId: latestRunId,
+    },
+    auditCounts: runRow.audit_counts ?? null,
+    scarcityReason: runRow.failure_reason ?? null,
+    runCountryCode,
     runCountryName,
   })
 }
