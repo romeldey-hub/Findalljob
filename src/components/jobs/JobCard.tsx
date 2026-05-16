@@ -397,7 +397,7 @@ export function JobCard({
   const disabledResumeBtn = 'inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 text-[11px] font-medium text-blue-400 dark:text-blue-500 opacity-40 cursor-not-allowed transition-none sm:w-auto sm:justify-start sm:py-1.5'
   const fixResumeDisabled = disableResumeActions || showResumeFixFallback
 
-  const displayedScore = (!isOptimizing && isOptimized && optimizedScore != null)
+  const displayedScore = (!isOptimizing && isOptimized && optimizedScore != null && optimizedScore > match.ai_score)
     ? optimizedScore : match.ai_score
 
   void handleSave

@@ -94,7 +94,7 @@ export const parseResumeJob = inngest.createFunction(
 
     const embeddingLength = await step.run('generate-and-save', async () => {
       const embText = resumeToEmbeddingText(parsedData)
-      const embedding = await generateEmbedding(embText)
+      const embedding = await generateEmbedding(embText, userId)
 
       const supabase = createAdminClient()
       const { data: existingResume } = await supabase

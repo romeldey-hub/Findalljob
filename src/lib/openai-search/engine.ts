@@ -1,5 +1,4 @@
 import crypto from 'crypto'
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -8,6 +7,7 @@ import { FREE_LIMITS } from '@/lib/limits'
 import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
 import { JobSourceRouter } from '@/lib/jobs/router'
+import { openAIResponsesParse } from '@/lib/ai/openai'
 
 const PROFILE_MODEL = process.env.OPENAI_SEARCH_MODEL ?? 'gpt-5.2'
 const RERANK_MODEL = process.env.OPENAI_SEARCH_RERANK_MODEL ?? PROFILE_MODEL
@@ -194,6 +194,18 @@ type SearchScope = {
   countryName?: string | null
   testResumeId?: string | null
   includeCurrentCompany?: boolean
+  usage?: OpenAIUsageContext
+}
+
+type OpenAIUsageContext = {
+  userId?: string
+  userEmail?: string | null
+  isFreeUser?: boolean
+  creditsCharged?: number
+  creditFeatureKey?: string
+  fallbackUsed?: boolean
+  fallbackReason?: string | null
+  resumeId?: string | null
 }
 
 type OpenAISearchRunResult = {
@@ -231,13 +243,6 @@ type SelectedJobRow = {
   local: number
   final: RerankedJob
   sourceGroup: 'first_pass' | 'rescue'
-}
-
-function openaiClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not configured')
-  }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 }
 
 function hashResume(resume: ResumeRow) {
@@ -294,9 +299,9 @@ function fallbackProfile(resume: ResumeRow): CandidateSearchProfile {
   }
 }
 
-async function extractCandidateProfile(resume: ResumeRow): Promise<CandidateSearchProfile> {
+async function extractCandidateProfile(resume: ResumeRow, usage?: OpenAIUsageContext, runId?: string): Promise<CandidateSearchProfile> {
   try {
-    const response = await openaiClient().responses.parse({
+    const response = await openAIResponsesParse<{ output_parsed?: CandidateSearchProfile }>({
       model: PROFILE_MODEL,
       instructions: [
         'Extract a strict recruiter-grade job-search intelligence profile from the candidate resume.',
@@ -307,6 +312,17 @@ async function extractCandidateProfile(resume: ResumeRow): Promise<CandidateSear
       ].join(' '),
       input: resumeText(resume),
       text: { format: zodTextFormat(CandidateSearchProfileSchema, 'candidate_search_profile') },
+    }, {
+      feature: 'openai_search_profile_extract',
+      userId: usage?.userId,
+      userEmail: usage?.userEmail,
+      isFreeUser: usage?.isFreeUser,
+      creditsCharged: usage?.creditsCharged,
+      creditFeatureKey: usage?.creditFeatureKey,
+      fallbackUsed: usage?.fallbackUsed,
+      fallbackReason: usage?.fallbackReason,
+      searchRunId: runId,
+      resumeId: resume.id,
     })
 
     return response.output_parsed ?? fallbackProfile(resume)
@@ -1067,7 +1083,12 @@ function diversifySelectedRows(rows: SelectedJobRow[], target: number) {
   return [...primary, ...overflow].slice(0, target)
 }
 
-async function rerankWithOpenAI(jobs: Array<NormalizedJob & { localScore: number }>, profile: CandidateSearchProfile) {
+async function rerankWithOpenAI(
+  jobs: Array<NormalizedJob & { localScore: number }>,
+  profile: CandidateSearchProfile,
+  usage?: OpenAIUsageContext,
+  runId?: string,
+) {
   if (jobs.length === 0) return []
   const operationsMode = isOperationsProfile(profile)
   const payload = jobs.slice(0, MAX_AI_RERANK_JOBS).map((job, index) => ({
@@ -1094,7 +1115,7 @@ async function rerankWithOpenAI(jobs: Array<NormalizedJob & { localScore: number
       ].join(' ')
     : 'Use score bands: strong 75-100, good 60-74, possible 40-59, weak_reject below 40.'
 
-  const response = await openaiClient().responses.parse({
+  const response = await openAIResponsesParse<{ output_parsed?: { results: RerankedJob[] } }>({
     model: RERANK_MODEL,
     instructions: [
       'Judge and rerank every job for this candidate. Return exactly one row for every input job.',
@@ -1109,12 +1130,29 @@ async function rerankWithOpenAI(jobs: Array<NormalizedJob & { localScore: number
     ].join(' '),
     input: JSON.stringify({ candidate_profile: profile, jobs: payload }),
     text: { format: zodTextFormat(RerankSchema, 'openai_job_rerank') },
+  }, {
+    feature: 'openai_search_rerank',
+    userId: usage?.userId,
+    userEmail: usage?.userEmail,
+    isFreeUser: usage?.isFreeUser,
+    creditsCharged: usage?.creditsCharged,
+    creditFeatureKey: usage?.creditFeatureKey,
+    fallbackUsed: usage?.fallbackUsed,
+    fallbackReason: usage?.fallbackReason,
+    searchRunId: runId,
+    resumeId: usage?.resumeId ?? null,
+    metadata: { jobs_count: payload.length },
   })
 
   return response.output_parsed?.results ?? []
 }
 
-async function rescueRerankWithOpenAI(jobs: ScoredJob[], profile: CandidateSearchProfile) {
+async function rescueRerankWithOpenAI(
+  jobs: ScoredJob[],
+  profile: CandidateSearchProfile,
+  usage?: OpenAIUsageContext,
+  runId?: string,
+) {
   if (jobs.length === 0) return []
   const operationsMode = isOperationsProfile(profile)
   const payload = jobs.slice(0, MAX_AI_RERANK_JOBS).map((job, index) => ({
@@ -1137,7 +1175,7 @@ async function rescueRerankWithOpenAI(jobs: ScoredJob[], profile: CandidateSearc
       ].join(' ')
     : 'Good means clearly useful fallback match. Possible means adjacent but plausibly useful. Weak reject unrelated or low-quality roles.'
 
-  const response = await openaiClient().responses.parse({
+  const response = await openAIResponsesParse<{ output_parsed?: { results: RerankedJob[] } }>({
     model: RERANK_MODEL,
     instructions: [
       'These candidates already passed deterministic hard filters and local relevance scoring.',
@@ -1150,6 +1188,18 @@ async function rescueRerankWithOpenAI(jobs: ScoredJob[], profile: CandidateSearc
     ].join(' '),
     input: JSON.stringify({ candidate_profile: profile, jobs: payload }),
     text: { format: zodTextFormat(RerankSchema, 'openai_job_rescue_rerank') },
+  }, {
+    feature: 'openai_search_rescue_rerank',
+    userId: usage?.userId,
+    userEmail: usage?.userEmail,
+    isFreeUser: usage?.isFreeUser,
+    creditsCharged: usage?.creditsCharged,
+    creditFeatureKey: usage?.creditFeatureKey,
+    fallbackUsed: usage?.fallbackUsed,
+    fallbackReason: usage?.fallbackReason,
+    searchRunId: runId,
+    resumeId: usage?.resumeId ?? null,
+    metadata: { jobs_count: payload.length },
   })
 
   return response.output_parsed?.results ?? []
@@ -1306,7 +1356,17 @@ export async function runOpenAIJobSearch(
   const sourceIssues: Array<{ source: string; status: 'source_rate_limited' | 'source_unavailable'; error: string }> = []
 
   try {
-    const extractedProfile = await extractCandidateProfile(resume as ResumeRow)
+    const usageContext: OpenAIUsageContext = {
+      userId: scope.usage?.userId ?? user.id,
+      userEmail: scope.usage?.userEmail ?? user.email ?? null,
+      isFreeUser: scope.usage?.isFreeUser ?? !isPro,
+      creditsCharged: scope.usage?.creditsCharged,
+      creditFeatureKey: scope.usage?.creditFeatureKey,
+      fallbackUsed: scope.usage?.fallbackUsed,
+      fallbackReason: scope.usage?.fallbackReason,
+      resumeId: (resume as ResumeRow).id,
+    }
+    const extractedProfile = await extractCandidateProfile(resume as ResumeRow, usageContext, runId)
     const scopeForProfile = effectiveSearchScope(scope, extractedProfile, Boolean(v2TestResume))
     const intelligenceProfile = enrichProfileWithResumeIntelligence(extractedProfile, resume as ResumeRow, scopeForProfile)
     const uploadExpandedProfile = v2TestResume
@@ -1487,7 +1547,7 @@ export async function runOpenAIJobSearch(
     const openaiInput = diversifiedScored.slice(0, MAX_AI_RERANK_JOBS)
     await logDiagnostic(admin, user.id, runId, 'openai_input_count', openaiInput.length)
 
-    const reranked = await rerankWithOpenAI(openaiInput, profile)
+    const reranked = await rerankWithOpenAI(openaiInput, profile, usageContext, runId)
     const labelCounts = countLabels(reranked)
     await logDiagnostic(admin, user.id, runId, 'openai_returned_count', reranked.length, {
       strong_count: labelCounts.strong,
@@ -1555,7 +1615,7 @@ export async function runOpenAIJobSearch(
       const rescueInput = rescueCandidates.slice(0, MAX_AI_RERANK_JOBS)
       rescueOpenAIInputCount = rescueInput.length
 
-      const rescueReranked = await rescueRerankWithOpenAI(rescueInput, profile)
+      const rescueReranked = await rescueRerankWithOpenAI(rescueInput, profile, usageContext, runId)
       rescueOpenAIReturnedCount = rescueReranked.length
       const rescueLabelCounts = countLabels(rescueReranked)
       rescueGoodCount = rescueLabelCounts.good

@@ -15,11 +15,18 @@ import { detectLocation, filterJobsByCountry, isJobFromCountry, jobMentionsCount
 import { buildCandidateProfile, applyAdvancedRelevanceFilter } from '@/lib/jobs/relevance'
 import { hashSearchParams, getJobSearchCache, setJobSearchCache } from '@/lib/cache'
 import { computeParsedResumeHash } from '@/lib/resume-hash'
+import { runOpenAIJobSearch } from '@/lib/openai-search/engine'
+import { acquireAiIdempotencyLock, completeAiIdempotencyLock } from '@/lib/ai/idempotency'
+import { logAiEvent } from '@/lib/ai/usage-logger'
 import type { ParsedResume, NormalizedJob } from '@/types'
 import { computeCanonicalKey } from '@/types'
 import type { RankedJob } from '@/lib/ai/reranker'
 
 export const maxDuration = 300
+
+function aiQaHooksEnabled() {
+  return process.env.NODE_ENV !== 'production' || process.env.ENABLE_AI_QA_TEST_HOOKS === 'true'
+}
 
 function apiErrMsg(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
@@ -150,7 +157,48 @@ function nonApifyJobCount(jobs: Array<{ source: string }>): number {
   return jobs.filter((job) => !job.source.startsWith('apify')).length
 }
 
+// ── Fallback rate monitor ──────────────────────────────────────────────────────
+// Fire-and-forget admin warning when Claude fallback rate is materially high.
+// Queries the last 24h of match_run events; logs a suggested action if ≥30% are fallbacks.
+//
+// Escalation policy (see CREDIT_COSTS.matchRun in src/lib/credits.ts):
+//   < 30% fallback  → keep matchRun at 3 credits, no action needed
+//   ≥ 30% fallback  → Step 1: investigate and fix OpenAI V2 failure / low-result root causes
+//                     Step 2: if rate stays ≥ 30% after optimization, raise matchRun to 4 credits
+async function warnIfFallbackRateHigh(admin: ReturnType<typeof createAdminClient>): Promise<void> {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data } = await admin
+      .from('ai_usage_events')
+      .select('metadata')
+      .eq('feature', 'match_run')
+      .gte('created_at', since)
+
+    if (!data || data.length < 5) return  // need at least 5 runs for a meaningful rate
+
+    const fallbackCount = data.filter(r => {
+      const meta = r.metadata as Record<string, unknown> | null
+      return meta?.fallback_used === true
+    }).length
+
+    const rate = fallbackCount / data.length
+    if (rate >= 0.30) {
+      console.warn('[margin-monitor] Claude fallback rate is high.', {
+        fallback_rate:    `${(rate * 100).toFixed(1)}%`,
+        fallback_count:   fallbackCount,
+        total_runs:       data.length,
+        window_hours:     24,
+        suggested_action: 'Claude fallback rate is high. Consider increasing fresh match run cost to 4 credits or optimizing fallback usage.',
+      })
+    }
+  } catch (err) {
+    console.error('[margin-monitor] fallback rate check failed (non-fatal):', err)
+  }
+}
+
 const MIN_DISPLAY_SCORE = 40
+const V2_HEALTHY_AVERAGE_SCORE = 58
+const V2_HEALTHY_HIGH_QUALITY_RATIO = 0.4
 
 function targetMatchCount(isPro: boolean): number {
   return isPro ? 20 : FREE_LIMITS.matchesPerDay
@@ -247,6 +295,451 @@ function selectDisplayMatches({
   }
 
   return { selected: valid, skippedLowScore, skippedLocation }
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+type OpenAIResultRow = {
+  source: string
+  external_id: string
+  rank_position: number
+  final_score: number
+  local_score: number
+  match_label: string
+  title: string
+  company: string
+  location: string
+  description: string
+  url: string
+  apply_url: string | null
+  posted_at: string | null
+  salary: string | null
+  matched_skills: unknown
+  missing_skills: unknown
+  match_reasons: unknown
+  concerns: unknown
+  resume_fix_suggestions: unknown
+}
+
+type PersistV2MatchesResult = {
+  runId: string | null
+  savedCount: number
+  fallbackReason: string | null
+  counts: Record<string, unknown>
+}
+
+type V2BlendCandidates = {
+  jobs: NormalizedJob[]
+  ranked: RankedJob[]
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return uniqueNonEmpty(value.map((item) => typeof item === 'string' ? item : String(item ?? '')))
+}
+
+function isUsableUrl(value: string | null | undefined): value is string {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function v2ResultKey(row: OpenAIResultRow): string {
+  return computeCanonicalKey(row.company, row.title, row.location)
+}
+
+function labelPriority(label: string): number {
+  const normalized = label.toLowerCase()
+  if (normalized.includes('strong')) return 3
+  if (normalized.includes('good')) return 2
+  if (normalized.includes('possible')) return 1
+  return 0
+}
+
+function sortV2Rows(rows: OpenAIResultRow[]): OpenAIResultRow[] {
+  return [...rows].sort((a, b) =>
+    b.final_score - a.final_score ||
+    labelPriority(b.match_label) - labelPriority(a.match_label) ||
+    a.rank_position - b.rank_position
+  )
+}
+
+function selectUsableV2Rows(rows: OpenAIResultRow[], targetCount: number): {
+  selected: OpenAIResultRow[]
+  eligibleCount: number
+  duplicateCount: number
+} {
+  const seen = new Set<string>()
+  let duplicateCount = 0
+  const eligible: OpenAIResultRow[] = []
+
+  for (const row of sortV2Rows(rows)) {
+    const applyUrl = row.apply_url ?? row.url
+    if (!row.title?.trim() || !row.company?.trim() || !row.location?.trim()) continue
+    if (!isUsableUrl(applyUrl)) continue
+    if (row.final_score < MIN_DISPLAY_SCORE) continue
+
+    const key = v2ResultKey(row)
+    if (seen.has(key)) {
+      duplicateCount += 1
+      continue
+    }
+    seen.add(key)
+    eligible.push(row)
+  }
+
+  return {
+    selected: eligible.slice(0, targetCount),
+    eligibleCount: eligible.length,
+    duplicateCount,
+  }
+}
+
+function assessV2Quality(rows: OpenAIResultRow[], targetCount: number): string | null {
+  const { selected, eligibleCount, duplicateCount } = selectUsableV2Rows(rows, targetCount)
+  if (selected.length === 0) return 'openai_v2_no_final_selected_jobs'
+  if (selected.length < targetCount) return `openai_v2_only_${selected.length}_of_${targetCount}_usable_jobs`
+
+  const averageScore = selected.reduce((sum, row) => sum + row.final_score, 0) / selected.length
+  const highQualityCount = selected.filter((row) =>
+    row.final_score >= 62 || /strong|good/i.test(row.match_label)
+  ).length
+  const duplicateRatio = eligibleCount > 0 ? duplicateCount / Math.max(eligibleCount + duplicateCount, 1) : 0
+
+  if (duplicateRatio > 0.3) return 'openai_v2_too_many_duplicates'
+  if (averageScore < V2_HEALTHY_AVERAGE_SCORE) return 'openai_v2_low_average_score'
+  if (highQualityCount / selected.length < V2_HEALTHY_HIGH_QUALITY_RATIO) return 'openai_v2_low_quality_mix'
+  return null
+}
+
+async function saveMatchRowsWithFallback(
+  admin: AdminClient,
+  matchRows: Array<Record<string, unknown>>
+) {
+  if (matchRows.length === 0) return { error: null }
+  const upsertRes = await admin
+    .from('job_matches')
+    .upsert(matchRows, { onConflict: 'user_id,job_id' })
+  if (!upsertRes.error) return upsertRes
+  const isConstraintGone =
+    upsertRes.error.code === '42P10' ||
+    /no unique or exclusion constraint/i.test(upsertRes.error.message ?? '')
+  if (isConstraintGone) {
+    console.warn('[analyze] UNIQUE(user_id,job_id) gone (migration 031 applied) — falling back to insert')
+    return admin.from('job_matches').insert(matchRows)
+  }
+  return upsertRes
+}
+
+async function persistOpenAIV2AsMatches({
+  admin,
+  userId,
+  parsedResumeHash,
+  openaiRunId,
+  targetCount,
+  planTier,
+  searchMode,
+  countryCode,
+  countryName,
+}: {
+  admin: AdminClient
+  userId: string
+  parsedResumeHash: string
+  openaiRunId: string
+  targetCount: number
+  planTier: string
+  searchMode: 'country' | 'international_remote'
+  countryCode: string | null
+  countryName: string | null
+}): Promise<PersistV2MatchesResult> {
+  const [{ data: openaiRun }, { data: rawRows, error: resultsError }] = await Promise.all([
+    admin
+      .from('openai_search_runs')
+      .select('fetched_count, normalized_count, deduped_count, location_filtered_count, role_filtered_count, scored_count, saved_count, failure_reason, candidate_profile, source_fetch_counts')
+      .eq('id', openaiRunId)
+      .maybeSingle(),
+    admin
+      .from('openai_search_results')
+      .select('source, external_id, rank_position, final_score, local_score, match_label, title, company, location, description, url, apply_url, posted_at, salary, matched_skills, missing_skills, match_reasons, concerns, resume_fix_suggestions')
+      .eq('search_run_id', openaiRunId),
+  ])
+
+  if (resultsError) {
+    throw new Error(`Could not read OpenAI V2 results: ${resultsError.message}`)
+  }
+
+  const v2Rows = (rawRows ?? []) as OpenAIResultRow[]
+  const healthReason = assessV2Quality(v2Rows, targetCount)
+  if (healthReason) {
+    return {
+      runId: null,
+      savedCount: 0,
+      fallbackReason: healthReason,
+      counts: {
+        openaiSearchRunId: openaiRunId,
+        v2SavedCount: openaiRun?.saved_count ?? v2Rows.length,
+        fallbackReason: healthReason,
+      },
+    }
+  }
+
+  const selection = selectUsableV2Rows(v2Rows, targetCount)
+  const selected = selection.selected
+  const profile = (openaiRun?.candidate_profile ?? {}) as Record<string, unknown>
+  const generatedQueries = stringList(profile.search_queries).slice(0, 24)
+  const now = new Date().toISOString()
+
+  const { data: runRow, error: runError } = await admin
+    .from('job_search_runs')
+    .insert({
+      user_id: userId,
+      resume_hash: parsedResumeHash,
+      status: 'running',
+      search_mode: searchMode,
+      country_code: countryCode,
+      country_name: countryName,
+      detected_location: searchMode === 'international_remote' ? 'international_remote' : countryName,
+      generated_queries: generatedQueries,
+    })
+    .select('id')
+    .single()
+
+  if (runError || !runRow?.id) {
+    throw new Error(runError?.message ?? 'Failed to create V2-backed job search run')
+  }
+
+  const runId = runRow.id as string
+  const baseJobRows = selected.map((row) => ({
+    external_id: row.external_id,
+    source: row.source,
+    title: row.title,
+    company: row.company,
+    location: row.location,
+    description: row.description,
+    url: row.url,
+    salary: row.salary ?? null,
+    requirements: {},
+    scraped_at: now,
+  }))
+  const extendedJobRows = selected.map((row, i) => ({
+    ...baseJobRows[i],
+    apply_url: row.apply_url ?? row.url,
+    apply_status: 'unverified',
+  }))
+
+  let { data: dbJobs, error: upsertErr } = await admin
+    .from('jobs')
+    .upsert(extendedJobRows, { onConflict: 'external_id,source' })
+    .select('id, external_id, source')
+
+  if (upsertErr && (upsertErr.code === '42703' || upsertErr.code === 'PGRST204' || upsertErr.message?.includes('apply_url'))) {
+    console.warn('[analyze] migration pending — retrying V2 jobs upsert without new columns')
+    ;({ data: dbJobs, error: upsertErr } = await admin
+      .from('jobs')
+      .upsert(baseJobRows, { onConflict: 'external_id,source' })
+      .select('id, external_id, source'))
+  }
+
+  if (upsertErr) {
+    await admin.from('job_search_runs').update({
+      status: 'failed',
+      completed_at: now,
+      failure_reason: upsertErr.message,
+    }).eq('id', runId)
+    throw new Error(`Could not save OpenAI V2 jobs: ${upsertErr.message}`)
+  }
+
+  const extToDbId = new Map((dbJobs ?? []).map((job) => [`${job.source}:${job.external_id}`, job.id]))
+  const matchRows: Array<Record<string, unknown>> = selected
+    .map((row, index) => {
+      const dbJobId = extToDbId.get(`${row.source}:${row.external_id}`)
+      if (!dbJobId) return null
+      const matchReasons = stringList(row.match_reasons).slice(0, 5)
+      const matchedSkills = stringList(row.matched_skills).slice(0, 12)
+      const fixSuggestions = stringList(row.resume_fix_suggestions).slice(0, 5)
+      const missingSkills = fixSuggestions.length > 0
+        ? fixSuggestions
+        : stringList(row.missing_skills).slice(0, 12)
+      const reasoning = matchReasons.join(' ')
+      const bridgeAdvice = fixSuggestions.join('\n')
+      const displaySnapshot = {
+        id: '',
+        ai_score: row.final_score,
+        ai_reasoning: reasoning,
+        bridge_advice: bridgeAdvice,
+        match_reasons: matchReasons,
+        matched_skills: matchedSkills,
+        missing_skills: missingSkills,
+        rank_position: index + 1,
+        job: {
+          id: dbJobId,
+          title: row.title ?? '',
+          company: row.company ?? '',
+          location: row.location ?? '',
+          url: row.url ?? '',
+          apply_url: row.apply_url ?? row.url ?? '',
+          apply_status: 'unverified',
+          verified_label: 'unverified',
+          salary: row.salary ?? null,
+          source: row.source,
+          description: row.description ?? '',
+          created_at: row.posted_at ?? now,
+        },
+      }
+      return {
+        user_id: userId,
+        job_id: dbJobId,
+        similarity_score: row.final_score / 100,
+        ai_score: row.final_score,
+        ai_reasoning: JSON.stringify({
+          r: reasoning,
+          bridge: bridgeAdvice,
+          mr: matchReasons,
+          ms: matchedSkills,
+          miss: missingSkills,
+          engine: 'openai_v2',
+          raw_label: row.match_label,
+          openai_search_run_id: openaiRunId,
+        }),
+        rank_position: index + 1,
+        display_snapshot: displaySnapshot,
+        search_run_id: runId,
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+
+  const matchResult = await saveMatchRowsWithFallback(admin, matchRows)
+  const finalSavedCount = matchResult.error ? 0 : matchRows.length
+  const scarcityReason = finalSavedCount >= targetCount
+    ? null
+    : `openai_v2_saved_${finalSavedCount}_of_${targetCount}_after_conversion`
+
+  const counts = {
+    search_engine_primary: 'openai_v2',
+    search_engine_fallback_used: false,
+    fallback_reason: null,
+    v2_count: finalSavedCount,
+    claude_count: 0,
+    final_count: finalSavedCount,
+    search_run_id: runId,
+    openai_search_run_id: openaiRunId,
+    generated_queries: generatedQueries,
+    fetched_count: openaiRun?.fetched_count ?? null,
+    normalized_count: openaiRun?.normalized_count ?? null,
+    deduped_count: openaiRun?.deduped_count ?? null,
+    after_location_filter_count: openaiRun?.location_filtered_count ?? null,
+    after_relevance_filter_count: openaiRun?.role_filtered_count ?? null,
+    scored_count: openaiRun?.scored_count ?? null,
+    final_selected_count: selected.length,
+    final_saved_count: finalSavedCount,
+    failure_reason: scarcityReason,
+    target_count: targetCount,
+    user_plan: planTier,
+    source_fetch_counts: openaiRun?.source_fetch_counts ?? {},
+  }
+
+  if (matchResult.error) {
+    await admin.from('job_search_runs').update({
+      status: 'failed',
+      completed_at: now,
+      failure_reason: matchResult.error.message,
+      audit_counts: counts,
+    }).eq('id', runId)
+    throw new Error(`Failed to save OpenAI V2 matches: ${matchResult.error.message}`)
+  }
+
+  await admin.from('job_search_runs').update({
+    status: finalSavedCount > 0 ? 'success' : 'failed',
+    jobs_fetched_count: openaiRun?.fetched_count ?? selected.length,
+    jobs_after_country_filter: openaiRun?.location_filtered_count ?? selected.length,
+    jobs_after_relevance_filter: openaiRun?.role_filtered_count ?? selected.length,
+    jobs_scored_count: openaiRun?.scored_count ?? selected.length,
+    final_selected_count: selected.length,
+    final_saved_count: finalSavedCount,
+    failure_reason: scarcityReason,
+    audit_counts: counts,
+    completed_at: now,
+  }).eq('id', runId)
+
+  return {
+    runId,
+    savedCount: finalSavedCount,
+    fallbackReason: scarcityReason,
+    counts,
+  }
+}
+
+async function loadOpenAIV2BlendCandidates(
+  admin: AdminClient,
+  openaiRunId: string,
+  targetCount: number
+): Promise<V2BlendCandidates> {
+  const { data: rawRows, error } = await admin
+    .from('openai_search_results')
+    .select('source, external_id, rank_position, final_score, local_score, match_label, title, company, location, description, url, apply_url, posted_at, salary, matched_skills, missing_skills, match_reasons, concerns, resume_fix_suggestions')
+    .eq('search_run_id', openaiRunId)
+
+  if (error) {
+    console.warn('[analyze] could not load OpenAI V2 blend candidates:', error.message)
+    return { jobs: [], ranked: [] }
+  }
+
+  const selected = selectUsableV2Rows((rawRows ?? []) as OpenAIResultRow[], targetCount).selected
+  const jobs: NormalizedJob[] = selected.map((row) => ({
+    externalId: row.external_id,
+    source: row.source as NormalizedJob['source'],
+    title: row.title,
+    company: row.company,
+    location: row.location,
+    description: row.description,
+    url: row.url,
+    applyUrl: row.apply_url ?? row.url,
+    postedAt: row.posted_at ?? undefined,
+    salary: row.salary ?? undefined,
+  }))
+
+  const ranked: RankedJob[] = selected.map((row) => {
+    const fixSuggestions = stringList(row.resume_fix_suggestions).slice(0, 5)
+    const missingSkills = fixSuggestions.length > 0
+      ? fixSuggestions
+      : stringList(row.missing_skills).slice(0, 12)
+    const matchReasons = stringList(row.match_reasons).slice(0, 5)
+    return {
+      externalId: row.external_id,
+      source: row.source as RankedJob['source'],
+      score: row.final_score,
+      reasoning: matchReasons.join(' '),
+      bridge_advice: fixSuggestions.join('\n'),
+      match_reasons: matchReasons,
+      matched_skills: stringList(row.matched_skills).slice(0, 12),
+      missing_skills: missingSkills,
+    }
+  })
+
+  return { jobs, ranked }
+}
+
+function dedupeRankedForDisplay(ranked: RankedJob[], jobMap: Map<string, NormalizedJob>): RankedJob[] {
+  const seenKeys = new Set<string>()
+  const seenCanonical = new Set<string>()
+  const out: RankedJob[] = []
+
+  for (const job of [...ranked].sort((a, b) => b.score - a.score)) {
+    const key = rankedKey(job)
+    const normalized = jobMap.get(key)
+    if (!normalized) continue
+    const canonical = computeCanonicalKey(normalized.company, normalized.title, normalized.location)
+    if (seenKeys.has(key) || seenCanonical.has(canonical)) continue
+    seenKeys.add(key)
+    seenCanonical.add(canonical)
+    out.push(job)
+  }
+
+  return out
 }
 
 function buildBroadJobBoardQueries(parsedResume: ParsedResume, searchQueries: string[]): string[] {
@@ -431,6 +924,8 @@ export async function POST(req: Request) {
   let selectedSearchCountry: string | null = null  // country code e.g. "in", "us" — provided after user confirms
   let searchMode: 'country' | 'international_remote' | null = null
   let wasDetected = false
+  let forceOpenAIV2MatchFailure = false
+  let forceOpenAIV2LowResults = false
   // parse_resume: upload/reanalyze flows — skip country gate, auto-detect from resume.
   // job_search (or no mode): matched-jobs flow — apply country gate.
   let mode: 'parse_resume' | 'job_search' | null = null
@@ -442,6 +937,16 @@ export async function POST(req: Request) {
     wasDetected = Boolean(body?.wasDetected)
     mode = (body?.mode as 'parse_resume' | 'job_search' | undefined) ?? null
     forceJobsFetch = Boolean(body?.forceJobsFetch)
+    if (aiQaHooksEnabled()) {
+      forceOpenAIV2MatchFailure =
+        process.env.FORCE_OPENAI_V2_MATCH_FAILURE === 'true' ||
+        req.headers.get('x-ai-qa-force-openai-v2-failure') === 'true' ||
+        Boolean(body?.qaForceOpenAIV2Failure)
+      forceOpenAIV2LowResults =
+        process.env.FORCE_OPENAI_V2_LOW_RESULTS === 'true' ||
+        req.headers.get('x-ai-qa-force-openai-v2-low-results') === 'true' ||
+        Boolean(body?.qaForceOpenAIV2LowResults)
+    }
   } catch { /* no body — treat as non-forced */ }
   console.log(`[analyze] request | user=${user.id} | mode=${mode ?? 'job_search'} | force=${force} | forceJobsFetch=${forceJobsFetch} | searchMode=${searchMode ?? 'precheck'} | country=${selectedSearchCountry ?? 'none'}`)
 
@@ -472,13 +977,6 @@ export async function POST(req: Request) {
   const currentReanalyzeCount = profileRow?.ai_reanalyze_count ?? 0
   const lastAnalyzedHash = profileRow?.last_analyzed_resume_hash ?? ''
 
-  if (mode !== 'parse_resume' && !isPro && currentReanalyzeCount >= FREE_LIMITS.aiReanalyze) {
-    return NextResponse.json({
-      error: `You've used all ${FREE_LIMITS.aiReanalyze} free AI re-analyses. Upgrade to keep finding better job matches.`,
-      limitReached: true,
-    }, { status: 403 })
-  }
-
   // ── 1. Fetch active resume (early exit before stream starts) ───────────────
   const { data: resume, error: resumeError } = await supabase
     .from('resumes')
@@ -500,6 +998,22 @@ export async function POST(req: Request) {
   // Only fires for job_search mode (matched-jobs page). parse_resume callers
   // (upload, reanalyze, AI-create) skip this gate and auto-detect country below.
   const currentHash = (resume as Record<string, unknown>).resume_hash as string | null
+
+  // ── Free-plan match run gate ──────────────────────────────────────────────
+  // 1 free AI match run per resume, lifetime (not daily).
+  // If the resume hash changed (new resume uploaded), reset effective count to 0.
+  if (mode !== 'parse_resume' && !isPro) {
+    const resumeHashStored = lastAnalyzedHash?.split(':')[0] ?? ''
+    const isNewResume = Boolean(currentHash) && Boolean(resumeHashStored) && currentHash !== resumeHashStored
+    const effectiveReanalyzeCount = isNewResume ? 0 : currentReanalyzeCount
+    if (effectiveReanalyzeCount >= FREE_LIMITS.aiReanalyze) {
+      return NextResponse.json({
+        error: `You've used your 1 free AI match run. Upgrade to keep finding better job matches.`,
+        limitReached: true,
+      }, { status: 403 })
+    }
+  }
+
   if (mode !== 'parse_resume' && !selectedSearchCountry && searchMode !== 'international_remote') {
     const pd = resume.parsed_data as ParsedResume | null
     const resumeLocation = pd?.location?.trim() ?? ''
@@ -517,16 +1031,31 @@ export async function POST(req: Request) {
   // after the user confirms their target country.
   if (mode === 'parse_resume') {
     let parsedData = resume.parsed_data as ParsedResume | null
+    let parseIdemKey: string | null = null
 
     if (!parsedData?.name) {
+      const parseIdem = await acquireAiIdempotencyLock(admin, {
+        userId: user.id,
+        feature: 'resume_parse',
+        keyParts: [resume.id, currentHash ?? 'no-hash'],
+        ttlSeconds: 600,
+        metadata: { resumeId: resume.id },
+      })
+      if (!parseIdem.acquired) {
+        return NextResponse.json(
+          { error: 'Resume analysis is already running for this resume. Please wait for it to finish.', code: 'RESUME_PARSE_ALREADY_RUNNING' },
+          { status: 409 },
+        )
+      }
+      parseIdemKey = parseIdem.key
       try {
         if (resume.raw_text && resume.raw_text.length >= 50) {
-          parsedData = await parseResume(resume.raw_text, user.id, !isPro)
+          parsedData = await parseResume(resume.raw_text, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resume.id })
         } else if (resume.file_url) {
           const fileRes = await fetch(resume.file_url)
           if (!fileRes.ok) throw new Error('Could not download resume file from storage')
           const buffer = Buffer.from(await fileRes.arrayBuffer())
-          parsedData = await parseResumeFromPDF(buffer, user.id, !isPro)
+          parsedData = await parseResumeFromPDF(buffer, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resume.id })
         } else {
           throw new Error('No resume text or file found. Please upload your resume again.')
         }
@@ -541,6 +1070,7 @@ export async function POST(req: Request) {
           }).eq('user_id', user.id),
         ])
         console.log(`[analyze] parse_resume: parsed and saved | user=${user.id}`)
+        void completeAiIdempotencyLock(admin, parseIdemKey, 'success', { resumeId: resume.id })
       } catch (err) {
         const msg = apiErrMsg(err)
         console.error('[analyze] parse_resume: AI parsing failed, using text fallback:', msg)
@@ -550,6 +1080,7 @@ export async function POST(req: Request) {
           : JSON.stringify((resume.parsed_data as ParsedResume | null)?.sections ?? [])
 
         if (!fallbackText || fallbackText.length < 20) {
+          if (parseIdemKey) void completeAiIdempotencyLock(admin, parseIdemKey, 'failed', { resumeId: resume.id, error: msg })
           return NextResponse.json({ error: `Resume parsing failed: ${msg}` }, { status: 500 })
         }
 
@@ -565,6 +1096,7 @@ export async function POST(req: Request) {
           }).eq('user_id', user.id),
         ])
         console.warn(`[analyze] parse_resume: fallback parsed and saved | user=${user.id}`)
+        if (parseIdemKey) void completeAiIdempotencyLock(admin, parseIdemKey, 'success', { resumeId: resume.id, fallback: true })
       }
     }
 
@@ -683,11 +1215,30 @@ export async function POST(req: Request) {
 
   // ── Credit check: runs AFTER exact scoped cache so cached responses don't charge ─
   const { allowed: creditAllowed, balance: creditBalance, cost: creditCost } =
-    await checkCredits(user.id, 'jobRerank', isPro, admin, planTier)
+    await checkCredits(user.id, 'matchRun', isPro, admin, planTier)
   if (!creditAllowed) {
     return NextResponse.json(
-      insufficientCreditsResponse('jobRerank', creditBalance.remainingCredits),
+      insufficientCreditsResponse('matchRun', creditBalance.remainingCredits),
       { status: 402 }
+    )
+  }
+
+  const searchIdem = await acquireAiIdempotencyLock(admin, {
+    userId: user.id,
+    feature: 'matches_search',
+    keyParts: [
+      currentHash ?? 'no-hash',
+      searchMode ?? 'country',
+      selectedSearchCountry ?? 'default',
+      force ? 'force' : 'cached-ok',
+    ],
+    ttlSeconds: 1200,
+    metadata: { resumeId: resume.id, searchMode, selectedSearchCountry },
+  })
+  if (!searchIdem.acquired) {
+    return NextResponse.json(
+      { error: 'Job matching is already running for this resume and search location. Please wait for it to finish.', code: 'MATCH_SEARCH_ALREADY_RUNNING' },
+      { status: 409 },
     )
   }
 
@@ -721,12 +1272,12 @@ export async function POST(req: Request) {
         if (!isAlreadyParsed) {
           try {
             if (resume.raw_text && resume.raw_text.length >= 50) {
-              parsedResume = await parseResume(resume.raw_text, user.id, !isPro)
+              parsedResume = await parseResume(resume.raw_text, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resume.id })
             } else if (resume.file_url) {
               const fileRes = await fetch(resume.file_url)
               if (!fileRes.ok) throw new Error('Could not download resume file from storage')
               const buffer = Buffer.from(await fileRes.arrayBuffer())
-              parsedResume = await parseResumeFromPDF(buffer, user.id, !isPro)
+              parsedResume = await parseResumeFromPDF(buffer, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resume.id })
             } else {
               throw new Error('No resume text or file found. Please upload your resume again.')
             }
@@ -761,7 +1312,6 @@ export async function POST(req: Request) {
 
         emit({ step: 'profile_parsed' })
 
-        // ── 2a-run. Create a job_search_runs row for this analysis ────────────
         // Mark any stuck "running" runs (>30 min old) as failed first.
         const stuckCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
         void admin
@@ -778,6 +1328,145 @@ export async function POST(req: Request) {
         const initialCountryName = initialCountryCode
           ? (COUNTRY_CODE_TO_NAME_MAP[initialCountryCode] ?? initialCountryCode)
           : null
+
+        // ── 2a. Primary engine: OpenAI Search V2 ──────────────────────────────
+        // Keep /matches user-facing behavior unchanged: a healthy V2 run is
+        // adapted into the same jobs/job_matches storage shape; otherwise the
+        // established Claude pipeline below acts as the fallback.
+        let openAIFallbackReason: string | null = null
+        let openAIV2Count = 0
+        let openAISearchRunId: string | null = null
+        let openAIBlendCandidates: V2BlendCandidates = { jobs: [], ranked: [] }
+        try {
+          emit({ step: 'strategy_ready' })
+          emit({ step: 'jobs_fetching', count: 0, sources: [] })
+          emit({ step: 'ai_ranking' })
+
+          const openAIResult = await runOpenAIJobSearch(admin, user, {
+            searchMode: initialSearchMode,
+            countryCode: initialCountryCode,
+            countryName: initialCountryName,
+            usage: {
+              userId: user.id,
+              userEmail: user.email ?? null,
+              isFreeUser: !isPro,
+              creditsCharged: creditCost,
+              creditFeatureKey: 'matchRun',
+            },
+          })
+          openAISearchRunId = openAIResult.runId
+          openAIV2Count = openAIResult.savedCount
+          console.log(`[analyze] OpenAI V2 primary finished | openai_run=${openAIResult.runId} saved=${openAIResult.savedCount}/${openAIResult.targetCount} reason=${openAIResult.failureReason ?? 'none'}`)
+
+          if (forceOpenAIV2MatchFailure) {
+            console.warn('[AI_QA_TEST_HOOK] Forcing OpenAI V2 match failure after V2 usage was logged; Claude fallback should run.')
+            throw new Error('qa_forced_openai_v2_match_failure')
+          }
+
+          const v2Persisted = await persistOpenAIV2AsMatches({
+            admin,
+            userId: user.id,
+            parsedResumeHash,
+            openaiRunId: openAIResult.runId,
+            targetCount: forceOpenAIV2LowResults ? targetCount + 1000 : targetCount,
+            planTier,
+            searchMode: initialSearchMode,
+            countryCode: initialCountryCode,
+            countryName: initialCountryName,
+          })
+
+          if (v2Persisted.savedCount >= targetCount && v2Persisted.runId) {
+            emit({ step: 'matches_saved' })
+            const afterCredits = await deductCredits(user.id, 'matchRun', admin)
+
+            logAiEvent({
+              task:             'match_run',
+              provider:         'openai',
+              model:            'openai_v2',
+              inputTokens:      0,
+              outputTokens:     0,
+              userId:           user.id,
+              userEmail:        user.email ?? null,
+              isFreeUser:       !isPro,
+              creditsCharged:   creditCost,
+              creditFeatureKey: 'matchRun',
+              fallbackUsed:     false,
+              metadata: {
+                provider_path:          'openai_v2',
+                credits_charged:        creditCost,
+                estimated_actual_cost:  null,
+                margin_warning:         false,
+                saved_count:            v2Persisted.savedCount,
+                search_run_id:          v2Persisted.runId,
+              },
+            })
+
+            await createNotification({
+              userId: user.id,
+              type: 'jobs',
+              title: `${v2Persisted.savedCount} new job${v2Persisted.savedCount !== 1 ? 's' : ''} matching your profile`,
+              body: 'Your resume was analysed and top matches have been ranked for you.',
+              ctaLabel: 'View Jobs',
+              ctaHref: '/matches',
+            })
+
+            const returnedMatchCount = Math.min(v2Persisted.savedCount, targetCount)
+            emit({
+              done: true,
+              matchCount: returnedMatchCount,
+              cvSuggestions: [],
+              detectedCountry: initialSearchMode === 'international_remote' ? 'International / Remote' : (initialCountryName || undefined),
+              detectedCity: undefined,
+              creditCost,
+              creditsRemaining: afterCredits?.remainingCredits,
+              searchRunId: v2Persisted.runId,
+              searchScope: {
+                searchMode: initialSearchMode,
+                countryCode: initialCountryCode,
+                countryName: initialCountryName,
+                searchRunId: v2Persisted.runId,
+              },
+              counts: {
+                ...v2Persisted.counts,
+                returned: returnedMatchCount,
+                displayed: returnedMatchCount,
+                reasonIfBelowTarget: v2Persisted.fallbackReason,
+              },
+              scarcityReason: v2Persisted.fallbackReason,
+            })
+
+            if (compositeAnalysisKey) {
+              void admin.from('profiles')
+                .update({ last_analyzed_resume_hash: compositeAnalysisKey })
+                .eq('user_id', user.id)
+            }
+
+            if (!isPro) {
+              void admin.from('profiles')
+                .update({ ai_reanalyze_count: currentReanalyzeCount + 1 })
+                .eq('user_id', user.id)
+            }
+            void completeAiIdempotencyLock(admin, searchIdem.key, 'success', {
+              searchRunId: v2Persisted.runId,
+              openaiSearchRunId: openAIResult.runId,
+              engine: 'openai_v2',
+              savedCount: v2Persisted.savedCount,
+            })
+            return
+          }
+
+          openAIFallbackReason = forceOpenAIV2LowResults
+            ? `qa_forced_openai_v2_low_results:${v2Persisted.fallbackReason ?? `openai_v2_saved_${v2Persisted.savedCount}_of_${targetCount}`}`
+            : v2Persisted.fallbackReason ?? `openai_v2_saved_${v2Persisted.savedCount}_of_${targetCount}`
+          openAIBlendCandidates = await loadOpenAIV2BlendCandidates(admin, openAIResult.runId, targetCount)
+          openAIV2Count = openAIBlendCandidates.ranked.length
+          console.warn(`[analyze] OpenAI V2 primary not sufficient; falling back to Claude | reason=${openAIFallbackReason}`)
+        } catch (err) {
+          openAIFallbackReason = `openai_v2_error:${apiErrMsg(err)}`
+          console.warn('[analyze] OpenAI V2 primary failed; falling back to Claude:', openAIFallbackReason)
+        }
+
+        // ── 2b-run. Create a Claude fallback job_search_runs row ──────────────
         const { data: runRow } = await admin
           .from('job_search_runs')
           .insert({
@@ -795,7 +1484,7 @@ export async function POST(req: Request) {
           .single()
         runId = runRow?.id ?? null
 
-        // ── 2b. Generate headline if profile has none ─────────────────────────
+        // ── 2c. Generate headline if profile has none ─────────────────────────
         try {
           const { data: profileRow } = await admin
             .from('profiles')
@@ -921,6 +1610,11 @@ export async function POST(req: Request) {
           }
         }
 
+        if (openAIBlendCandidates.jobs.length > 0) {
+          addUnique(openAIBlendCandidates.jobs)
+          console.log(`[analyze] seeded Claude fallback with ${openAIBlendCandidates.jobs.length} usable OpenAI V2 candidates for blended final selection`)
+        }
+
         const sourceErrors: Array<{ source: string; error: string }> = []
         const experienceQueries = (parsedResume.experience ?? [])
           .map((exp) => sanitizeQuery(exp.title ?? ''))
@@ -940,7 +1634,7 @@ export async function POST(req: Request) {
         const candidateProfile = buildCandidateProfile(parsedResume, searchQueries)
 
         console.log(`[PIPELINE] Queries generated: [${searchQueries.map((q) => `"${q}"`).join(', ')}]`)
-        console.log(`[PIPELINE_AUDIT] search_engine=claude search_run_id=${runId ?? 'none'} user_plan=${planTier} target_count=${targetCount}`)
+        console.log(`[PIPELINE_AUDIT] search_engine=claude search_run_id=${runId ?? 'none'} fallback_used=${Boolean(openAIFallbackReason)} fallback_reason=${openAIFallbackReason ?? 'none'} user_plan=${planTier} target_count=${targetCount}`)
         console.log(`[PIPELINE] Competitor companies: direct=[${strategy.competitors?.direct?.join(', ') ?? ''}] adjacent=[${strategy.competitors?.adjacent?.join(', ') ?? ''}]`)
 
         // Emit initial jobs_fetching to signal search has started
@@ -1118,6 +1812,27 @@ export async function POST(req: Request) {
           console.log(`[RELEVANCE FILTER] Removed: ${s.title}${s.company ? ' at ' + s.company : ''} | Reason: ${s.reason}`)
         }
 
+        // V2 candidates used for fallback have already passed V2's deterministic
+        // hard filters and OpenAI quality threshold. Re-add them after Claude's
+        // relevance filter so a short-but-good V2 run can actually fill the final
+        // list instead of being thinned by a second, differently shaped filter.
+        if (openAIBlendCandidates.jobs.length > 0) {
+          const existingCanonical = new Set(jobs.map((job) => computeCanonicalKey(job.company, job.title, job.location)))
+          const existingSourceIds = new Set(jobs.map((job) => `${job.source}:${job.externalId}`))
+          let restoredV2Count = 0
+          for (const job of openAIBlendCandidates.jobs) {
+            const sourceId = `${job.source}:${job.externalId}`
+            const canonical = computeCanonicalKey(job.company, job.title, job.location)
+            if (existingSourceIds.has(sourceId) || existingCanonical.has(canonical)) continue
+            jobs.push(job)
+            existingSourceIds.add(sourceId)
+            existingCanonical.add(canonical)
+            restoredV2Count += 1
+          }
+          jobsAfterRelevanceFilter = jobs.length
+          console.log(`[analyze] restored ${restoredV2Count} OpenAI V2 fallback candidates after Claude relevance filter (combined candidates=${jobs.length})`)
+        }
+
         // ── Competitor job count (informational — does NOT affect filtering) ────
         const competitorJobsFound = jobs.filter((j) => competitorSet.has(j.company.toLowerCase()))
         const competitorBreakdown: Record<string, number> = {}
@@ -1139,6 +1854,13 @@ export async function POST(req: Request) {
               failure_reason: 'no_jobs_found',
               audit_counts: {
                 search_engine: 'claude',
+                search_engine_primary: 'openai_v2',
+                search_engine_fallback_used: Boolean(openAIFallbackReason),
+                fallback_reason: openAIFallbackReason,
+                v2_count: openAIV2Count,
+                claude_count: 0,
+                final_count: 0,
+                openai_search_run_id: openAISearchRunId,
                 search_run_id: runId,
                 generated_queries: searchQueries,
                 fetched_count: jobsFetchedCount,
@@ -1213,7 +1935,27 @@ export async function POST(req: Request) {
 
         let ranked
         try {
-          ranked = await rerankJobs(parsedResume, jobsForScoring, resume.raw_text ?? undefined, allCompetitors, user.id, !isPro)
+          ranked = await rerankJobs(
+            parsedResume,
+            jobsForScoring,
+            resume.raw_text ?? undefined,
+            allCompetitors,
+            user.id,
+            !isPro,
+            {
+              userEmail: user.email ?? null,
+              searchRunId: openAIFallbackReason ? openAISearchRunId : runId,
+              resumeId: resume.id,
+              fallbackUsed: Boolean(openAIFallbackReason),
+              fallbackReason: openAIFallbackReason,
+              creditsCharged: creditCost,
+              creditFeatureKey: 'matchRun',
+              metadata: {
+                claude_search_run_id: runId,
+                openai_search_run_id: openAISearchRunId,
+              },
+            },
+          )
           console.log('[analyze] rerank complete, top score:', ranked[0]?.score, '| ranked by source:', sourceSummary(ranked))
         } catch (err) {
           const msg = apiErrMsg(err)
@@ -1237,7 +1979,11 @@ export async function POST(req: Request) {
           }).sort((a, b) => b.score - a.score)
         }
 
-        const jobMap = new Map(jobsForScoring.map((j) => [`${j.source}:${j.externalId}`, j]))
+        const jobMap = new Map(jobs.map((j) => [`${j.source}:${j.externalId}`, j]))
+        if (openAIBlendCandidates.ranked.length > 0) {
+          ranked = dedupeRankedForDisplay([...openAIBlendCandidates.ranked, ...ranked], jobMap)
+          console.log(`[analyze] blended OpenAI V2 candidates with Claude fallback ranked pool | v2=${openAIBlendCandidates.ranked.length} combined=${ranked.length}`)
+        }
 
         // Build the quota-sized display set by scanning all ranked jobs and keeping
         // only high-scoring jobs. Scores below MIN_DISPLAY_SCORE are never saved
@@ -1383,6 +2129,13 @@ export async function POST(req: Request) {
           failure_reason:              scarcityReason,
           audit_counts: {
             search_engine: 'claude',
+            search_engine_primary: 'openai_v2',
+            search_engine_fallback_used: Boolean(openAIFallbackReason),
+            fallback_reason: openAIFallbackReason,
+            v2_count: openAIV2Count,
+            claude_count: matchRows.length,
+            final_count: matchRows.length,
+            openai_search_run_id: openAISearchRunId,
             search_run_id: runId,
             generated_queries: searchQueries,
             fetched_count: jobsFetchedCount,
@@ -1448,7 +2201,34 @@ export async function POST(req: Request) {
         emit({ step: 'matches_saved' })
 
         // Deduct credits after successful rerank + match save
-        const afterCredits = await deductCredits(user.id, 'jobRerank', admin)
+        const afterCredits = await deductCredits(user.id, 'matchRun', admin)
+
+        // Internal fallback logging — recorded on every Claude fallback run for margin monitoring
+        logAiEvent({
+          task:             'match_run',
+          provider:         'anthropic',
+          model:            'claude-fallback',
+          inputTokens:      0,
+          outputTokens:     0,
+          userId:           user.id,
+          userEmail:        user.email ?? null,
+          isFreeUser:       !isPro,
+          creditsCharged:   creditCost,
+          creditFeatureKey: 'matchRun',
+          fallbackUsed:     true,
+          fallbackReason:   openAIFallbackReason ?? 'unknown',
+          metadata: {
+            provider_path:          'openai_v2_failed_claude_fallback',
+            credits_charged:        creditCost,
+            estimated_actual_cost:  null,  // individual model call costs tracked in separate ai_usage_events
+            margin_warning:         true,
+            saved_count:            matchRows.length,
+            search_run_id:          runId,
+          },
+        })
+
+        // Fire-and-forget admin warning if Claude fallback rate is high
+        void warnIfFallbackRateHigh(admin)
 
         await createNotification({
           userId: user.id,
@@ -1460,6 +2240,12 @@ export async function POST(req: Request) {
         })
 
         const returnedMatchCount = Math.min(matchRows.length, targetCount)
+        void completeAiIdempotencyLock(admin, searchIdem.key, 'success', {
+          searchRunId: runId,
+          openaiSearchRunId: openAISearchRunId,
+          fallbackUsed: Boolean(openAIFallbackReason),
+          savedCount: matchRows.length,
+        })
         emit({
           done: true,
           matchCount:       returnedMatchCount,
@@ -1476,6 +2262,12 @@ export async function POST(req: Request) {
             searchRunId: runId,
           },
           counts: {
+            searchEnginePrimary: 'openai_v2',
+            searchEngineFallbackUsed: Boolean(openAIFallbackReason),
+            fallbackReason: openAIFallbackReason,
+            v2Count: openAIV2Count,
+            claudeCount: matchRows.length,
+            finalCount: returnedMatchCount,
             fetched: jobsFetchedCount,
             target: targetCount,
             sourceFetchCounts,
@@ -1520,6 +2312,7 @@ export async function POST(req: Request) {
             completed_at: new Date().toISOString(),
           }).eq('id', runId)
         }
+        void completeAiIdempotencyLock(admin, searchIdem.key, 'failed', { error: msg, searchRunId: runId })
       } finally {
         controller.close()
       }

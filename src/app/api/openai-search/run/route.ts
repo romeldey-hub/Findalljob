@@ -4,6 +4,7 @@ import { isProUser } from '@/lib/admin'
 import { resolveProUntil } from '@/lib/billing'
 import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
 import { runOpenAIJobSearch } from '@/lib/openai-search/engine'
+import { acquireAiIdempotencyLock, completeAiIdempotencyLock } from '@/lib/ai/idempotency'
 
 export const runtime = 'nodejs'
 
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
     )
   }
   inFlightOpenAISearches.add(lockKey)
+  let idemKey: string | null = null
 
   try {
     const { data: profileRow } = await admin
@@ -69,12 +71,39 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const idem = await acquireAiIdempotencyLock(admin, {
+      userId: user.id,
+      feature: 'openai_search_run',
+      keyParts: [
+        body.testResumeId ?? 'active',
+        body.searchMode ?? 'default',
+        body.countryCode ?? 'default',
+        body.countryName ?? 'default',
+        body.includeCurrentCompany === true ? 'include-current' : 'exclude-current',
+      ],
+      ttlSeconds: 900,
+    })
+    idemKey = idem.key
+    if (!idem.acquired) {
+      return NextResponse.json(
+        { error: 'An OpenAI V2 search is already running for this resume and location. Please wait for it to finish.', code: 'SEARCH_ALREADY_RUNNING' },
+        { status: 409 },
+      )
+    }
+
     const result = await runOpenAIJobSearch(admin, user, {
       searchMode: body.searchMode,
       countryCode: body.countryCode ?? null,
       countryName: body.countryName ?? null,
       testResumeId: body.testResumeId ?? null,
       includeCurrentCompany: body.includeCurrentCompany === true,
+      usage: {
+        userId: user.id,
+        userEmail: user.email ?? null,
+        isFreeUser: !isPro,
+        creditsCharged: cost,
+        creditFeatureKey: 'jobRerank',
+      },
     })
 
     let creditsRemaining = balance.remainingCredits
@@ -86,6 +115,8 @@ export async function POST(req: NextRequest) {
       creditsUsed = cost
     }
 
+    if (idemKey) void completeAiIdempotencyLock(admin, idemKey, 'success', { runId: result.runId, savedCount: result.savedCount })
+
     return NextResponse.json({
       ok: true,
       ...result,
@@ -96,6 +127,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OpenAI search failed'
     console.error('[api/openai-search/run]', message)
+    if (idemKey) void completeAiIdempotencyLock(admin, idemKey, 'failed', { error: message })
     return NextResponse.json({ error: message }, { status: 500 })
   } finally {
     inFlightOpenAISearches.delete(lockKey)

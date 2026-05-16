@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
           const fileRes = await fetch(file_url)
           if (!fileRes.ok) throw new Error('Could not download resume file')
           const buffer = Buffer.from(await fileRes.arrayBuffer())
-          const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro)
+          const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resumeResult.data.id })
           raw_text = reconstructResumeText(reparsed)
         } catch (err) {
           console.error('[optimize:general] PDF re-parse failed:', err)
@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
         const fileRes = await fetch(file_url)
         if (!fileRes.ok) throw new Error('Could not download resume file')
         const buffer = Buffer.from(await fileRes.arrayBuffer())
-        const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro)
+        const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resumeResult.data.id })
         raw_text = reconstructResumeText(reparsed)
       } catch (err) {
         console.error('[optimize] PDF re-parse failed:', err)

@@ -132,11 +132,13 @@ Return 3–5 items only.`
   try {
     // ── AI call ──────────────────────────────────────────────────────────────
     const fixes = await generatePremiumJSON<QuickFix[]>(prompt, {
-      task:      'quick_fix',
-      system:    SYSTEM,
-      maxTokens: 1200,
-      userId:    user.id,
-      isFreeUser: !isPro,
+      task:             'quick_fix',
+      system:           SYSTEM,
+      maxTokens:        1200,
+      userId:           user.id,
+      isFreeUser:       !isPro,
+      creditsCharged:   creditCost,
+      creditFeatureKey: 'quickFix',
     })
 
     const valid = (Array.isArray(fixes) ? fixes : [])

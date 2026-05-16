@@ -1,7 +1,7 @@
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import type { ParsedResume } from '@/types'
+import { openAIResponsesParse } from '@/lib/ai/openai'
 
 const COMPANY_MODEL =
   process.env.OPENAI_COMPANY_INSIGHT_MODEL ??
@@ -137,11 +137,6 @@ type WebSearchResult = {
   snippet: string
   summary?: string
   provider: string
-}
-
-function openaiClient() {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured')
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 }
 
 function isAggregator(hostname: string) {
@@ -910,6 +905,7 @@ export async function summarizeCompanyInsightWithOpenAI({
   missingSkills,
   resumeFixSuggestions,
   sourceDocs,
+  usage,
 }: {
   company: string
   jobTitle: string
@@ -922,8 +918,15 @@ export async function summarizeCompanyInsightWithOpenAI({
   missingSkills: string[]
   resumeFixSuggestions: string[]
   sourceDocs: SourceDoc[]
+  usage?: {
+    userId?: string
+    userEmail?: string | null
+    isFreeUser?: boolean
+    searchRunId?: string | null
+    jobId?: string | null
+  }
 }) {
-  const response = await openaiClient().responses.parse({
+  const response = await openAIResponsesParse<{ output_parsed?: OpenAIV2CompanyInsight }>({
     model: COMPANY_MODEL,
     instructions: [
       'Summarize company information for a job seeker using only the supplied sources and job context.',
@@ -955,6 +958,17 @@ export async function summarizeCompanyInsightWithOpenAI({
       })),
     }),
     text: { format: zodTextFormat(CompanyInsightSchema, 'openai_v2_company_insight') },
+  }, {
+    feature: 'company_insight_summary',
+    userId: usage?.userId,
+    userEmail: usage?.userEmail,
+    isFreeUser: usage?.isFreeUser,
+    creditsCharged: 0,
+    creditFeatureKey: 'free_company_insight',
+    searchRunId: usage?.searchRunId ?? null,
+    jobId: usage?.jobId ?? null,
+    companyName: company,
+    metadata: { source_count: sourceDocs.length },
   })
 
   if (!response.output_parsed) throw new Error('OpenAI did not return a valid company insight')

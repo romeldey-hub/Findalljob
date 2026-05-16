@@ -10,6 +10,15 @@ import {
 import { toast } from 'sonner'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
 import type { ResumeSection } from '@/types'
+import {
+  countResumeSections,
+  logResumeExportDebug,
+  MIN_RESUME_EXPORT_TEXT_LENGTH,
+  renderedTextLength,
+  RESUME_PREPARING_MESSAGE,
+  resumeHasExportableContent,
+  waitForResumeExportPaint,
+} from '@/lib/resume/pdf-export-guards'
 
 // ── Inline AI assist helper ───────────────────────────────────────────────────
 
@@ -456,8 +465,24 @@ export function ResumePreviewModal({
   async function handleDownload() {
     setIsDownloading(true)
     try {
+      if (!resumeHasExportableContent(d)) {
+        toast.error(RESUME_PREPARING_MESSAGE)
+        return
+      }
+      await waitForResumeExportPaint()
       const element = document.getElementById('resume-content')
-      if (!element) throw new Error('Resume content not found')
+      const textLength = renderedTextLength(element)
+      const sectionCount = countResumeSections(d)
+      logResumeExportDebug('preview:start', {
+        exportNodeExists: Boolean(element),
+        exportNodeTextLength: textLength,
+        candidateName: d.name ?? null,
+        renderedResumeSections: sectionCount,
+      })
+      if (!element || textLength < MIN_RESUME_EXPORT_TEXT_LENGTH || sectionCount === 0) {
+        toast.error(RESUME_PREPARING_MESSAGE)
+        return
+      }
 
       const [{ toPng }, { default: jsPDF }] = await Promise.all([
         import('html-to-image'),
@@ -491,6 +516,17 @@ export function ResumePreviewModal({
       const cleanStyle = document.createElement('style')
       cleanStyle.id = 'pdf-clean-override'
       cleanStyle.textContent = `
+        #resume-content,
+        #resume-content * {
+          opacity: 1 !important;
+          visibility: visible !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        #resume-content {
+          background: #ffffff !important;
+          overflow: visible !important;
+        }
         #resume-content mark {
           background: none !important;
           background-color: transparent !important;
@@ -510,6 +546,7 @@ export function ResumePreviewModal({
         restores.forEach(r => r())
         document.head.removeChild(cleanStyle)
       }
+      if (!imgData || imgData.length < 1024) throw new Error('Captured resume image was empty')
 
       const naturalSize = await new Promise<{ w: number; h: number }>((resolve, reject) => {
         const img = new Image()
@@ -522,12 +559,19 @@ export function ResumePreviewModal({
       const pdfW = pdf.internal.pageSize.getWidth()
       const pdfH = pdf.internal.pageSize.getHeight()
       const imgH = (naturalSize.h * pdfW) / naturalSize.w
+      const pageCount = Math.max(1, Math.ceil(imgH / pdfH))
       let yPos = 0
       while (yPos < imgH) {
         pdf.addImage(imgData, 'PNG', 0, -yPos, pdfW, imgH)
         yPos += pdfH
         if (yPos < imgH) pdf.addPage()
       }
+      const blob = pdf.output('blob')
+      logResumeExportDebug('preview:complete', {
+        generatedPdfPageCount: pageCount,
+        generatedPdfBlobSize: blob.size,
+      })
+      if (blob.size < 1024) throw new Error('Generated PDF was empty')
       pdf.save(`${(d.name || 'resume').replace(/\s+/g, '_')}_optimized.pdf`)
       toast.success('PDF downloaded!')
     } catch (err) {

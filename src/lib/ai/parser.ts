@@ -152,9 +152,22 @@ Return ONLY the headline text. No quotes, no explanation.`
   }
 }
 
-export async function parseResume(rawText: string, userId?: string, isFreeUser?: boolean): Promise<ParsedResume> {
+type ParseUsageContext = {
+  userEmail?: string | null
+  resumeId?: string | null
+}
+
+export async function parseResume(rawText: string, userId?: string, isFreeUser?: boolean, usage?: ParseUsageContext): Promise<ParsedResume> {
   const prompt = `${PARSE_SCHEMA_PROMPT}\n\nRESUME TEXT:\n${rawText}`
-  const result = await generatePremiumJSON<ParsedResume>(prompt, { task: 'resume_parse', system: PARSE_SYSTEM_PROMPT, maxTokens: 6000, userId, isFreeUser })
+  const result = await generatePremiumJSON<ParsedResume>(prompt, {
+    task: 'resume_parse',
+    system: PARSE_SYSTEM_PROMPT,
+    maxTokens: 6000,
+    userId,
+    userEmail: usage?.userEmail,
+    isFreeUser,
+    resumeId: usage?.resumeId,
+  })
 
   // salvageJsonArray can return an array of sub-objects if the response was truncated.
   // That array would be wrongly typed as ParsedResume — detect and reject it.
@@ -174,7 +187,15 @@ CRITICAL — previous parse missed these sections: ${missingSections.join(', ')}
 You MUST include ALL of them in the "sections" array.
 
 RESUME TEXT:\n${rawText}`
-      const retryResult = await generatePremiumJSON<ParsedResume>(retryPrompt, { task: 'resume_parse:retry', system: PARSE_SYSTEM_PROMPT, maxTokens: 6000, userId, isFreeUser })
+      const retryResult = await generatePremiumJSON<ParsedResume>(retryPrompt, {
+        task: 'resume_parse:retry',
+        system: PARSE_SYSTEM_PROMPT,
+        maxTokens: 6000,
+        userId,
+        userEmail: usage?.userEmail,
+        isFreeUser,
+        resumeId: usage?.resumeId,
+      })
       if (Array.isArray(retryResult) || typeof retryResult !== 'object' || retryResult === null) {
         throw new Error('Resume parsing failed on retry: response was truncated. Please try again.')
       }
@@ -185,7 +206,7 @@ RESUME TEXT:\n${rawText}`
   return result
 }
 
-export async function parseResumeFromPDF(pdfBuffer: Buffer, userId?: string, isFreeUser?: boolean): Promise<ParsedResume> {
+export async function parseResumeFromPDF(pdfBuffer: Buffer, userId?: string, isFreeUser?: boolean, usage?: ParseUsageContext): Promise<ParsedResume> {
   const fullSystem = `${PARSE_SYSTEM_PROMPT}\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code fences, no explanation — just the raw JSON object.`
 
   const response = await getClient().messages.create({
@@ -214,7 +235,9 @@ export async function parseResumeFromPDF(pdfBuffer: Buffer, userId?: string, isF
     inputTokens:  response.usage?.input_tokens  ?? 0,
     outputTokens: response.usage?.output_tokens ?? 0,
     userId,
+    userEmail: usage?.userEmail,
     isFreeUser,
+    resumeId: usage?.resumeId,
   })
 
   const content = response.content[0]

@@ -34,7 +34,7 @@ const HELP_DATA: HelpSection[] = [
     items: [
       {
         question: 'How does AI job matching work?',
-        answer: 'We analyze your resume and compare it against each job description using Claude AI. Every job gets a score from 0 to 100 — the higher the score, the better your resume fits the role.',
+        answer: 'We analyze your resume and compare it against each job description using AI. Every job gets a score from 0 to 100 — the higher the score, the better your resume fits the role.',
       },
       {
         question: 'What is a good match score?',

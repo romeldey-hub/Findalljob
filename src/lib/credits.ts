@@ -4,15 +4,22 @@ export const CREDIT_COSTS = {
   // ── Existing (do not change amounts) ────────────────────────────────────────
   jobOptimize:      2,
   interviewSession: 2,
-  jobRerank:        1,
+  jobRerank:        3,    // /matches-openai fresh run (openai-search/run route)
   aiAssist:         0.5,
   // ── Newly protected features ─────────────────────────────────────────────────
   quickFix:         1,    // resume quick-fix suggestions (premium Sonnet)
   interviewEval:    0.5,  // evaluate a single interview answer (Haiku)
   jobManual:        1,    // manual job add + AI extraction + scoring
-  jobExpand:        1,    // expand job pool with AI reranking
+  jobExpand:        2,    // expand job pool with AI reranking
   resumeGenerate:   2,    // AI resume builder (full profile generation)
   followUpMessage:  0.5,  // AI follow-up / thank-you message generation
+  companyInsight:   1,    // Know the Company — fresh AI insight (after 3 free/day)
+  // ── matchRun cost escalation policy ─────────────────────────────────────────
+  // Current cost: 3 credits. Escalation trigger: Claude fallback rate >= 30% sustained.
+  // Step 1 — investigate and fix OpenAI V2 failure / low-result causes first.
+  // Step 2 — if fallback rate remains >= 30% after optimization, raise cost to 4.
+  // The warnIfFallbackRateHigh() monitor in resume/analyze/route.ts fires the alert.
+  matchRun:         3,    // fresh AI match run for paid users (free users get 1/resume via aiReanalyze limit)
 } as const
 
 export type CreditFeature = keyof typeof CREDIT_COSTS

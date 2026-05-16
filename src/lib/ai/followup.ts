@@ -16,6 +16,8 @@ export async function generateFollowUpMessage(params: {
   daysSinceApplication?: number
   userId?: string
   isFreeUser?: boolean
+  creditsCharged?: number
+  creditFeatureKey?: string
 }): Promise<string> {
   const typeInstructions: Record<MessageType, string> = {
     initial_outreach: 'a cold outreach message to the hiring manager before applying',
@@ -39,5 +41,5 @@ ${params.jobDescription.slice(0, 400)}
 Write the message body only (no subject line). Use first person. Keep it under 150 words.
 Reference one specific thing about the role or company to show genuine interest.`
 
-  return generateLight(prompt, { task: 'followup_message', system: FOLLOWUP_SYSTEM_PROMPT, maxTokens: 300, userId: params.userId, isFreeUser: params.isFreeUser })
+  return generateLight(prompt, { task: 'followup_message', system: FOLLOWUP_SYSTEM_PROMPT, maxTokens: 300, userId: params.userId, isFreeUser: params.isFreeUser, creditsCharged: params.creditsCharged, creditFeatureKey: params.creditFeatureKey })
 }

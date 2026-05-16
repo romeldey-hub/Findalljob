@@ -59,7 +59,7 @@ const proPlusFeatures = [
 const faqs = [
   { q: 'Is FindAllJob really free to start?', a: 'Yes. You can sign up, upload your resume, search for jobs, and view AI-ranked matches without entering a credit card. Free accounts receive 5 one-time AI credits to try the AI features.' },
   { q: 'What are AI credits?', a: 'AI credits are consumed when you use AI-powered features — resume optimization, mock interview sessions, AI resume builder, AI bullet writing, and follow-up message generation. Each action costs one or more credits depending on complexity.' },
-  { q: 'Do unused credits roll over?', a: 'No. Pro Lite and Pro Plus credits reset monthly. Unused credits from the previous month do not carry over.' },
+  { q: 'Do unused credits roll over?', a: 'No. Pro Lite and Pro Plus credits reset at the start of each paid billing month. Credits are only refreshed while your subscription is active and paid. Unused credits from the previous month do not carry over.' },
   { q: 'Can I cancel my subscription anytime?', a: 'Yes. You can cancel your Pro subscription at any time from your account settings. You retain Pro access until the end of your current billing period.' },
   { q: 'Is there a difference between Pro Lite and Pro Plus features?', a: 'Both plans unlock the same set of AI features. Pro Plus gives you 3× more AI credits per month (120 vs 40), which means you can run more resume optimizations, mock interview sessions, and AI assists within the month.' },
   { q: 'Is pricing different for India?', a: 'Yes. Indian users see pricing in INR (₹299/month for Pro Lite, ₹599/month for Pro Plus), automatically detected based on your location.' },
@@ -194,7 +194,7 @@ export default async function PricingPage() {
         </div>
 
         <p className="text-center text-[12px] text-slate-600 mt-6">
-          AI credits reset monthly on Pro plans · Indian users see ₹ pricing automatically
+          AI credits refresh each paid billing month on active Pro plans · Indian users see ₹ pricing automatically
         </p>
       </section>
 

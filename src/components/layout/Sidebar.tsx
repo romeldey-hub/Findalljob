@@ -74,7 +74,7 @@ function CreditsPopup({
         <div className="h-2 rounded-full bg-gray-100 dark:bg-[#263549] overflow-hidden mb-2">
           <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
         </div>
-        {resetStr && (
+        {resetStr && isPro && (
           <p className="text-[11px] text-gray-400 dark:text-slate-500">Resets {resetStr}</p>
         )}
       </div>

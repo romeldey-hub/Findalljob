@@ -17,6 +17,9 @@ import {
   type OpenAIV2CompanyInsightPayload,
 } from '@/lib/openai-search/company-insight-storage'
 import type { ParsedResume } from '@/types'
+import { logAiEvent } from '@/lib/ai/usage-logger'
+import { acquireAiIdempotencyLock, completeAiIdempotencyLock } from '@/lib/ai/idempotency'
+import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/credits'
 
 export const runtime = 'nodejs'
 export const maxDuration = 90
@@ -203,10 +206,50 @@ export async function POST(request: NextRequest) {
     !isBlockedCompanyWebsiteUrl(cached.insight.website) &&
     (!cached.insight.website || isLikelyOfficialCompanyWebsiteUrl(cached.insight.website, job.company))
   ) {
+    logAiEvent({
+      task: 'company_insight_cache',
+      provider: 'search',
+      model: 'company-insight-cache',
+      inputTokens: 0,
+      outputTokens: 0,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      cacheHit: true,
+      companyName: job.company,
+      jobId: resultId ?? null,
+      searchRunId: job.search_run_id || null,
+    })
     return insightResponse(cached.insight, true, job.company)
   }
 
+  const idem = await acquireAiIdempotencyLock(admin, {
+    userId: user.id,
+    feature: 'company_insight',
+    keyParts: [job.company, job.title, job.location ?? '', job.apply_url ?? ''],
+    ttlSeconds: 300,
+    metadata: { resultId: resultId ?? null },
+  })
+  if (!idem.acquired) {
+    return NextResponse.json(
+      { error: 'Company insight is already being prepared. Please try again in a moment.', code: 'COMPANY_INSIGHT_ALREADY_RUNNING' },
+      { status: 409 },
+    )
+  }
+
   try {
+    logAiEvent({
+      task: 'company_insight_discovery',
+      provider: 'search',
+      model: 'langsearch-brave-google-tavily',
+      inputTokens: 0,
+      outputTokens: 0,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      cacheHit: false,
+      companyName: job.company,
+      jobId: resultId ?? null,
+      searchRunId: job.search_run_id || null,
+    })
     const sourceDocs = await collectCompanySources({
       company: job.company,
       title: job.title,
@@ -226,6 +269,19 @@ export async function POST(request: NextRequest) {
       !isBlockedCompanyWebsiteUrl(companyCached.insight.website) &&
       (!companyCached.insight.website || isLikelyOfficialCompanyWebsiteUrl(companyCached.insight.website, job.company))
     ) {
+      logAiEvent({
+        task: 'company_insight_domain_cache',
+        provider: 'search',
+        model: 'company-insight-cache',
+        inputTokens: 0,
+        outputTokens: 0,
+        userId: user.id,
+        userEmail: user.email ?? null,
+        cacheHit: true,
+        companyName: job.company,
+        jobId: resultId ?? null,
+        searchRunId: job.search_run_id || null,
+      })
       const insight = enforceOfficialWebsite(companyCached.insight, job.company)
       if (resultId) {
         const now = new Date().toISOString()
@@ -238,10 +294,37 @@ export async function POST(request: NextRequest) {
           updatedAt: now,
         })
       }
+      void completeAiIdempotencyLock(admin, idem.key, 'success', { cache: 'domain', company: job.company })
       return insightResponse(insight, true, job.company)
     }
 
-    const rawInsight = hasReliableCompanySourceDocs(sourceDocs)
+    // ── Credit gate: first 3 fresh AI insights/day are free; after that = 1 credit ──
+    const FREE_DAILY_LIMIT = 3
+    const isRealAiCall = hasReliableCompanySourceDocs(sourceDocs)
+    let chargeCredit = false
+    if (isRealAiCall) {
+      const today = new Date().toISOString().slice(0, 10)
+      const { count: freshToday } = await admin
+        .from('ai_usage_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('feature', 'company_insight_summary')
+        .gte('created_at', `${today}T00:00:00.000Z`)
+
+      if ((freshToday ?? 0) >= FREE_DAILY_LIMIT) {
+        const { allowed, balance } = await checkCredits(user.id, 'companyInsight', false, admin)
+        if (!allowed) {
+          void completeAiIdempotencyLock(admin, idem.key, 'failed', { reason: 'insufficient_credits' })
+          return NextResponse.json(
+            insufficientCreditsResponse('companyInsight', balance.remainingCredits),
+            { status: 402 },
+          )
+        }
+        chargeCredit = true
+      }
+    }
+
+    const rawInsight = isRealAiCall
       ? await summarizeCompanyInsightWithOpenAI({
       company: job.company,
       jobTitle: job.title,
@@ -254,6 +337,12 @@ export async function POST(request: NextRequest) {
       missingSkills: toStringList(job.missing_skills),
       resumeFixSuggestions: toStringList(job.resume_fix_suggestions),
       sourceDocs,
+      usage: {
+        userId: user.id,
+        userEmail: user.email ?? null,
+        searchRunId: job.search_run_id || null,
+        jobId: resultId ?? null,
+      },
     })
       : unverifiedCompanyInsight({ company: job.company, applyUrl: job.apply_url })
     const insight = enforceOfficialWebsite(rawInsight, job.company)
@@ -280,10 +369,13 @@ export async function POST(request: NextRequest) {
     }
     await saveOpenAIV2CompanyDomainInsight(admin, payload, job.company)
 
+    if (chargeCredit) await deductCredits(user.id, 'companyInsight', admin)
+    void completeAiIdempotencyLock(admin, idem.key, 'success', { company: job.company, sourceDocs: sourceDocs.length })
     return insightResponse(insight, false, job.company)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not fetch company details'
     console.error('[openai-search/company-insight]', message)
+    void completeAiIdempotencyLock(admin, idem.key, 'failed', { error: message })
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -107,11 +107,13 @@ Return a JSON object matching this exact structure:
 
   try {
     const parsed = await generatePremiumJSON<ParsedResume>(prompt, {
-      task:      'resume_generate',
-      system:    'You are a professional resume writer. Return only valid JSON matching the requested structure.',
-      maxTokens: 2048,
-      userId:    user.id,
-      isFreeUser: !isPro,
+      task:             'resume_generate',
+      system:           'You are a professional resume writer. Return only valid JSON matching the requested structure.',
+      maxTokens:        2048,
+      userId:           user.id,
+      isFreeUser:       !isPro,
+      creditsCharged:   creditCost,
+      creditFeatureKey: 'resumeGenerate',
     })
 
     const afterCredits = await deductCredits(user.id, 'resumeGenerate', admin)

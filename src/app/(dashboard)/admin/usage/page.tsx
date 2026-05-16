@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isAdminUser } from '@/lib/admin'
-import { DollarSign, Zap, TrendingUp, Users, ArrowLeft } from 'lucide-react'
+import { DollarSign, Zap, TrendingUp, Users, ArrowLeft, AlertTriangle } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,7 +14,17 @@ interface UsageEvent {
   model_name: string
   input_tokens: number
   output_tokens: number
+  cached_input_tokens: number
   cost_usd: string
+  estimated_cost_usd: string | null
+  provider: string | null
+  user_email: string | null
+  credits_charged: string | number | null
+  credit_feature_key: string | null
+  success: boolean | null
+  cache_hit: boolean | null
+  fallback_used: boolean | null
+  fallback_reason: string | null
   is_free_user: boolean
   created_at: string
 }
@@ -85,7 +95,7 @@ export default async function AdminUsagePage({
   // ── Fetch events in range ────────────────────────────────────────────────────
   const { data: rawEvents } = await admin
     .from('ai_usage_events')
-    .select('id, user_id, feature, model_tier, model_name, input_tokens, output_tokens, cost_usd, is_free_user, created_at')
+    .select('id, user_id, user_email, feature, provider, model_tier, model_name, input_tokens, output_tokens, cached_input_tokens, cost_usd, estimated_cost_usd, credits_charged, credit_feature_key, success, cache_hit, fallback_used, fallback_reason, is_free_user, created_at')
     .gte('created_at', since)
     .order('created_at', { ascending: false })
 
@@ -97,6 +107,27 @@ export default async function AdminUsagePage({
   const paidCost  = totalCost - freeCost
   const totalReqs = evts.length
   const freePct   = totalCost > 0 ? (freeCost / totalCost) * 100 : 0
+  const failedReqs = evts.filter(e => e.success === false).length
+  const fallbackReqs = evts.filter(e => e.fallback_used).length
+  const matchesEvents = evts.filter(e => e.feature.startsWith('openai_search_') || e.feature === 'job_rerank')
+  const companyEvents = evts.filter(e => e.feature.startsWith('company_insight'))
+  const companyCacheHits = companyEvents.filter(e => e.cache_hit).length
+  const avgMatchesCost = matchesEvents.length ? matchesEvents.reduce((s, e) => s + Number(e.cost_usd), 0) / matchesEvents.length : 0
+  const avgCompanyCost = companyEvents.length ? companyEvents.reduce((s, e) => s + Number(e.cost_usd), 0) / companyEvents.length : 0
+  const companyCacheHitRate = companyEvents.length ? (companyCacheHits / companyEvents.length) * 100 : 0
+  const last24hIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const failedLast24h = evts.filter(e => e.success === false && e.created_at >= last24hIso).length
+  const missingCostEvents = evts.filter(e => e.estimated_cost_usd == null).length
+  const zeroCreditCostlyEvents = evts.filter(e => Number(e.credits_charged ?? 0) === 0 && Number(e.estimated_cost_usd ?? e.cost_usd ?? 0) >= 0.02).length
+  const fallbackRate = totalReqs ? (fallbackReqs / totalReqs) * 100 : 0
+  const warningCards = [
+    avgMatchesCost > 0.08 ? { label: 'High /matches avg cost', value: fmtCost(avgMatchesCost), sub: 'Review V2 + fallback usage' } : null,
+    fallbackRate > 15 ? { label: 'High fallback rate', value: fmtPct(fallbackRate), sub: `${fallbackReqs}/${totalReqs} AI events` } : null,
+    companyEvents.length >= 5 && companyCacheHitRate < 25 ? { label: 'Low company cache hit rate', value: fmtPct(companyCacheHitRate), sub: `${companyCacheHits}/${companyEvents.length} cache hits` } : null,
+    failedLast24h > 0 ? { label: 'Failed AI calls in 24h', value: failedLast24h.toLocaleString(), sub: 'Check error_code/logs' } : null,
+    missingCostEvents > 0 ? { label: 'Missing cost values', value: missingCostEvents.toLocaleString(), sub: 'estimated_cost_usd is null' } : null,
+    zeroCreditCostlyEvents > 0 ? { label: 'Cost without credits', value: zeroCreditCostlyEvents.toLocaleString(), sub: '>$0.02 and 0 credits charged' } : null,
+  ].filter((card): card is { label: string; value: string; sub: string } => Boolean(card))
 
   // ── Feature breakdown ────────────────────────────────────────────────────
   const featureMap = new Map<string, { requests: number; totalCost: number; freeCost: number }>()
@@ -116,6 +147,28 @@ export default async function AdminUsagePage({
       avgCost:   s.totalCost / s.requests,
       freePct:   s.totalCost > 0 ? (s.freeCost / s.totalCost) * 100 : 0,
     }))
+    .sort((a, b) => b.totalCost - a.totalCost)
+
+  const providerMap = new Map<string, { requests: number; totalCost: number }>()
+  const modelMap = new Map<string, { requests: number; totalCost: number }>()
+  for (const e of evts) {
+    const provider = e.provider ?? 'anthropic'
+    const p = providerMap.get(provider) ?? { requests: 0, totalCost: 0 }
+    p.requests++
+    p.totalCost += Number(e.cost_usd)
+    providerMap.set(provider, p)
+
+    const model = e.model_name || 'unknown'
+    const m = modelMap.get(model) ?? { requests: 0, totalCost: 0 }
+    m.requests++
+    m.totalCost += Number(e.cost_usd)
+    modelMap.set(model, m)
+  }
+  const providers = Array.from(providerMap.entries())
+    .map(([provider, s]) => ({ provider, ...s, avgCost: s.totalCost / s.requests }))
+    .sort((a, b) => b.totalCost - a.totalCost)
+  const models = Array.from(modelMap.entries())
+    .map(([model, s]) => ({ model, ...s, avgCost: s.totalCost / s.requests }))
     .sort((a, b) => b.totalCost - a.totalCost)
 
   // ── Heavy users ──────────────────────────────────────────────────────────
@@ -236,6 +289,29 @@ export default async function AdminUsagePage({
         <StatCard icon={TrendingUp}  label="Optimize preview → Pro"     value={freeOptimizers.size > 0 ? fmtPct(conversionRate) : '—'} sub={freeOptimizers.size > 0 ? `${convertedCount} of ${freeOptimizers.size} converted` : 'No preview data'} color="bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400" />
       </div>
 
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+        <StatCard icon={DollarSign} label="Avg /matches AI call" value={avgMatchesCost ? fmtCost(avgMatchesCost) : '—'} color="bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400" />
+        <StatCard icon={DollarSign} label="Avg company insight" value={avgCompanyCost ? fmtCost(avgCompanyCost) : '—'} color="bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400" />
+        <StatCard icon={TrendingUp} label="Company cache hit rate" value={companyEvents.length ? fmtPct(companyCacheHitRate) : '—'} sub={`${companyCacheHits}/${companyEvents.length} events`} color="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400" />
+        <StatCard icon={Zap} label="Fallback usage count" value={fallbackReqs.toLocaleString()} color="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400" />
+        <StatCard icon={Zap} label="Failed AI calls" value={failedReqs.toLocaleString()} color="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" />
+      </div>
+
+      {warningCards.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {warningCards.map((warning) => (
+            <StatCard
+              key={warning.label}
+              icon={AlertTriangle}
+              label={warning.label}
+              value={warning.value}
+              sub={warning.sub}
+              color="bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
+            />
+          ))}
+        </div>
+      )}
+
       {/* Daily cost trend */}
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-5">
         <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9] mb-1">Daily cost — last 14 days</h2>
@@ -262,6 +338,58 @@ export default async function AdminUsagePage({
               </div>
             )
           })}
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#F1F5F9] dark:border-[#334155]">
+            <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Cost by provider</h2>
+          </div>
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-[#F1F5F9] dark:border-[#334155] text-left">
+                {['Provider', 'Requests', 'Cost', 'Avg'].map(h => (
+                  <th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {providers.map(p => (
+                <tr key={p.provider} className="border-b border-[#F8FAFC] dark:border-[#263549] last:border-0">
+                  <td className="px-4 py-3 font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{p.provider}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 dark:text-slate-400">{p.requests.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{fmtCost(p.totalCost)}</td>
+                  <td className="px-4 py-3 text-right text-gray-400 dark:text-slate-500">{fmtCost(p.avgCost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#F1F5F9] dark:border-[#334155]">
+            <h2 className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">Cost by model</h2>
+          </div>
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-[#F1F5F9] dark:border-[#334155] text-left">
+                {['Model', 'Requests', 'Cost', 'Avg'].map(h => (
+                  <th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-slate-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {models.slice(0, 10).map(m => (
+                <tr key={m.model} className="border-b border-[#F8FAFC] dark:border-[#263549] last:border-0">
+                  <td className="px-4 py-3 font-mono text-[12px] font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{m.model}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 dark:text-slate-400">{m.requests.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-[#0F172A] dark:text-[#F1F5F9]">{fmtCost(m.totalCost)}</td>
+                  <td className="px-4 py-3 text-right text-gray-400 dark:text-slate-500">{fmtCost(m.avgCost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

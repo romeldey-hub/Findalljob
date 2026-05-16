@@ -242,7 +242,7 @@ export function ProfileCard({
               disabled={editingField !== 'name'}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your full name"
-              className={inputClass(editingField === 'name')}
+              className={inputClass({ editing: editingField === 'name', editable: true })}
             />
           </Field>
 
@@ -251,7 +251,7 @@ export function ProfileCard({
               type="email"
               value={email}
               disabled
-              className={inputClass(false)}
+              className={inputClass({ editing: false, readOnly: true })}
             />
           </Field>
 
@@ -276,7 +276,7 @@ export function ProfileCard({
               disabled={editingField !== 'headline'}
               onChange={(e) => setHeadline(e.target.value)}
               placeholder="e.g. Senior Software Engineer | Cloud & DevOps | Fintech"
-              className={inputClass(editingField === 'headline')}
+              className={inputClass({ editing: editingField === 'headline', editable: true })}
             />
           </Field>
         </div>
@@ -317,7 +317,7 @@ function Field({
           <button
             type="button"
             onClick={onEdit}
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-gray-300 dark:text-slate-600 hover:text-[#2563EB] dark:hover:text-blue-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] transition-colors"
+            className="w-8 h-8 rounded-lg border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-center flex-shrink-0 text-gray-400 dark:text-slate-500 hover:text-[#2563EB] dark:hover:text-blue-400 hover:bg-[#F8FAFC] dark:hover:bg-[#263549] hover:border-blue-200 dark:hover:border-blue-900/60 transition-colors"
             title={`Edit ${label}`}
             aria-label={`Edit ${label}`}
           >
@@ -354,12 +354,24 @@ function Field({
   )
 }
 
-function inputClass(editable: boolean) {
+function inputClass({
+  editing,
+  editable = false,
+  readOnly = false,
+}: {
+  editing: boolean
+  editable?: boolean
+  readOnly?: boolean
+}) {
   return [
-    'w-full px-3.5 py-2.5 rounded-xl border text-[13px] outline-none transition-all',
-    editable
-      ? 'bg-white dark:bg-[#263549] border-[#E5E7EB] dark:border-[#334155] text-[#0F172A] dark:text-[#F1F5F9] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10'
-      : 'bg-[#F8FAFC] dark:bg-[#1A2942] border-transparent text-gray-500 dark:text-slate-500 cursor-default',
+    'w-full px-3.5 py-2.5 rounded-xl border text-[13px] leading-relaxed outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-slate-500',
+    editing
+      ? 'bg-white dark:bg-[#263549] border-[#2563EB] text-[#0F172A] dark:text-[#F1F5F9] shadow-[0_0_0_3px_rgba(37,99,235,0.10)] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15'
+      : readOnly
+        ? 'bg-[#F8FAFC] dark:bg-[#162235] border-[#E5E7EB] dark:border-[#334155] text-gray-500 dark:text-slate-500 cursor-not-allowed'
+        : editable
+          ? 'bg-[#F8FAFC] dark:bg-[#17243A] border-[#E5E7EB] dark:border-[#334155] text-[#0F172A] dark:text-[#F1F5F9] hover:border-gray-300 dark:hover:border-[#475569] cursor-default'
+          : 'bg-[#F8FAFC] dark:bg-[#17243A] border-[#E5E7EB] dark:border-[#334155] text-[#0F172A] dark:text-[#F1F5F9]',
   ].join(' ')
 }
 

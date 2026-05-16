@@ -91,6 +91,10 @@ export async function POST(request: NextRequest) {
     resumeSummary: profile?.summary ?? '',
     jobDescription: job.description,
     recruiterName,
+    userId: user.id,
+    isFreeUser: !isPro,
+    creditsCharged:   creditCost,
+    creditFeatureKey: 'followUpMessage',
   })
 
   // ── Save message to application record ────────────────────────────────────
@@ -117,13 +121,14 @@ export async function POST(request: NextRequest) {
   const afterCredits = await deductCredits(user.id, 'followUpMessage', admin)
 
   if (!afterCredits) {
-    console.error(`[followup/generate] credit deduction failed | user=${user.id}`)
-    return NextResponse.json({ error: 'Credit deduction failed. Please try again.' }, { status: 500 })
+    // Deduction RPC failed but message is already generated and saved — return success.
+    // The credit shortfall is logged for admin review; do not surface a 500 to the user.
+    console.error(`[followup/generate] credit deduction RPC failed (message saved) | user=${user.id} | cost=${creditCost}`)
   }
 
   return NextResponse.json({
     message,
     creditCost,
-    creditsRemaining: afterCredits.remainingCredits,
+    creditsRemaining: afterCredits?.remainingCredits ?? creditBalance.remainingCredits - creditCost,
   })
 }

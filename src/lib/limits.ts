@@ -1,6 +1,6 @@
 export const FREE_LIMITS = {
   resumeUploads:       1,   // one upload/create for free accounts
-  aiReanalyze:         3,   // full re-analyze pipeline runs
+  aiReanalyze:         1,   // 1 fresh AI match run per resume, lifetime (not daily)
   jobSearch:           3,
   matchesPerDay:       15,  // AI-ranked matches visible
   optimizationsPerDay: 1,   // general resume optimization previews

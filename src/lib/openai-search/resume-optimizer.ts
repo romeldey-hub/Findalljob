@@ -1,7 +1,7 @@
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import type { OptimizedResumeData } from '@/lib/ai/optimizer'
+import { openAIResponsesParse } from '@/lib/ai/openai'
 
 const OPENAI_OPTIMIZER_MODEL =
   process.env.OPENAI_RESUME_OPTIMIZER_MODEL ??
@@ -98,13 +98,6 @@ function normalizeOptimizedResume(data: OpenAIV2OptimizedResumeOutput): Optimize
   }
 }
 
-function openaiClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not configured')
-  }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-}
-
 export async function optimizeResumeWithOpenAIForV2({
   resumeText,
   jobTitle,
@@ -112,7 +105,9 @@ export async function optimizeResumeWithOpenAIForV2({
   company,
   originalScore,
   userId,
+  userEmail,
   isFreeUser,
+  resultId,
 }: {
   resumeText: string
   jobTitle: string
@@ -120,9 +115,11 @@ export async function optimizeResumeWithOpenAIForV2({
   company: string
   originalScore: number
   userId?: string
+  userEmail?: string | null
   isFreeUser?: boolean
+  resultId?: string
 }): Promise<OptimizedResumeData> {
-  const response = await openaiClient().responses.parse({
+  const response = await openAIResponsesParse<{ output_parsed?: OpenAIV2OptimizedResumeOutput }>({
     model: OPENAI_OPTIMIZER_MODEL,
     instructions: [
       'You are an expert resume strategist and ATS specialist.',
@@ -149,6 +146,15 @@ export async function optimizeResumeWithOpenAIForV2({
       userId ? `User ID for trace context: ${userId}` : '',
     ].filter(Boolean).join('\n'),
     text: { format: zodTextFormat(OptimizedResumeSchema, 'openai_v2_optimized_resume') },
+  }, {
+    feature: 'openai_resume_optimize_job',
+    userId,
+    userEmail,
+    isFreeUser,
+    creditsCharged: isFreeUser ? 0 : 2,
+    creditFeatureKey: 'jobOptimize',
+    jobId: resultId ?? null,
+    companyName: company,
   })
 
   if (!response.output_parsed) {

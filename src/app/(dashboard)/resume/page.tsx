@@ -27,7 +27,7 @@ export default async function ResumePage() {
       .maybeSingle(),
     admin
       .from('profiles')
-      .select('avatar_url, full_name, role, headline, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count, credits_remaining')
+      .select('avatar_url, full_name, role, headline, subscription_status, pro_until, resume_upload_count, ai_reanalyze_count')
       .eq('user_id', user!.id)
       .single(),
   ])
@@ -63,6 +63,11 @@ export default async function ResumePage() {
 
   return (
     <div className="space-y-5">
+      <style>{`
+        body[data-resume-processing="true"] .resume-stale-content {
+          display: none !important;
+        }
+      `}</style>
 
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
@@ -93,12 +98,11 @@ export default async function ResumePage() {
         uploadLimit={FREE_LIMITS.resumeUploads}
         userId={user!.id}
         avatarUrl={avatarUrl}
-        creditsRemaining={profileRow?.credits_remaining ?? null}
       />
 
       {/* ── Resume uploaded but not yet AI-parsed ───────────────── */}
       {hasResume && !isParsed && (
-        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6 flex items-start gap-4">
+        <div className="resume-stale-content bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] shadow-sm p-6 flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center flex-shrink-0 mt-0.5">
             <RefreshCw className="w-5 h-5 text-amber-500" />
           </div>
@@ -118,7 +122,7 @@ export default async function ResumePage() {
 
       {/* ── Profile + Insights ──────────────────────────────────── */}
       {hasResume && isParsed && (
-        <div className="flex flex-col xl:flex-row gap-5">
+        <div className="resume-stale-content flex flex-col xl:flex-row gap-5">
 
           {/* Profile card — grows to fill */}
           <div className="flex-1 min-w-0">

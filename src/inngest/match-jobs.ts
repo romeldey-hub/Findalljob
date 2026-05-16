@@ -36,13 +36,13 @@ export const matchJobsJob = inngest.createFunction(
 
     const resumeEmbedding = await step.run('resume-embedding', async () => {
       const text = resumeToEmbeddingText(parsedResume)
-      return generateEmbedding(text)
+      return generateEmbedding(text, userId)
     })
 
     await step.run('store-jobs', async () => {
       const supabase = createAdminClient()
       const jobTexts = jobs.map((j) => `${j.title} at ${j.company}\n${j.description}`)
-      const embeddings = await generateEmbeddingsBatch(jobTexts)
+      const embeddings = await generateEmbeddingsBatch(jobTexts, userId)
 
       const jobsToInsert = jobs.map((job, i) => ({
         external_id:  job.externalId,

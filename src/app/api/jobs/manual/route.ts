@@ -73,6 +73,7 @@ async function aiExtractJob(
   urlMeta: UrlMeta | null,
   userId: string,
   isPro: boolean,
+  creditsCharged?: number,
 ): Promise<Partial<NormalizedJob>> {
   try {
     const data = await generatePremiumJSON<{
@@ -83,11 +84,13 @@ async function aiExtractJob(
 JOB TEXT:
 ${text.slice(0, 4000)}`,
       {
-        task:      'job_manual',
-        system:    'Return JSON with keys: title, company, location, description, url. Use empty string for missing fields.',
-        maxTokens: 600,
+        task:             'job_manual',
+        system:           'Return JSON with keys: title, company, location, description, url. Use empty string for missing fields.',
+        maxTokens:        600,
         userId,
-        isFreeUser: !isPro,
+        isFreeUser:       !isPro,
+        creditsCharged,
+        creditFeatureKey: 'jobManual',
       },
     )
     console.log('[manual] AI extracted:', { title: data.title, company: data.company, location: data.location })
@@ -188,7 +191,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 2. AI extraction (best-effort) ──────────────────────────────────────
-  const ai = await aiExtractJob(pageText || raw, urlMeta, user.id, isPro)
+  const ai = await aiExtractJob(pageText || raw, urlMeta, user.id, isPro, creditCost)
 
   // ── 3. Build job with layered fallbacks ───────────────────────────────
   const externalId = urlMeta?.externalId ?? `manual-${Date.now()}`
@@ -250,7 +253,7 @@ export async function POST(request: NextRequest) {
     }
     const jobForRanking: NormalizedJob = { externalId, source: 'manual', title, company, location, description, url }
     try {
-      const ranked = await rerankJobs(safeParsed, [jobForRanking])
+      const ranked = await rerankJobs(safeParsed, [jobForRanking], undefined, undefined, user.id, !isPro, { creditsCharged: 0, creditFeatureKey: 'jobManual' })
       if (ranked.length > 0) {
         aiScore       = ranked[0].score
         aiReasoning   = ranked[0].reasoning

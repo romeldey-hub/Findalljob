@@ -13,6 +13,7 @@ import {
   type OpenAIV2InterviewPrepPayload,
 } from '@/lib/openai-search/interview-storage'
 import type { ParsedResume } from '@/types'
+import { acquireAiIdempotencyLock, completeAiIdempotencyLock } from '@/lib/ai/idempotency'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -86,6 +87,20 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const idem = await acquireAiIdempotencyLock(admin, {
+    userId: user.id,
+    feature: 'openai_interview_start',
+    keyParts: [resultId, job.id],
+    ttlSeconds: 600,
+    metadata: { resultId },
+  })
+  if (!idem.acquired) {
+    return NextResponse.json(
+      { error: 'Interview preparation is already being generated for this job. Please wait a moment.', code: 'INTERVIEW_ALREADY_RUNNING' },
+      { status: 409 },
+    )
+  }
+
   const { data: resume } = await supabase
     .from('resumes')
     .select('parsed_data')
@@ -96,14 +111,30 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
 
   const candidateContext = candidateContextFromResume(resume?.parsed_data as ParsedResume | null)
-  const question = await generateOpenAIV2InterviewQuestion({
-    questionNumber: 1,
-    jobTitle,
-    company,
-    jobDescription: job.description || jobDescription || '',
-    candidateContext,
-    v2Context: v2ContextFromJob(job),
-  })
+  let question: string
+  try {
+    question = await generateOpenAIV2InterviewQuestion({
+      questionNumber: 1,
+      jobTitle,
+      company,
+      jobDescription: job.description || jobDescription || '',
+      candidateContext,
+      v2Context: v2ContextFromJob(job),
+      usage: {
+        userId: user.id,
+        userEmail: user.email ?? null,
+        isFreeUser: !isPro,
+        creditsCharged: cost,
+        creditFeatureKey: 'interviewSession',
+        jobId: resultId,
+        companyName: company,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    void completeAiIdempotencyLock(admin, idem.key, 'failed', { resultId, error: message })
+    return NextResponse.json({ error: `Interview preparation failed: ${message}` }, { status: 500 })
+  }
 
   const afterCredits = await deductCredits(user.id, 'interviewSession', admin)
   const now = new Date().toISOString()
@@ -127,6 +158,7 @@ export async function POST(request: NextRequest) {
     updatedAt: now,
   }
   await saveOpenAIV2InterviewPrep(admin, payload)
+  void completeAiIdempotencyLock(admin, idem.key, 'success', { resultId })
 
   return NextResponse.json({
     question,

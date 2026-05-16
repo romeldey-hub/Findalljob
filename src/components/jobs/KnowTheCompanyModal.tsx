@@ -20,6 +20,21 @@ interface CompanySnapshot {
   source_note?:   'official_website' | 'fallback_only'
 }
 
+type CompanyInsight = {
+  company_name?: string
+  overview?: string
+  industry?: string | null
+  website?: string | null
+  headquarters?: string | null
+  company_size?: string | null
+  hiring_relevance?: string | null
+  why_relevant?: string[] | string | null
+  interview_prep?: string[]
+  confidence?: 'high' | 'medium' | 'low'
+  low_confidence_note?: string | null
+  sources?: Array<{ title?: string; url: string; type?: string }>
+}
+
 export interface KnowTheCompanyJob {
   id:           string
   company:      string
@@ -27,12 +42,66 @@ export interface KnowTheCompanyJob {
   description?: string
   location?:    string
   url?:         string
+  apply_url?:   string | null
   source?:      string
 }
 
 interface Props {
   job:     KnowTheCompanyJob
   onClose: () => void
+}
+
+function isUsefulText(value?: string | null) {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  return Boolean(normalized) &&
+    normalized !== 'not confidently available' &&
+    normalized !== 'not available' &&
+    normalized !== 'n/a' &&
+    normalized !== 'na' &&
+    normalized !== 'unknown' &&
+    normalized !== 'none' &&
+    normalized !== '-'
+}
+
+function firstUseful(...values: Array<string | null | undefined>) {
+  return values.find(isUsefulText) ?? null
+}
+
+function listToSentence(value: string[] | string | null | undefined) {
+  if (Array.isArray(value)) return value.filter(isUsefulText).join(' ')
+  return isUsefulText(value) ? value : ''
+}
+
+function normalizeSnapshot(data: unknown, job: KnowTheCompanyJob): CompanySnapshot {
+  const record = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>
+  const insight = (
+    record.insight && typeof record.insight === 'object'
+      ? record.insight
+      : record
+  ) as CompanyInsight
+  const officialWebsite = typeof record.officialWebsite === 'string' ? record.officialWebsite : null
+  const whyRelevant = listToSentence(insight.why_relevant) ||
+    firstUseful(insight.hiring_relevance, insight.overview) ||
+    `${job.company} appears relevant to this role based on the job title and available company sources.`
+  const overview = firstUseful(
+    insight.overview,
+    insight.low_confidence_note,
+    'Could not verify company details from reliable company sources.',
+  ) ?? 'Could not verify company details from reliable company sources.'
+
+  return {
+    company_name: firstUseful(insight.company_name, job.company) ?? job.company,
+    overview,
+    industry: firstUseful(insight.industry),
+    website: firstUseful(insight.website, officialWebsite),
+    headquarters: firstUseful(insight.headquarters),
+    company_size: firstUseful(insight.company_size),
+    why_relevant: whyRelevant,
+    interview_prep: (insight.interview_prep ?? []).filter(isUsefulText),
+    data_limited: insight.confidence === 'low' || !firstUseful(insight.website, officialWebsite),
+    source_note: firstUseful(insight.website, officialWebsite) ? 'official_website' : 'fallback_only',
+  }
 }
 
 export function KnowTheCompanyModal({ job, onClose }: Props) {
@@ -64,16 +133,15 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
 
     async function load() {
       try {
-        const res = await fetch('/api/jobs/company-snapshot', {
+        const res = await fetch('/api/openai-search/company-insights', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            job_id:      job.id,
             company:     job.company,
             title:       job.title,
             description: job.description,
             location:    job.location,
-            url:         job.url,
+            apply_url:   job.apply_url ?? job.url,
             source:      job.source,
           }),
         })
@@ -83,7 +151,7 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
         if (!res.ok) {
           setError(data.error ?? 'Something went wrong. Please try again.')
         } else {
-          setSnapshot(data.snapshot as CompanySnapshot)
+          setSnapshot(normalizeSnapshot(data, job))
         }
       } catch {
         if (!cancelled) setError('Failed to load company info. Please check your connection.')
@@ -94,7 +162,7 @@ export function KnowTheCompanyModal({ job, onClose }: Props) {
 
     void load()
     return () => { cancelled = true }
-  }, [job.id, job.company, job.title, job.description, job.location, job.url, job.source])
+  }, [job.id, job.company, job.title, job.description, job.location, job.url, job.apply_url, job.source])
 
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">

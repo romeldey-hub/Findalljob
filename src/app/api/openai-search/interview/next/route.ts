@@ -85,6 +85,15 @@ export async function POST(request: NextRequest) {
       `Missing skills: ${toStringList(job.missing_skills).slice(0, 8).join(', ') || 'None listed'}`,
       `Resume fix suggestions: ${toStringList(job.resume_fix_suggestions).slice(0, 5).join('; ') || 'None listed'}`,
     ].join('\n'),
+    usage: {
+      userId: user.id,
+      userEmail: user.email ?? null,
+      isFreeUser: !isPro,
+      creditsCharged: cost,
+      creditFeatureKey: 'interviewEval',
+      jobId: resultId,
+      companyName: company,
+    },
   })
 
   const afterCredits = await deductCredits(user.id, 'interviewEval', admin)

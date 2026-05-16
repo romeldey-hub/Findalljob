@@ -8,6 +8,7 @@ import { checkCredits, deductCredits, insufficientCreditsResponse } from '@/lib/
 import { FREE_LIMITS } from '@/lib/limits'
 import { readOpenAIV2OptimizedResume } from '@/lib/openai-search/optimized-storage'
 import { optimizeResumeWithOpenAIForV2 } from '@/lib/openai-search/resume-optimizer'
+import { acquireAiIdempotencyLock, completeAiIdempotencyLock } from '@/lib/ai/idempotency'
 import type { ParsedResume } from '@/types'
 
 export const runtime = 'nodejs'
@@ -224,7 +225,7 @@ export async function POST(request: NextRequest) {
         const fileRes = await fetch(file_url)
         if (!fileRes.ok) throw new Error('Could not download resume file')
         const buffer = Buffer.from(await fileRes.arrayBuffer())
-        const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro)
+        const reparsed = await parseResumeFromPDF(buffer, user.id, !isPro, { userEmail: user.email ?? null, resumeId: resumeResult.data.id })
         rawText = reconstructResumeText(reparsed)
       } catch (error) {
         console.error('[openai-search/optimize] resume re-parse failed:', error)
@@ -233,6 +234,20 @@ export async function POST(request: NextRequest) {
     } else {
       return NextResponse.json({ error: 'Resume has no readable content. Please re-upload your resume.' }, { status: 400 })
     }
+  }
+
+  const idem = await acquireAiIdempotencyLock(adminClient, {
+    userId: user.id,
+    feature: 'openai_resume_optimize',
+    keyParts: [resultId, job.search_run_id, resumeResult.data.id],
+    ttlSeconds: 900,
+    metadata: { resultId, resumeId: resumeResult.data.id },
+  })
+  if (!idem.acquired) {
+    return NextResponse.json(
+      { error: 'Resume optimization is already running for this job. Please wait a moment.', code: 'OPTIMIZATION_ALREADY_RUNNING' },
+      { status: 409 },
+    )
   }
 
   const originalScore = Math.max(0, Math.min(100, job.final_score ?? 0))
@@ -245,11 +260,14 @@ export async function POST(request: NextRequest) {
       company: job.company,
       originalScore,
       userId: user.id,
+      userEmail: user.email ?? null,
       isFreeUser: !isPro,
+      resultId,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('[openai-search/optimize] OpenAI optimization failed:', message)
+    void completeAiIdempotencyLock(adminClient, idem.key, 'failed', { error: message })
     return NextResponse.json({ error: `AI optimization failed: ${message}` }, { status: 500 })
   }
 
@@ -267,6 +285,7 @@ export async function POST(request: NextRequest) {
       .update({ optimize_free_daily_count: freeUsedToday + 1, optimize_free_date: freeToday })
       .eq('user_id', user.id)
 
+    void completeAiIdempotencyLock(adminClient, idem.key, 'success', { resultId, freePreview: true })
     return NextResponse.json({
       optimizedData,
       jobTitle: job.title,
@@ -286,6 +305,8 @@ export async function POST(request: NextRequest) {
       job_optimize_month: thisMonth,
     })
     .eq('user_id', user.id)
+
+  void completeAiIdempotencyLock(adminClient, idem.key, 'success', { resultId, freePreview: false })
 
   return NextResponse.json({
     optimizedData,

@@ -7,11 +7,21 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
+import { toast } from 'sonner'
 import type { ParsedResume } from '@/types'
 import { toDataUri } from '@/lib/utils'
 import { useCountUp, useAnimate } from '@/lib/useAnimations'
 import { ResumePrintView } from '@/components/resume/ResumePrintView'
 import { OptimizeFlow } from '@/components/resume/OptimizeFlow'
+import {
+  countResumeSections,
+  logResumeExportDebug,
+  MIN_RESUME_EXPORT_TEXT_LENGTH,
+  renderedTextLength,
+  RESUME_PREPARING_MESSAGE,
+  resumeHasExportableContent,
+  waitForResumeExportPaint,
+} from '@/lib/resume/pdf-export-guards'
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 
@@ -173,9 +183,27 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
   const { overall, skillsMatch, expScore, contentQuality } = computeScores(parsedData)
 
   async function handleDownloadPDF() {
-    if (!printRef.current) return
+    if (!resumeHasExportableContent(parsedData)) {
+      toast.error(RESUME_PREPARING_MESSAGE)
+      return
+    }
     setPdfBusy(true)
     try {
+      await waitForResumeExportPaint()
+      const exportNode = printRef.current
+      const textLength = renderedTextLength(exportNode)
+      const sectionCount = countResumeSections(parsedData)
+      logResumeExportDebug('resume:start', {
+        exportNodeExists: Boolean(exportNode),
+        exportNodeTextLength: textLength,
+        candidateName: parsedData.name ?? null,
+        renderedResumeSections: sectionCount,
+      })
+      if (!exportNode || textLength < MIN_RESUME_EXPORT_TEXT_LENGTH || sectionCount === 0) {
+        toast.error(RESUME_PREPARING_MESSAGE)
+        return
+      }
+
       const [{ toPng }, { jsPDF }] = await Promise.all([
         import('html-to-image'),
         import('jspdf'),
@@ -183,12 +211,45 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
 
       // Clone to document.body so html-to-image measures the element's full
       // natural height without any sticky-aside or layout constraints
-      const clone = printRef.current.cloneNode(true) as HTMLElement
+      const clone = exportNode.cloneNode(true) as HTMLElement
+      clone.id = 'resume-pdf-export-main'
+      clone.removeAttribute('aria-hidden')
       clone.style.position = 'fixed'
-      clone.style.left = '-9999px'
+      clone.style.left = '0'
       clone.style.top = '0'
-      clone.style.zIndex = '-1'
+      clone.style.zIndex = '2147483647'
+      clone.style.opacity = '1'
+      clone.style.visibility = 'visible'
+      clone.style.display = 'block'
+      clone.style.background = '#ffffff'
+      clone.style.color = '#0F172A'
+      clone.style.pointerEvents = 'none'
+      clone.style.width = `${Math.max(exportNode.scrollWidth, exportNode.offsetWidth, 794)}px`
+      clone.style.minHeight = `${Math.max(exportNode.scrollHeight, exportNode.offsetHeight, 1123)}px`
       document.body.appendChild(clone)
+      const cloneTextLength = renderedTextLength(clone)
+      if (cloneTextLength < MIN_RESUME_EXPORT_TEXT_LENGTH) {
+        document.body.removeChild(clone)
+        toast.error(RESUME_PREPARING_MESSAGE)
+        return
+      }
+
+      const exportStyle = document.createElement('style')
+      exportStyle.id = 'resume-pdf-export-main-style'
+      exportStyle.textContent = `
+        #resume-pdf-export-main,
+        #resume-pdf-export-main * {
+          opacity: 1 !important;
+          visibility: visible !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        #resume-pdf-export-main {
+          background: #ffffff !important;
+          overflow: visible !important;
+        }
+      `
+      document.head.appendChild(exportStyle)
 
       let dataUrl: string
       try {
@@ -200,7 +261,9 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
         })
       } finally {
         document.body.removeChild(clone)
+        document.head.removeChild(exportStyle)
       }
+      if (!dataUrl || dataUrl.length < 1024) throw new Error('Captured resume image was empty')
 
       const naturalSize = await new Promise<{ w: number; h: number }>((resolve, reject) => {
         const img = new Image()
@@ -212,15 +275,23 @@ export function InsightsPanel({ parsedData, avatarUrl, userId }: { parsedData: P
       const pdfW = pdf.internal.pageSize.getWidth()
       const pdfH = pdf.internal.pageSize.getHeight()
       const imgH = (naturalSize.h * pdfW) / naturalSize.w
+      const pageCount = Math.max(1, Math.ceil(imgH / pdfH))
       let yPos = 0
       while (yPos < imgH) {
         pdf.addImage(dataUrl, 'PNG', 0, -yPos, pdfW, imgH)
         yPos += pdfH
         if (yPos < imgH) pdf.addPage()
       }
+      const blob = pdf.output('blob')
+      logResumeExportDebug('resume:complete', {
+        generatedPdfPageCount: pageCount,
+        generatedPdfBlobSize: blob.size,
+      })
+      if (blob.size < 1024) throw new Error('Generated PDF was empty')
       pdf.save(`${parsedData.name ?? 'resume'}.pdf`)
     } catch (err) {
       console.error('PDF generation failed', err)
+      toast.error(err instanceof Error ? err.message : 'PDF generation failed')
     } finally {
       setPdfBusy(false)
     }

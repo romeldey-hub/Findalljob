@@ -70,7 +70,7 @@ export async function POST(req: Request) {
   if (!promptFn) return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
   try {
-    const result = await generateLight(promptFn(text, context), { task: `bullet_${action}`, maxTokens: 150, userId: user.id, isFreeUser: !isPro })
+    const result = await generateLight(promptFn(text, context), { task: `bullet_${action}`, maxTokens: 150, userId: user.id, isFreeUser: !isPro, creditsCharged: creditCost, creditFeatureKey: 'aiAssist' })
 
     // Deduct credits and increment daily counter (both fire-and-forget)
     const afterCredits = await deductCredits(user.id, 'aiAssist', admin)

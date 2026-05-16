@@ -106,6 +106,16 @@ export async function rerankJobs(
   competitorCompanies?: string[],  // direct + adjacent competitors — used for scoring boost
   userId?: string,
   isFreeUser?: boolean,
+  usage?: {
+    userEmail?: string | null
+    searchRunId?: string | null
+    resumeId?: string | null
+    fallbackUsed?: boolean
+    fallbackReason?: string | null
+    creditsCharged?: number
+    creditFeatureKey?: string
+    metadata?: Record<string, unknown>
+  },
 ): Promise<RankedJob[]> {
   const skills     = Array.isArray(resume.skills)     ? resume.skills     : []
   const experience = Array.isArray(resume.experience) ? resume.experience : []
@@ -158,7 +168,25 @@ Education: ${eduLine || 'Not specified'}`
       try {
         const items = await generatePremiumJSON<ClaudeRankedItem[]>(
           buildPrompt(candidateSummary, batch, offset, competitorCompanies),
-          { task: 'job_rerank', system: RERANK_SYSTEM_PROMPT, maxTokens: MAX_TOKENS, userId, isFreeUser }
+          {
+            task: 'job_rerank',
+            system: RERANK_SYSTEM_PROMPT,
+            maxTokens: MAX_TOKENS,
+            userId,
+            userEmail: usage?.userEmail,
+            isFreeUser,
+            searchRunId: usage?.searchRunId,
+            resumeId: usage?.resumeId,
+            fallbackUsed: usage?.fallbackUsed,
+            fallbackReason: usage?.fallbackReason,
+            creditsCharged: usage?.creditsCharged,
+            creditFeatureKey: usage?.creditFeatureKey,
+            metadata: {
+              ...(usage?.metadata ?? {}),
+              batch_index: batchIdx,
+              batch_size: batch.length,
+            },
+          }
         )
         const valid = items.filter(
           (r) => typeof r.index === 'number' && r.index >= 0 && r.index < jobs.length

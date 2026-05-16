@@ -1,7 +1,7 @@
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { zodTextFormat } from 'openai/helpers/zod'
 import type { ParsedResume } from '@/types'
+import { openAIResponsesCreate, openAIResponsesParse } from '@/lib/ai/openai'
 
 const INTERVIEW_MODEL =
   process.env.OPENAI_INTERVIEW_MODEL ??
@@ -22,11 +22,6 @@ const FeedbackSchema = z.object({
 }).strict()
 
 export type OpenAIV2InterviewFeedback = z.infer<typeof FeedbackSchema>
-
-function openaiClient() {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured')
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-}
 
 export function candidateContextFromResume(parsed: ParsedResume | null) {
   if (!parsed) return 'No resume provided.'
@@ -49,6 +44,7 @@ export async function generateOpenAIV2InterviewQuestion({
   jobDescription,
   candidateContext,
   v2Context,
+  usage,
 }: {
   questionNumber: number
   previousQuestions?: string[]
@@ -57,8 +53,17 @@ export async function generateOpenAIV2InterviewQuestion({
   jobDescription: string
   candidateContext: string
   v2Context: string
+  usage?: {
+    userId?: string
+    userEmail?: string | null
+    isFreeUser?: boolean
+    creditsCharged?: number
+    creditFeatureKey?: string
+    jobId?: string | null
+    companyName?: string | null
+  }
 }) {
-  const response = await openaiClient().responses.create({
+  const response = await openAIResponsesCreate<{ output_text: string }>({
     model: INTERVIEW_MODEL,
     instructions: [
       'You are a professional interviewer and interview coach.',
@@ -77,6 +82,15 @@ export async function generateOpenAIV2InterviewQuestion({
         ? 'For Q1, use a tailored "Tell me about yourself" style question.'
         : 'Avoid repeating previous questions.',
     ].filter(Boolean).join('\n\n'),
+  }, {
+    feature: questionNumber === 1 ? 'openai_interview_start' : 'openai_interview_next',
+    userId: usage?.userId,
+    userEmail: usage?.userEmail,
+    isFreeUser: usage?.isFreeUser,
+    creditsCharged: usage?.creditsCharged,
+    creditFeatureKey: usage?.creditFeatureKey,
+    jobId: usage?.jobId ?? null,
+    companyName: usage?.companyName ?? company,
   })
 
   return response.output_text.trim()
@@ -90,6 +104,7 @@ export async function evaluateOpenAIV2InterviewAnswer({
   jobDescription,
   candidateContext,
   v2Context,
+  usage,
 }: {
   question: string
   answer: string
@@ -98,8 +113,17 @@ export async function evaluateOpenAIV2InterviewAnswer({
   jobDescription: string
   candidateContext: string
   v2Context: string
+  usage?: {
+    userId?: string
+    userEmail?: string | null
+    isFreeUser?: boolean
+    creditsCharged?: number
+    creditFeatureKey?: string
+    jobId?: string | null
+    companyName?: string | null
+  }
 }) {
-  const response = await openaiClient().responses.parse({
+  const response = await openAIResponsesParse<{ output_parsed?: OpenAIV2InterviewFeedback }>({
     model: INTERVIEW_MODEL,
     instructions: [
       'You are a senior hiring manager and interview coach.',
@@ -117,6 +141,15 @@ export async function evaluateOpenAIV2InterviewAnswer({
       'Return feedback matching the structured schema. improvedAnswer should be a truthful, stronger answer using only the candidate-provided answer and resume context.',
     ].join('\n\n'),
     text: { format: zodTextFormat(FeedbackSchema, 'openai_v2_interview_feedback') },
+  }, {
+    feature: 'openai_interview_evaluate',
+    userId: usage?.userId,
+    userEmail: usage?.userEmail,
+    isFreeUser: usage?.isFreeUser,
+    creditsCharged: usage?.creditsCharged,
+    creditFeatureKey: usage?.creditFeatureKey,
+    jobId: usage?.jobId ?? null,
+    companyName: usage?.companyName ?? company,
   })
 
   if (!response.output_parsed) throw new Error('OpenAI did not return valid interview feedback')

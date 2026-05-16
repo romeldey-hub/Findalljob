@@ -648,24 +648,37 @@ export default function MatchesPage() {
   const jobsToDisplay: MatchRecord[]  = noResumeAvailable ? [] : (mode === 'ai' ? displayAiJobs : manualJobs)
   const displaySuggestions            = noResumeAvailable ? [] : (suggestions.length > 0 ? suggestions : (mode === 'ai' ? (data?.cvSuggestions ?? []) : []))
   const filteredJobs                  = applyFilters(jobsToDisplay, filters)
+  const effectiveMatchScore = (match: MatchRecord) => {
+    const optimizedScore = allOptimizedByJobId.get(match.job.id)?.data.ats_score
+    return typeof optimizedScore === 'number' && optimizedScore > match.ai_score
+      ? optimizedScore
+      : match.ai_score
+  }
   const sortedJobs                    = filteredJobs.slice().sort((a, b) => {
+    const effectiveA = effectiveMatchScore(a)
+    const effectiveB = effectiveMatchScore(b)
+    if (effectiveA !== effectiveB) return effectiveB - effectiveA
+
     if (sortKey === 'date') {
       const da = new Date(a.job.created_at ?? 0).getTime()
       const db = new Date(b.job.created_at ?? 0).getTime()
       return db - da
     }
-    return b.ai_score - a.ai_score
+    const reasonDelta = (b.match_reasons?.length ?? 0) - (a.match_reasons?.length ?? 0)
+    if (reasonDelta !== 0) return reasonDelta
+    return new Date(b.job.created_at ?? 0).getTime() - new Date(a.job.created_at ?? 0).getTime()
   })
   const tieredJobs = tierFilter === 'all' ? sortedJobs : sortedJobs.filter((m) => {
-    if (tierFilter === 'high')    return m.ai_score >= 80
-    if (tierFilter === 'medium')  return m.ai_score >= 60 && m.ai_score < 80
-    if (tierFilter === 'stretch') return m.ai_score < 60
+    const score = effectiveMatchScore(m)
+    if (tierFilter === 'high')    return score >= 80
+    if (tierFilter === 'medium')  return score >= 60 && score < 80
+    if (tierFilter === 'stretch') return score < 60
     return true
   })
   const tierCounts = {
-    high:    sortedJobs.filter((m) => m.ai_score >= 80).length,
-    medium:  sortedJobs.filter((m) => m.ai_score >= 60 && m.ai_score < 80).length,
-    stretch: sortedJobs.filter((m) => m.ai_score < 60).length,
+    high:    sortedJobs.filter((m) => effectiveMatchScore(m) >= 80).length,
+    medium:  sortedJobs.filter((m) => effectiveMatchScore(m) >= 60 && effectiveMatchScore(m) < 80).length,
+    stretch: sortedJobs.filter((m) => effectiveMatchScore(m) < 60).length,
   }
   const isLoading                     = analyzing || searching
 
@@ -1356,7 +1369,7 @@ export default function MatchesPage() {
                   <button
                     onClick={() => { autoTriggered.current = false; triggerAnalyze(true) }}
                     disabled={disabled}
-                    title={reanalyzeLimitHit ? `You've used all ${FREE_LIMITS.aiReanalyze} free re-analyses` : undefined}
+                    title={reanalyzeLimitHit ? `You've used your 1 free AI match run. Upgrade to run again.` : undefined}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-all ${
                       disabled
                         ? 'border-[#E5E7EB] dark:border-[#334155] text-gray-300 dark:text-slate-600 cursor-not-allowed'

@@ -144,7 +144,7 @@ export function MobileTopBar({ subscriptionStatus }: { subscriptionStatus: strin
                         />
                       </div>
                     )}
-                    {resetStr && <p className="text-[11px] text-gray-400 dark:text-slate-500">Resets {resetStr}</p>}
+                    {resetStr && isPro && <p className="text-[11px] text-gray-400 dark:text-slate-500">Resets {resetStr}</p>}
                   </div>
                   {isLow && !isPro && (
                     <div className="px-4 py-3">

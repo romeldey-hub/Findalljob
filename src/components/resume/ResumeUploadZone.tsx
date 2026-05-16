@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useCallback, type CSSProperties } from 'react'
+import { useState, useCallback, useEffect, type CSSProperties } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import useSWR from 'swr'
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2,
   Sparkles, RefreshCcw, Trash2, X, AlertTriangle, Lock,
@@ -14,6 +15,8 @@ import { ProgressiveActivity } from '@/components/ProgressiveActivity'
 import { useAnalyzeProgress, type StepDefinition } from '@/lib/useAnalyzeProgress'
 import { CountryConfirmStep, COUNTRY_CODE_TO_NAME, type CountryChoice } from '@/components/resume/CountryConfirmStep'
 import { CreateResumeWithAI } from '@/components/resume/CreateResumeWithAI'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
 
 // ── Progress configuration (outside component — never recreated) ──────────────
 
@@ -70,14 +73,18 @@ interface ResumeUploadZoneProps {
   uploadLimit?: number
   userId?: string
   avatarUrl?: string | null
-  creditsRemaining?: number | null
 }
 
 type UploadState = 'idle' | 'uploading' | 'analyzing' | 'country_confirm' | 'success' | 'no-text'
 
-export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId, avatarUrl, creditsRemaining = null }: ResumeUploadZoneProps) {
+export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, uploadCount = 0, uploadLimit = 3, userId, avatarUrl }: ResumeUploadZoneProps) {
   const uploadLimitReached = !isPro && uploadCount >= uploadLimit
   const router = useRouter()
+  const { data: profileData } = useSWR('/api/profile', fetcher, { refreshInterval: 120000 })
+  const creditsRemaining: number | null = profileData?.credits_remaining ?? null
+  const creditsTotal: number | null     = profileData?.credits_total     ?? null
+  // first-time free: free plan, full 5-credit allocation, nothing spent yet
+  const isFirstTimeFree = !isPro && creditsTotal === 5 && creditsRemaining === 5
   const [uploadState, setUploadState]   = useState<UploadState>('idle')
   const [uploadError, setUploadError]   = useState<string | null>(null)
   const [showConfirm, setShowConfirm]   = useState(false)
@@ -326,6 +333,24 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
   }
 
   const busy       = uploadState === 'uploading' || uploadState === 'analyzing'
+  const hideStaleResumeContent =
+    uploadState === 'uploading' ||
+    uploadState === 'analyzing' ||
+    uploadState === 'country_confirm' ||
+    uploadState === 'success'
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (hideStaleResumeContent) {
+      document.body.dataset.resumeProcessing = 'true'
+    } else {
+      delete document.body.dataset.resumeProcessing
+    }
+    return () => {
+      delete document.body.dataset.resumeProcessing
+    }
+  }, [hideStaleResumeContent])
+
   const fileName   = resumeInfo?.file_url
     ? decodeURIComponent(resumeInfo.file_url.split('/').pop()?.split('?')[0] ?? 'resume')
         .replace(/^\d+-/, '')
@@ -628,7 +653,9 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
               <div>
                 <p className="font-bold text-[15px] text-[#0F172A] dark:text-[#F1F5F9]">How AI credits work</p>
                 <p className="text-[13px] text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  AI credits are used when FindAllJob performs deeper AI tasks for you — like creating a resume, improving it for a job, or preparing you for an interview.
+                  {isFirstTimeFree
+                    ? 'You start with 5 free AI credits. Credits are used only for deeper AI tasks — like creating a resume, improving it for a job, or preparing for an interview.'
+                    : 'AI credits are used only for deeper AI tasks — like creating a resume, improving it for a job, or preparing for an interview.'}
                 </p>
               </div>
             </div>
@@ -638,7 +665,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                 'Resume creation may use credits',
                 'Resume optimization uses credits',
                 'Interview preparation uses credits',
-                'Viewing jobs, saved jobs, and opening job links do not use credits',
+                'Viewing jobs, saved jobs, and opening job links are always free',
               ].map((item, i) => (
                 <div key={item} className="flex items-start gap-2.5 rounded-xl bg-[#F8FAFC] dark:bg-[#263549] border border-[#E5E7EB] dark:border-[#334155] px-3 py-2.5 transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white dark:hover:border-[#2563EB]/40 dark:hover:bg-[#2A3A50]">
                   {i < 3 ? (
@@ -655,7 +682,11 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
               <div className="flex items-center gap-2">
                 <Coins className="w-4 h-4 text-amber-400" />
                 <p className="text-[12px] font-bold text-white dark:text-[#F1F5F9]">
-                  Your current balance: {creditsRemaining ?? 24} AI credits left
+                  {isPro
+                    ? `You have ${creditsRemaining ?? '—'} AI credits left this month`
+                    : isFirstTimeFree
+                      ? `You have ${creditsRemaining ?? '—'} of 5 free AI credits left`
+                      : `You have ${creditsRemaining ?? '—'} AI credits left`}
                 </p>
               </div>
               <ArrowRight className="w-4 h-4 text-white/40 dark:text-slate-500 flex-shrink-0" />
