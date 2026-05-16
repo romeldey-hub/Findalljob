@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import type { ParsedResume } from '@/types'
 
 function generateRawText(pd: ParsedResume): string {
@@ -81,6 +81,28 @@ export async function POST(req: Request) {
     console.error('[resume/create]', error.message)
     return NextResponse.json({ error: 'Failed to create resume' }, { status: 500 })
   }
+
+  // Auto-restore public profile if it was auto-disabled due to no resume (non-fatal)
+  void (async () => {
+    try {
+      const admin = createAdminClient()
+      const { data: profileRow } = await admin
+        .from('profiles')
+        .select('profile_auto_disabled_no_resume')
+        .eq('user_id', user.id)
+        .single()
+
+      if (profileRow?.profile_auto_disabled_no_resume) {
+        await admin
+          .from('profiles')
+          .update({ profile_public: true, profile_auto_disabled_no_resume: false })
+          .eq('user_id', user.id)
+        console.log('[resume/create] auto-restored public profile for user', user.id)
+      }
+    } catch (err) {
+      console.warn('[resume/create] auto-restore profile visibility failed (non-fatal):', err)
+    }
+  })()
 
   return NextResponse.json({ success: true, resume_id: data.id })
 }

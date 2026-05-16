@@ -170,5 +170,27 @@ export async function DELETE() {
   }
 
   console.log('[resume/delete] done — resume_id:', resume.id)
+
+  // ── 6. Auto-disable public profile if active (non-fatal) ──────────────────
+  // Only disable when the profile is currently public. If the user already had
+  // it off manually, leave it unchanged (flag stays false).
+  try {
+    const { data: profileRow } = await admin
+      .from('profiles')
+      .select('profile_public')
+      .eq('user_id', user.id)
+      .single()
+
+    if (profileRow?.profile_public) {
+      await admin
+        .from('profiles')
+        .update({ profile_public: false, profile_auto_disabled_no_resume: true })
+        .eq('user_id', user.id)
+      console.log('[resume/delete] auto-disabled public profile for user', user.id)
+    }
+  } catch (err) {
+    console.warn('[resume/delete] auto-disable profile visibility failed (non-fatal):', err)
+  }
+
   return NextResponse.json({ success: true })
 }

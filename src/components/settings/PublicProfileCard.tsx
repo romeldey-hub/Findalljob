@@ -7,9 +7,10 @@ import { toast } from 'sonner'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Settings {
-  username:              string
-  profile_public:        boolean
-  show_email:            boolean
+  username:                        string
+  profile_public:                  boolean
+  profile_auto_disabled_no_resume: boolean
+  show_email:                      boolean
   show_phone:            boolean
   show_resume_download:  boolean
   open_to_opportunities: boolean
@@ -24,9 +25,10 @@ interface Settings {
 type SlugStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
 
 const DEFAULT: Settings = {
-  username:              '',
-  profile_public:        false,
-  show_email:            false,
+  username:                        '',
+  profile_public:                  false,
+  profile_auto_disabled_no_resume: false,
+  show_email:                      false,
   show_phone:            false,
   show_resume_download:  true,
   open_to_opportunities: true,
@@ -412,6 +414,14 @@ export function PublicProfileCard() {
             checked={settings.profile_public}
             onChange={(v) => set('profile_public', v)}
           />
+          {settings.profile_auto_disabled_no_resume && (
+            <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                Auto-disabled — your public profile was turned off because your resume was deleted. Upload a resume to restore it automatically.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="h-px bg-[#E5E7EB] dark:bg-[#334155]" />

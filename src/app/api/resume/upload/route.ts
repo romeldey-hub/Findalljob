@@ -246,6 +246,27 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
     }
 
+    // Auto-restore public profile if it was auto-disabled due to no resume (non-fatal)
+    void (async () => {
+      try {
+        const { data: profileRow } = await admin
+          .from('profiles')
+          .select('profile_auto_disabled_no_resume')
+          .eq('user_id', user.id)
+          .single()
+
+        if (profileRow?.profile_auto_disabled_no_resume) {
+          await admin
+            .from('profiles')
+            .update({ profile_public: true, profile_auto_disabled_no_resume: false })
+            .eq('user_id', user.id)
+          console.log('[resume/upload] auto-restored public profile for user', user.id)
+        }
+      } catch (err) {
+        console.warn('[resume/upload] auto-restore profile visibility failed (non-fatal):', err)
+      }
+    })()
+
     // Trigger async Claude parsing (non-fatal — Inngest may not be configured in local dev)
     try {
       await inngest.send({

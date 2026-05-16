@@ -26,7 +26,7 @@ export async function GET() {
   const { data } = await admin
     .from('profiles')
     .select(`
-      username, profile_public,
+      username, profile_public, profile_auto_disabled_no_resume,
       show_email, show_phone, show_resume_download, open_to_opportunities,
       linkedin_url, show_linkedin,
       x_url, show_x,
@@ -36,8 +36,9 @@ export async function GET() {
     .single()
 
   return NextResponse.json({
-    username:              data?.username              ?? null,
-    profile_public:        data?.profile_public        ?? false,
+    username:                          data?.username                          ?? null,
+    profile_public:                    data?.profile_public                    ?? false,
+    profile_auto_disabled_no_resume:   data?.profile_auto_disabled_no_resume   ?? false,
     show_email:            data?.show_email            ?? false,
     show_phone:            data?.show_phone            ?? false,
     show_resume_download:  data?.show_resume_download  ?? true,
@@ -102,7 +103,11 @@ export async function POST(req: Request) {
 
   const updates: Record<string, unknown> = {}
   if (username !== undefined)               updates.username              = username === '' ? null : String(username).trim().toLowerCase()
-  if (profile_public !== undefined)         updates.profile_public        = Boolean(profile_public)
+  if (profile_public !== undefined) {
+    updates.profile_public = Boolean(profile_public)
+    // Manual toggle always clears the auto-disabled flag — user is making an explicit choice
+    updates.profile_auto_disabled_no_resume = false
+  }
   if (show_email !== undefined)             updates.show_email            = Boolean(show_email)
   if (show_phone !== undefined)             updates.show_phone            = Boolean(show_phone)
   if (show_resume_download !== undefined)   updates.show_resume_download  = Boolean(show_resume_download)
