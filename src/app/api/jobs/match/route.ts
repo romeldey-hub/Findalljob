@@ -5,7 +5,8 @@ import { isProUser }                from '@/lib/admin'
 import { resolveProUntil }          from '@/lib/billing'
 import { FREE_LIMITS }              from '@/lib/limits'
 import { detectLocation } from '@/lib/jobs/location'
-import type { ApplyStatus } from '@/types'
+import { computeParsedResumeHash }  from '@/lib/resume-hash'
+import type { ApplyStatus, ParsedResume } from '@/types'
 
 // Maps the ISO-2 country code sent by the frontend to the human-readable
 // detected_location value stored in job_search_runs (e.g. "in" → "India").
@@ -75,22 +76,40 @@ export async function GET(req: NextRequest) {
   const isPro = isProUser(user.email, profileRow?.role, profileRow?.subscription_status, effectiveProUntil)
   const matchLimit = isPro ? 20 : FREE_LIMITS.matchesPerDay
 
-  // Fetch active resume only for "hasResume" and CV suggestions. Search results
-  // are owned by job_search_runs and must survive resume deletion.
+  // Fetch active resume — needed for resume_hash identity check (prevents stale
+  // matches from a previous resume surfacing for a new one).
   const resumeResult = await supabase
     .from('resumes')
-    .select('id, raw_text, parsed_data')
+    .select('id, parsed_data')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
-  const parsedData = resumeResult.data?.parsed_data as Record<string, unknown> | null
-  const hasResume = Boolean(resumeResult.data?.id)
-  const cvSuggestions = Array.isArray(parsedData?.cv_suggestions)
-    ? (parsedData!.cv_suggestions as string[])
+  const parsedData    = resumeResult.data?.parsed_data as ParsedResume | null
+  const activeResumeId = resumeResult.data?.id ?? null
+  const hasResume      = Boolean(activeResumeId)
+  const cvSuggestions  = Array.isArray((parsedData as unknown as Record<string, unknown> | null)?.cv_suggestions)
+    ? ((parsedData as unknown as Record<string, unknown>).cv_suggestions as string[])
     : []
+
+  // Compute the stable content hash for the active resume.
+  // job_search_runs.resume_hash is set to this value when a run is created,
+  // so filtering by it ensures only runs for THIS resume are returned.
+  const activeResumeHash = parsedData?.name ? computeParsedResumeHash(parsedData) : null
+
+  const cacheKey = activeResumeHash
+    ? `${activeResumeHash}:${cc || 'any'}`
+    : null
+
+  console.log(
+    `[jobs/match] identity | user=${userId}` +
+    ` | resume_id=${activeResumeId ?? 'none'}` +
+    ` | resume_hash=${activeResumeHash ?? 'none'}` +
+    ` | cache_key=${cacheKey ?? 'none'}` +
+    ` | cc=${cc || 'any'}`
+  )
 
   const requestedScope = cc === 'international_remote'
     ? { searchMode: 'international_remote' as const, countryCode: null, countryName: null }
@@ -106,6 +125,13 @@ export async function GET(req: NextRequest) {
       .eq('status', 'success')
       .order('created_at', { ascending: false })
       .limit(1)
+
+    // CRITICAL: only return runs for the current resume's content hash.
+    // Without this filter, uploading a new resume would still show matches
+    // from a previous (different) resume that happened to share the same user_id.
+    if (activeResumeHash) {
+      query = query.eq('resume_hash', activeResumeHash)
+    }
 
     if (requestedScope) {
       query = query.eq('search_mode', requestedScope.searchMode)
@@ -168,7 +194,12 @@ export async function GET(req: NextRequest) {
     ? 'International / Remote'
     : ((runRow.country_name as string | null) ?? CC_TO_LOCATION[runCountryCode ?? ''] ?? null)
 
-  console.log(`[jobs/match] exact run selected | run=${latestRunId} | scope=${runMode}:${runCountryCode ?? 'remote'}`)
+  console.log(
+    `[jobs/match] run selected | run=${latestRunId}` +
+    ` | resume_hash=${activeResumeHash ?? 'none'}` +
+    ` | scope=${runMode}:${runCountryCode ?? 'remote'}` +
+    ` | source=db_cache`
+  )
 
   // Build the matches query from the exact run, ordered by immutable rank.
   const matchesQuery = supabase
@@ -254,10 +285,15 @@ export async function GET(req: NextRequest) {
       },
     }
   })
-  console.log(`[PIPELINE_AUDIT] returned=${matches.length} | run=${latestRunId}`)
+  console.log(
+    `[jobs/match] matches loaded | count=${matches.length}` +
+    ` | run=${latestRunId}` +
+    ` | resume_hash=${activeResumeHash ?? 'none'}` +
+    ` | source=db_cache`
+  )
 
   const visibleMatches = isPro ? matches : matches.slice(0, matchLimit)
-  console.log(`[PIPELINE_AUDIT] displayed=${visibleMatches.length} | run=${latestRunId}`)
+  console.log(`[jobs/match] displayed=${visibleMatches.length} | run=${latestRunId} | resume_hash=${activeResumeHash ?? 'none'}`)
   return NextResponse.json({
     matches:        visibleMatches,
     cvSuggestions,
