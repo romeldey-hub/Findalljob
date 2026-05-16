@@ -1557,7 +1557,7 @@ export default function MatchesPage() {
                     playsInline
                   />
                 </div>
-                <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider text-slate-600 dark:bg-gradient-to-r dark:from-slate-200 dark:via-white dark:to-slate-300 dark:bg-clip-text dark:text-transparent">
+                <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider text-slate-800 dark:text-slate-100">
                   Grab a coffee while AI finds your best-fit jobs.
                 </p>
               </div>

@@ -624,7 +624,7 @@ export function ResumeUploadZone({ hasExistingResume, resumeInfo, isPro = true, 
                 playsInline
               />
             </div>
-            <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider bg-gradient-to-r from-slate-200 via-white to-slate-300 bg-clip-text text-transparent">
+            <p className="text-center text-[16px] font-bold py-4 px-6 tracking-wider text-slate-800 dark:text-slate-100">
               Grab a coffee while AI finds your best-fit jobs.
             </p>
           </div>

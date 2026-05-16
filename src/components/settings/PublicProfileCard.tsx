@@ -134,7 +134,7 @@ function InputIcon({ status }: { status: SlugStatus }) {
 
 function SocialField({
   label, placeholder, value, error, show, disabled,
-  onChangeUrl, onChangeShow,
+  onChangeUrl, onBlurUrl, onChangeShow,
 }: {
   label: string
   placeholder: string
@@ -143,6 +143,7 @@ function SocialField({
   show: boolean
   disabled: boolean
   onChangeUrl: (v: string) => void
+  onBlurUrl: (v: string) => void
   onChangeShow: (v: boolean) => void
 }) {
   const [focused, setFocused] = useState(false)
@@ -164,7 +165,7 @@ function SocialField({
             value={value}
             onChange={(e) => onChangeUrl(e.target.value)}
             onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onBlur={(e) => { setFocused(false); onBlurUrl(e.target.value) }}
             placeholder={placeholder}
             autoComplete="off"
             spellCheck={false}
@@ -195,12 +196,13 @@ function SocialField({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function PublicProfileCard() {
-  const [settings, setSettings] = useState<Settings>(DEFAULT)
-  const [saved,    setSaved]    = useState<Settings>(DEFAULT)
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
-  const [copied,   setCopied]   = useState(false)
-  const [focused,  setFocused]  = useState(false)
+  const [settings,       setSettings]       = useState<Settings>(DEFAULT)
+  const [saved,          setSaved]          = useState<Settings>(DEFAULT)
+  const [loading,        setLoading]        = useState(true)
+  const [hasResume,      setHasResume]      = useState(false)
+  const [savingUsername, setSavingUsername] = useState(false)
+  const [copied,         setCopied]         = useState(false)
+  const [focused,        setFocused]        = useState(false)
 
   const [slugStatus, setSlugStatus] = useState<SlugStatus>('idle')
   const [slugReason, setSlugReason] = useState('')
@@ -218,21 +220,25 @@ export function PublicProfileCard() {
     : null
 
   // Empty username is always valid (saves as null). Non-empty must be available or unchanged.
-  const slugOk  = settings.username === ''
+  const slugOk       = settings.username === ''
     || slugStatus === 'available'
     || (settings.username === saved.username && settings.username !== '')
-  const isDirty = JSON.stringify(settings) !== JSON.stringify(saved)
-  const canSave = isDirty && slugOk && !saving && !hasUrlErrors &&
-                  slugStatus !== 'checking' && slugStatus !== 'taken' && slugStatus !== 'invalid'
+  const usernameDirty = settings.username !== saved.username
+  const canSaveUsername = usernameDirty && slugOk && !savingUsername &&
+                          slugStatus !== 'checking' && slugStatus !== 'taken' && slugStatus !== 'invalid'
 
   useEffect(() => {
-    fetch('/api/profile/public-settings')
-      .then((r) => r.json())
-      .then((d) => {
+    Promise.all([
+      fetch('/api/profile/public-settings').then((r) => r.json()),
+      fetch('/api/profile').then((r) => r.json()),
+    ])
+      .then(([d, p]) => {
+        setHasResume(Boolean(p?.has_resume))
         const s: Settings = {
-          username:              d.username              ?? '',
-          profile_public:        d.profile_public        ?? false,
-          show_email:            d.show_email            ?? false,
+          username:                        d.username                        ?? '',
+          profile_public:                  d.profile_public                  ?? false,
+          profile_auto_disabled_no_resume: d.profile_auto_disabled_no_resume ?? false,
+          show_email:                      d.show_email                      ?? false,
           show_phone:            d.show_phone            ?? false,
           show_resume_download:  d.show_resume_download  ?? true,
           open_to_opportunities: d.open_to_opportunities ?? true,
@@ -288,27 +294,51 @@ export function PublicProfileCard() {
     setSettings((p) => ({ ...p, [key]: value }))
   }
 
-  async function handleSave() {
-    if (!canSave) return
-    setSaving(true)
+  async function saveUsername() {
+    if (!canSaveUsername) return
+    setSavingUsername(true)
     try {
       const res = await fetch('/api/profile/public-settings', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(settings),
+        body:    JSON.stringify({ username: settings.username }),
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error ?? 'Failed to save'); return }
-      setSaved(settings)
-      toast.success('Public profile settings saved')
+      setSaved((p) => ({ ...p, username: settings.username }))
+      toast.success('Profile URL saved')
     } catch {
       toast.error('Failed to save. Please try again.')
     } finally {
-      setSaving(false)
+      setSavingUsername(false)
     }
   }
 
-  async function copyLink() {
+  async function saveToggle<K extends keyof Settings>(key: K, value: Settings[K]) {
+    // Optimistic update
+    const next: Settings = { ...settings, [key]: value }
+    if (key === 'profile_public') next.profile_auto_disabled_no_resume = false
+    setSettings(next)
+    try {
+      const res = await fetch('/api/profile/public-settings', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ [key]: value }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSettings(settings) // revert
+        toast.error(data.error ?? 'Failed to save')
+        return
+      }
+      setSaved(next)
+    } catch {
+      setSettings(settings) // revert
+      toast.error('Failed to save. Please try again.')
+    }
+  }
+
+async function copyLink() {
     if (!profileUrl) return
     await navigator.clipboard.writeText(profileUrl).catch(() => {})
     setCopied(true)
@@ -358,25 +388,37 @@ export function PublicProfileCard() {
           <label className="block text-[11px] font-bold uppercase tracking-[0.1em] text-gray-400 dark:text-slate-500 mb-2">
             Your profile URL
           </label>
-          <div className={`flex items-stretch rounded-xl border overflow-hidden transition-all duration-150 ${inputBorderClass(slugStatus, focused)}`}>
-            <span className="flex items-center px-3 bg-[#F8FAFC] dark:bg-[#0F172A] text-[13px] text-gray-400 border-r border-[#E5E7EB] dark:border-[#334155] select-none flex-shrink-0">
-              findalljob.com/
-            </span>
-            <input
-              type="text"
-              value={settings.username}
-              onChange={(e) => handleUsernameChange(e.target.value)}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              placeholder="your-name"
-              maxLength={40}
-              autoComplete="off"
-              spellCheck={false}
-              className="flex-1 px-3 py-2.5 text-[13px] bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 outline-none min-w-0"
-            />
-            <span className="flex items-center pr-3">
-              <InputIcon status={slugStatus} />
-            </span>
+          <div className="flex items-stretch gap-2">
+            <div className={`flex-1 flex items-stretch rounded-xl border overflow-hidden transition-all duration-150 ${inputBorderClass(slugStatus, focused)}`}>
+              <span className="flex items-center px-3 bg-[#F8FAFC] dark:bg-[#0F172A] text-[13px] text-gray-400 border-r border-[#E5E7EB] dark:border-[#334155] select-none flex-shrink-0">
+                findalljob.com/
+              </span>
+              <input
+                type="text"
+                value={settings.username}
+                onChange={(e) => handleUsernameChange(e.target.value)}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder="your-name"
+                maxLength={40}
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 px-3 py-2.5 text-[13px] bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F1F5F9] placeholder-gray-300 dark:placeholder-slate-600 outline-none min-w-0"
+              />
+              <span className="flex items-center pr-3">
+                <InputIcon status={slugStatus} />
+              </span>
+            </div>
+            {canSaveUsername && (
+              <button
+                onClick={saveUsername}
+                disabled={savingUsername}
+                className="flex-shrink-0 flex items-center gap-1 px-3 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[12px] font-semibold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {savingUsername ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                OK
+              </button>
+            )}
           </div>
           <div className="mt-1.5 min-h-[18px]">
             <SlugIndicator status={slugStatus} reason={slugReason} />
@@ -412,9 +454,15 @@ export function PublicProfileCard() {
             label="Public profile"
             description="Make your profile visible to anyone with the link."
             checked={settings.profile_public}
-            onChange={(v) => set('profile_public', v)}
+            onChange={(v) => saveToggle('profile_public', v)}
+            disabled={!hasResume}
           />
-          {settings.profile_auto_disabled_no_resume && (
+          {!hasResume && (
+            <p className="mt-1.5 text-[11px] text-gray-400 dark:text-slate-500">
+              Upload or create a resume to make your public resume live.
+            </p>
+          )}
+          {hasResume && settings.profile_auto_disabled_no_resume && (
             <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
@@ -434,21 +482,21 @@ export function PublicProfileCard() {
               label="Show email address"
               description="Recruiters will see your email and can contact you directly."
               checked={settings.show_email}
-              onChange={(v) => set('show_email', v)}
+              onChange={(v) => saveToggle('show_email', v)}
               disabled={!settings.profile_public}
             />
             <Toggle
               label="Show phone number"
               description="Display your phone number on the profile."
               checked={settings.show_phone}
-              onChange={(v) => set('show_phone', v)}
+              onChange={(v) => saveToggle('show_phone', v)}
               disabled={!settings.profile_public}
             />
             <Toggle
               label="Allow resume download"
               description="Recruiters can download a PDF of your profile."
               checked={settings.show_resume_download}
-              onChange={(v) => set('show_resume_download', v)}
+              onChange={(v) => saveToggle('show_resume_download', v)}
               disabled={!settings.profile_public}
             />
           </div>
@@ -468,7 +516,8 @@ export function PublicProfileCard() {
               show={settings.show_linkedin}
               disabled={!settings.profile_public}
               onChangeUrl={(v) => set('linkedin_url', v)}
-              onChangeShow={(v) => set('show_linkedin', v)}
+              onBlurUrl={(v) => saveToggle('linkedin_url', v)}
+              onChangeShow={(v) => saveToggle('show_linkedin', v)}
             />
             <SocialField
               label="X / Twitter"
@@ -478,7 +527,8 @@ export function PublicProfileCard() {
               show={settings.show_x}
               disabled={!settings.profile_public}
               onChangeUrl={(v) => set('x_url', v)}
-              onChangeShow={(v) => set('show_x', v)}
+              onBlurUrl={(v) => saveToggle('x_url', v)}
+              onChangeShow={(v) => saveToggle('show_x', v)}
             />
             <SocialField
               label="Facebook"
@@ -488,7 +538,8 @@ export function PublicProfileCard() {
               show={settings.show_facebook}
               disabled={!settings.profile_public}
               onChangeUrl={(v) => set('facebook_url', v)}
-              onChangeShow={(v) => set('show_facebook', v)}
+              onBlurUrl={(v) => saveToggle('facebook_url', v)}
+              onChangeShow={(v) => saveToggle('show_facebook', v)}
             />
           </div>
         </div>
@@ -502,22 +553,10 @@ export function PublicProfileCard() {
             label="Open to opportunities"
             description='Shows a green "Open to opportunities" badge on your profile.'
             checked={settings.open_to_opportunities}
-            onChange={(v) => set('open_to_opportunities', v)}
+            onChange={(v) => saveToggle('open_to_opportunities', v)}
+            disabled={!settings.profile_public}
           />
         </div>
-
-        {/* Save */}
-        <button
-          onClick={handleSave}
-          disabled={!canSave}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0F172A] dark:bg-[#2563EB] text-white text-[13px] font-bold hover:bg-[#1E293B] dark:hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {saving ? (
-            <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saving…</>
-          ) : (
-            <><Check className="w-3.5 h-3.5" />Save changes</>
-          )}
-        </button>
 
       </div>
     </div>
